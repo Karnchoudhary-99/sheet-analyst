@@ -1,0 +1,1 @@
+{"description":"Chat with your CSVs — natural-language data analysis","devDependencies":{"tsx":"^4.19.4","typescript":"^5.6.3","vitest":"^2.1.8"},"license":"MIT","name":"sheet-analyst","scripts":{"build":"tsc -p tsconfig.json","dev":"tsx src/cli.ts","test":"vitest run"},"type":"module","version":"0.1.0"}
