@@ -67,7 +67,10 @@ function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string
   return `${scope}:\n${lines.join("\n")}`;
 }
 
-function composeRows(result: Extract<QueryResult, { kind: "rows" }>): string {
+function composeRows(
+  result: Extract<QueryResult, { kind: "rows" }>,
+  parsed?: ParsedCsv,
+): string {
   if (result.totalMatched === 0) return "No rows match.";
   const scope =
     result.limitedTo !== undefined
@@ -75,20 +78,35 @@ function composeRows(result: Extract<QueryResult, { kind: "rows" }>): string {
       : `${result.totalMatched} matching ${plural(result.totalMatched, "row")}`;
   const header = `| ${result.headers.join(" | ")} |`;
   const divider = `| ${result.headers.map(() => "---").join(" | ")} |`;
+  // Row cells are raw CSV text; format numeric columns the same way
+  // scalar answers are formatted, so "98000" reads as "98,000".
+  // Without the sheet we cannot know the column types, so the cells
+  // stay raw — callers with the sheet pass it in.
+  const numeric = new Set<string>();
+  if (parsed) {
+    for (const c of inferSchema(parsed)) {
+      if (c.type === "integer" || c.type === "number") numeric.add(c.name);
+    }
+  }
+  const cell = (h: string, raw: string): string => {
+    if (!numeric.has(h) || raw.trim() === "") return raw;
+    const n = Number(raw.replace(/,/g, ""));
+    return Number.isFinite(n) ? formatNumber(n) : raw;
+  };
   const body = result.rows.map(
-    (row) => `| ${result.headers.map((h) => row[h] ?? "").join(" | ")} |`,
+    (row) => `| ${result.headers.map((h) => cell(h, row[h] ?? "")).join(" | ")} |`,
   );
   return `${scope}:\n${header}\n${divider}\n${body.join("\n")}`;
 }
 
-export function composeAnswer(result: QueryResult): string {
+export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
   switch (result.kind) {
     case "scalar":
       return composeScalar(result);
     case "groups":
       return composeGroups(result);
     case "rows":
-      return composeRows(result);
+      return composeRows(result, parsed);
   }
 }
 
@@ -116,5 +134,5 @@ export function answerQuestion(question: string, parsed: ParsedCsv): string {
       inferSchema(parsed).map((c) => c.name),
     );
   }
-  return composeAnswer(executeQuery(parsedQuestion.query, parsed));
+  return composeAnswer(executeQuery(parsedQuestion.query, parsed), parsed);
 }

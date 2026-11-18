@@ -17,7 +17,7 @@ top-N) directly from the spreadsheet.
 - [x] Natural-language query engine (filter, aggregate, group-by, top-N)
 - [x] Answer composer (cited numbers, honest "not in the data" handling)
 - [x] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
-- [ ] Eval harness (gold question set, accuracy + abstention metrics)
+- [x] Eval harness (gold question set, accuracy + abstention metrics)
 - [ ] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
 - [ ] Charts (ASCII + SVG output for distributions and trends)
 - [ ] Self-review checklist, then public
@@ -118,6 +118,24 @@ Exit codes: `0` success (an abstention still exits `0` — the question
 was answered, just not from this data), `1` unreadable file or
 malformed CSV, `2` usage error (unknown command, missing argument or
 flag).
+
+## Evaluation
+
+`npm run eval` scores the engine against a 19-question gold set over
+the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
+medians, group-bys, top-N, filters and row queries, plus three
+questions the honest answer is an abstention for (unknown column,
+unanswerable question). Expected values are hand-computed from the
+CSVs, never derived from the code under test.
+
+Baseline (2026-11-18): answer accuracy 16/16 (100%), abstention
+accuracy 3/3 (100%), overall 100%. The run exits non-zero below an
+80% overall-accuracy gate, and CI runs it after the test suite — so a
+parser or engine change that breaks a question that used to work
+fails the build. The eval caught a real bug on its first run: row
+answers printed raw cell text (`98000`) while scalar answers format
+numbers (`98,000`); `composeAnswer` now formats numeric columns in
+row tables too (see `tests/answer.test.ts`).
 
 ## License
 
