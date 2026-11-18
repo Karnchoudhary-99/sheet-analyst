@@ -423,3 +423,93 @@ describe("runCli charts", () => {
     expect(c.stdout.join("")).toContain("distribution:");
   });
 });
+
+describe("runCli profile", () => {
+  const examplesDir = join(root, "examples");
+
+  it("parses the profile command and its help", () => {
+    expect(parseArgs(["profile", "x.csv"])).toEqual({
+      command: "profile",
+      file: "x.csv",
+      sheet: undefined,
+      svg: undefined,
+      json: false,
+    });
+    expect(parseArgs(["profile", "--help"])).toEqual({
+      command: "help",
+      helpFor: "profile",
+      json: false,
+    });
+  });
+
+  it("profiles a clean sheet in text and JSON", async () => {
+    const text = capture();
+    expect(await runCli(["profile", salesPath], text.out)).toBe(0);
+    const out = text.stdout.join("");
+    expect(out).toContain("8 rows, 5 columns");
+    expect(out).toContain("revenue (number)");
+
+    const json = capture();
+    expect(await runCli(["profile", "--json", salesPath], json.out)).toBe(0);
+    const profile = JSON.parse(json.stdout.join(""));
+    expect(profile.rows).toBe(8);
+    expect(profile.columnCount).toBe(5);
+    expect(Array.isArray(profile.warnings)).toBe(true);
+    expect(profile.columns.map((c: { name: string }) => c.name)).toEqual([
+      "date",
+      "region",
+      "product",
+      "units",
+      "revenue",
+    ]);
+  });
+
+  it("flags duplicates and outliers in a messy sheet", async () => {
+    const { writeFileSync, unlinkSync } = await import("node:fs");
+    const tmp = join(root, "examples", ".cli-messy.csv");
+    const messy = [
+      "id,region,score",
+      "1,North,10",
+      "2,North,11",
+      "3,North,12",
+      "4,North,12",
+      "5,North,13",
+      "6,North,14",
+      "7,North,15",
+      "8,North,1000",
+      "2,North,11",
+    ].join("\n");
+    writeFileSync(tmp, messy + "\n");
+    try {
+      const text = capture();
+      expect(await runCli(["profile", tmp], text.out)).toBe(0);
+      const out = text.stdout.join("");
+      expect(out).toContain("1 duplicate row");
+      expect(out).toContain('"score" has 1 outlier');
+
+      const json = capture();
+      expect(await runCli(["profile", "--json", tmp], json.out)).toBe(0);
+      const profile = JSON.parse(json.stdout.join(""));
+      expect(profile.duplicateRows).toBe(1);
+      expect(profile.warnings).toContain("1 duplicate row");
+      expect(
+        profile.columns.find((c: { name: string }) => c.name === "score")
+          .outliers.count,
+      ).toBe(1);
+    } finally {
+      unlinkSync(tmp);
+    }
+  });
+
+  it("profiles a workbook sheet with --sheet, and requires one", async () => {
+    const c = capture();
+    expect(
+      await runCli(["profile", examplesDir, "--sheet", "sales"], c.out),
+    ).toBe(0);
+    expect(c.stdout.join("")).toContain("revenue (number)");
+
+    const missing = capture();
+    expect(await runCli(["profile", examplesDir], missing.out)).toBe(2);
+    expect(missing.stderr.join("")).toContain("Multiple sheets");
+  });
+});
