@@ -10,7 +10,9 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
+import { answerQuestion } from "./answer.js";
 import { parseCsv, CsvParseError, type ParsedCsv } from "./csv.js";
+import { normalize } from "./query.js";
 
 /** A workbook load or lookup failure with a user-facing message. */
 export class WorkbookError extends Error {
@@ -99,9 +101,94 @@ export function loadWorkbookFromDir(dir: string): Workbook {
   return loadWorkbookFromFiles(files);
 }
 
-/** Sheet names in load order. */
-export function listSheets(workbook: Workbook): string[] {
-  return [...workbook.sheets.keys()];
+/**
+ * Ask a question against a workbook: pick the sheet, then answer
+ * from it. Returns the sheet used (null when the question could not
+ * be routed to a sheet) and the answer text.
+ *
+ * Sheet routing, in order:
+ * 1. `preferredSheet` wins when given; a missing name abstains and
+ *    lists the sheets that do exist.
+ * 2. A trailing "in|from|on <sheet>" clause in the question
+ *    ("total revenue in sales") — stripped before parsing so the
+ *    sheet name is never mistaken for a filter value.
+ * 3. A single-sheet workbook answers from that sheet.
+ * 4. Otherwise the question abstains and lists the sheets, so the
+ *    user can name one — guessing a sheet would answer a different
+ *    question than the one asked.
+ */
+export function askWorkbook(
+  question: string,
+  workbook: Workbook,
+  preferredSheet?: string,
+): { sheet: string | null; answer: string } {
+  const sheets = listSheets(workbook);
+  if (sheets.length === 0) {
+    return { sheet: null, answer: "I can't answer that from this data: the workbook has no sheets." };
+  }
+  if (preferredSheet !== undefined) {
+    const parsed = getSheet(workbook, preferredSheet);
+    if (!parsed) {
+      return {
+        sheet: null,
+        answer:
+          `I can't answer that from this data: there is no sheet named "${preferredSheet}". ` +
+          `Sheets available: ${sheets.join(", ")}.`,
+      };
+    }
+    return { sheet: sheetNameOf(workbook, preferredSheet)!, answer: answerQuestion(question, parsed) };
+  }
+  const extracted = extractSheetReference(question, sheets);
+  if (extracted) {
+    const parsed = getSheet(workbook, extracted.sheet)!;
+    return { sheet: extracted.sheet, answer: answerQuestion(extracted.rest, parsed) };
+  }
+  if (sheets.length === 1) {
+    return { sheet: sheets[0], answer: answerQuestion(question, workbook.sheets.get(sheets[0])!) };
+  }
+  return {
+    sheet: null,
+    answer:
+      `I can't answer that from this data: the question does not say which sheet to use. ` +
+      `Sheets available: ${sheets.join(", ")} — say e.g. "total revenue in ${sheets[0]}".`,
+  };
+}
+
+/** The canonical (stored) spelling of a sheet name, looked up case-insensitively. */
+function sheetNameOf(workbook: Workbook, name: string): string | undefined {
+  const wanted = name.trim().toLowerCase();
+  for (const sheetName of workbook.sheets.keys()) {
+    if (sheetName.toLowerCase() === wanted) return sheetName;
+  }
+  return undefined;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Pull a trailing "in|from|on <sheet>" clause out of the question.
+ * Sheet names are matched on their normalized form (case, `_`/`-`
+ * and punctuation ignored), longest first so "sales q1" wins over
+ * "sales". Returns the sheet's canonical name and the question with
+ * the clause removed, or null when no sheet is named.
+ */
+function extractSheetReference(
+  question: string,
+  sheets: string[],
+): { sheet: string; rest: string } | null {
+  const norm = normalize(question);
+  const byLength = [...sheets].sort((a, b) => b.length - a.length);
+  for (const sheet of byLength) {
+    const name = normalize(sheet);
+    if (!name) continue;
+    const re = new RegExp(`\\b(?:in|from|on)\\s+${escapeRegExp(name)}\\s*$`);
+    const m = re.exec(norm);
+    if (!m) continue;
+    return { sheet, rest: norm.slice(0, m.index).trim() };
+  }
+  return null;
 }
 
 /**
