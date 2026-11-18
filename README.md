@@ -14,8 +14,8 @@ top-N) directly from the spreadsheet.
 - [x] CSV ingestion (RFC 4180 parser, quoted fields, ragged rows, encoding)
 - [x] Schema inference (number / date / boolean / text, nulls, samples)
 - [x] Descriptive statistics (count, mean, median, min/max, distinct)
-- [ ] Natural-language query engine (filter, aggregate, group-by, top-N)
-- [ ] Answer composer (cited numbers, honest "not in the data" handling)
+- [x] Natural-language query engine (filter, aggregate, group-by, top-N)
+- [x] Answer composer (cited numbers, honest "not in the data" handling)
 - [ ] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
 - [ ] Eval harness (gold question set, accuracy + abstention metrics)
 - [ ] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
@@ -51,6 +51,44 @@ columns get count, min/max, sum, mean, median and population stddev
 their top 10 values by frequency, with ties broken alphabetically.
 Try it on the bundled samples in `examples/` (`sales.csv`,
 `employees.csv`).
+
+## Asking questions
+
+`parseQuestion` (in `src/query.ts`) turns a plain-English question into
+a structured query, `executeQuery` (in `src/engine.ts`) runs it, and
+`composeAnswer` (in `src/answer.ts`) renders the answer — or use
+`answerQuestion(question, parsed)` for all three in one call. The engine
+is deterministic and offline: no LLM, no guessing. Try it on the bundled
+samples with `npm run demo` (`examples/ask.ts`).
+
+```ts
+import { parseCsv } from "./src/csv.js";
+import { answerQuestion } from "./src/answer.js";
+
+const sales = parseCsv(await readFile("examples/sales.csv", "utf8"));
+answerQuestion("total revenue", sales);
+// "Total revenue is 1,789.6 (across 8 rows)."
+answerQuestion("total revenue by region", sales);
+// "Total revenue by region:\n- South: 649.77 (2 rows)\n- East: 624.91 (2 rows)…"
+answerQuestion("top 3 products by revenue", sales);
+// "Top 3 of 4 groups:\n- Widget A: 640 (3 rows)…"
+answerQuestion("total profit", sales);
+// "I can't answer that from this data: no column named in the question…"
+```
+
+Supported shapes: totals, averages, medians, minimums, maximums
+("total revenue", "average salary"), counts ("how many employees"),
+group-by ("total revenue by region", "average salary per department"),
+top-N ("top 3 products by revenue", "highest revenue" = top 1), filters
+("total revenue where region is North", "average salary where salary >
+90000", "sales in North"), and row queries ("show rows where region is
+North"). Filters compare numbers numerically, dates by day, and text
+case-insensitively. Aggregates skip null values and say so when some
+matching rows had no usable value; a column with no usable values at
+all is reported as such, never rendered as zero. When a question cannot
+be understood unambiguously — unknown or ambiguous column, a value that
+belongs to several columns — the parser abstains with a reason instead
+of answering a different question.
 
 ## License
 
