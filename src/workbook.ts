@@ -98,3 +98,20 @@ export function loadWorkbookFromDir(dir: string): Workbook {
   }
   return loadWorkbookFromFiles(files);
 }
+
+/** Sheet names in load order. */
+export function listSheets(workbook: Workbook): string[] {
+  return [...workbook.sheets.keys()];
+}
+
+/**
+ * Look a sheet up by name, case-insensitively ("Sales" finds
+ * "sales"). Returns undefined when there is no such sheet.
+ */
+export function getSheet(workbook: Workbook, name: string): ParsedCsv | undefined {
+  const wanted = name.trim().toLowerCase();
+  for (const [sheetName, parsed] of workbook.sheets) {
+    if (sheetName.toLowerCase() === wanted) return parsed;
+  }
+  return undefined;
+}
