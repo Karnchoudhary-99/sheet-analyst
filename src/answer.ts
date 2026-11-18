@@ -93,8 +93,13 @@ export function composeAnswer(result: QueryResult): string {
 }
 
 export function composeAbstention(reason: string, columns: string[]): string {
+  // Several parser reasons already name the columns ("… — columns are:
+  // a, b"); don't list them a second time.
+  const alreadyListsColumns = reason.includes("columns are:");
   const available =
-    columns.length > 0 ? ` Columns available: ${columns.join(", ")}.` : "";
+    !alreadyListsColumns && columns.length > 0
+      ? ` Columns available: ${columns.join(", ")}.`
+      : "";
   return `I can't answer that from this data: ${reason}.${available}`;
 }
 

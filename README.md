@@ -16,7 +16,7 @@ top-N) directly from the spreadsheet.
 - [x] Descriptive statistics (count, mean, median, min/max, distinct)
 - [x] Natural-language query engine (filter, aggregate, group-by, top-N)
 - [x] Answer composer (cited numbers, honest "not in the data" handling)
-- [ ] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
+- [x] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
 - [ ] Eval harness (gold question set, accuracy + abstention metrics)
 - [ ] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
 - [ ] Charts (ASCII + SVG output for distributions and trends)
@@ -89,6 +89,35 @@ all is reported as such, never rendered as zero. When a question cannot
 be understood unambiguously — unknown or ambiguous column, a value that
 belongs to several columns — the parser abstains with a reason instead
 of answering a different question.
+
+## Command-line interface
+
+```bash
+npm run build
+node dist/cli.js columns examples/sales.csv
+node dist/cli.js describe examples/employees.csv
+node dist/cli.js ask examples/sales.csv "total revenue by region"
+```
+
+Or install it once (`npm install -g .` from the repo root, or
+`npm link`) and use `sheet` directly. Every command accepts `--json`
+for machine-readable output; `sheet --help` lists all commands.
+
+- `sheet columns <file>` — one line per column: inferred type, null
+  count, distinct count, samples. JSON output is the schema array.
+- `sheet describe <file>` — per-column statistics: numeric columns
+  get count, min/max, mean, median and population stddev; date
+  columns get their range and median date (never epoch sums); text
+  and boolean columns get their most common values.
+- `sheet ask <file> <question>` — the composed answer, or an honest
+  "I can't answer that" when the question cannot be understood from
+  this sheet. Quoting the question is optional. JSON output is
+  `{ question, answer, result }`, with `result: null` on abstention.
+
+Exit codes: `0` success (an abstention still exits `0` — the question
+was answered, just not from this data), `1` unreadable file or
+malformed CSV, `2` usage error (unknown command, missing argument or
+flag).
 
 ## License
 
