@@ -129,6 +129,16 @@ describe("answerQuestion end to end", () => {
     );
   });
 
+  it("formats numeric cells in row answers like scalar answers", () => {
+    // Regression: the eval caught row tables showing raw "98000"
+    // while scalar answers print "98,000". With the sheet available,
+    // numeric columns are formatted; without it they stay raw.
+    const out = answerQuestion("highest revenue", SALES);
+    expect(out).toContain("Widget A");
+    expect(out).toContain("| 400 |");
+    expect(out).not.toContain("400.00");
+  });
+
   it("answers a filtered count", () => {
     expect(answerQuestion("how many rows where region is North", SALES)).toBe(
       "There are 3 matching rows.",

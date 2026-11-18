@@ -16,6 +16,7 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "test": "vitest run",
+    "eval": "tsx src/eval.ts",
     "demo": "tsx examples/ask.ts"
   },
   "type": "module",
