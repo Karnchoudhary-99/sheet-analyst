@@ -40,8 +40,16 @@ function composeScalar(result: Extract<QueryResult, { kind: "scalar" }>): string
 
 function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string {
   if (result.groups.length === 0) return "No rows match.";
+  const opLabel: Record<string, string> = {
+    sum: "total",
+    mean: "average",
+    median: "median",
+    min: "minimum",
+    max: "maximum",
+    count: "count",
+  };
   const what = result.column
-    ? `${result.op} ${result.column}`
+    ? `${opLabel[result.op] ?? result.op} ${result.column}`
     : "count";
   const scope =
     result.limitedTo !== undefined && result.totalGroups !== undefined
