@@ -32,7 +32,10 @@ export interface CategoricalStats {
 
 export type ColumnStats = NumericStats | CategoricalStats;
 
-export function numericStats(values: number[]): Omit<NumericStats, "count" | "nullCount" | "distinctCount"> {
+export function numericStats(values: number[]): Pick<
+  NumericStats,
+  "min" | "max" | "sum" | "mean" | "median" | "stddev"
+> {
   const sorted = [...values].sort((a, b) => a - b);
   const n = sorted.length;
   const sum = sorted.reduce((a, b) => a + b, 0);

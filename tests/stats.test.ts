@@ -39,7 +39,9 @@ describe("describe", () => {
     expect(city.stats.kind).toBe("categorical");
     if (city.stats.kind === "categorical") {
       expect(city.stats.distinctCount).toBe(3);
-      expect(city.stats.top[0]).toEqual({ value: "Paris", count: 2 });
+      expect(city.stats.top[0]).toEqual({ value: "Lyon", count: 2 });
+      // Ties break alphabetically, so Lyon precedes Paris.
+      expect(city.stats.top[1]).toEqual({ value: "Paris", count: 2 });
     }
   });
 
