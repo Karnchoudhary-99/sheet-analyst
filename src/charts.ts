@@ -94,6 +94,62 @@ export function sparkline(values: number[]): string {
     .join("");
 }
 
+export interface SvgChartOptions {
+  /** Chart width in px (default 640). */
+  width?: number;
+  /** Bar height in px (default 28). */
+  barHeight?: number;
+  /** Chart title, rendered above the bars. */
+  title?: string;
+  /** Format a value for the label (default: thousands-separated). */
+  formatValue?: (n: number) => string;
+}
+
+/** Escape text for an XML attribute or element body. */
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Render the same bars as a standalone SVG document: one horizontal
+ * bar per group with its label on the left and its value on the
+ * right. Labels are XML-escaped, so a group named `<script>` cannot
+ * break out of the document.
+ */
+export function renderBarChartSvg(bars: Bar[], options: SvgChartOptions = {}): string {
+  const width = options.width ?? 640;
+  const barHeight = options.barHeight ?? 28;
+  const gap = 8;
+  const labelWidth = 140;
+  const valueWidth = 90;
+  const format = options.formatValue ?? formatNumber;
+  const max = Math.max(0, ...bars.map((b) => b.value));
+  const plotWidth = width - labelWidth - valueWidth;
+  const titleHeight = options.title ? 28 : 0;
+  const height = titleHeight + bars.length * (barHeight + gap) + gap;
+  const parts: string[] = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="sans-serif" font-size="13">`,
+  ];
+  if (options.title) {
+    parts.push(`<text x="8" y="20" font-size="15" font-weight="bold">${escapeXml(options.title)}</text>`);
+  }
+  bars.forEach((b, i) => {
+    const y = titleHeight + gap + i * (barHeight + gap);
+    const len = max === 0 ? 0 : Math.max(0, (b.value / max) * plotWidth);
+    parts.push(
+      `<text x="8" y="${y + barHeight / 2 + 4}">${escapeXml(b.key)}</text>`,
+      `<rect x="${labelWidth}" y="${y}" width="${len.toFixed(1)}" height="${barHeight}" fill="#2563eb"/>`,
+      `<text x="${labelWidth + len + 6}" y="${y + barHeight / 2 + 4}">${escapeXml(format(b.value))}</text>`,
+    );
+  });
+  parts.push("</svg>");
+  return parts.join("\n");
+}
+
 const BLOCK = "█";
 
 /** Pad a label to `width` with spaces (left-aligned). */
