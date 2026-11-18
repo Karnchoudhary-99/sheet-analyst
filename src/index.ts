@@ -45,3 +45,11 @@ export {
   type HistogramBin,
   type SvgChartOptions,
 } from "./charts.js";
+export {
+  iqrOutliers,
+  profileColumn,
+  profileSheet,
+  type ColumnProfile,
+  type OutlierSummary,
+  type SheetProfile,
+} from "./profile.js";
