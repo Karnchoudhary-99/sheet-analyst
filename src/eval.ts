@@ -1,0 +1,306 @@
+/**
+ * Eval harness: a gold question set over the bundled sample sheets,
+ * scored against the answers the engine actually produces.
+ *
+ * The point is regression protection, not a leaderboard: if a parser
+ * or engine change breaks a question that used to work, the eval
+ * fails loudly instead of shipping a silent wrong answer. Expected
+ * values are hand-computed from the sample CSVs (see the notes on
+ * each case), never derived from the code under test — otherwise the
+ * eval would just agree with itself.
+ *
+ * Metrics, all on the gold set:
+ * - answer accuracy: correct answers / answerable questions
+ * - abstention accuracy: correct abstentions / unanswerable questions
+ * - overall accuracy: all correct / all questions
+ * - answer rate: answerable questions that got an answer at all
+ *
+ * `npm run eval` prints a per-case table and exits non-zero when
+ * overall accuracy drops below {@link EVAL_GATE} (0.8), so CI gates
+ * on it.
+ */
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { answerQuestion } from "./answer.js";
+import { parseCsv } from "./csv.js";
+
+export type SheetName = "sales" | "employees";
+
+/**
+ * One gold case. `expect` is either the substrings a correct answer
+ * must contain, or `"abstain"` when the honest answer is to refuse.
+ */
+export interface EvalCase {
+  sheet: SheetName;
+  question: string;
+  expect: string[] | "abstain";
+  /** How the expected value was worked out, for the next reader. */
+  note: string;
+}
+
+export const EVAL_GATE = 0.8;
+
+/**
+ * Gold set over examples/sales.csv (8 rows) and
+ * examples/employees.csv (5 rows). Expected figures hand-computed:
+ *
+ * sales — revenue total 1,789.60; units total 72 over 7 valued rows
+ * (one blank) so average units is 10.29; revenue by region:
+ * South 649.77, East 624.91, North 389.97, West 124.95; top product
+ * by revenue is Widget A at 640.
+ *
+ * employees — salaries 95,000 / 98,000 / 88,000 / 91,000 plus one NA,
+ * so average and median are both 93,000; total salary by department:
+ * Engineering 193,000, Data 179,000; highest salary is Grace Hopper
+ * at 98,000; 3 of the 5 employees are in Engineering.
+ */
+export const GOLD_SET: EvalCase[] = [
+  {
+    sheet: "sales",
+    question: "total revenue",
+    expect: ["1,789.6"],
+    note: "240 + 199.92 + 149.97 + 400 + 124.95 + 0 + 449.85 + 224.91 = 1,789.60",
+  },
+  {
+    sheet: "sales",
+    question: "average units",
+    expect: ["10.29"],
+    note: "72 units over 7 valued rows (one blank) = 10.2857…, formatted to 2dp",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows",
+    expect: ["8 matching rows"],
+    note: "sales.csv has 8 data rows",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue by region",
+    expect: ["South: 649.77", "North: 389.97"],
+    note: "South 199.92 + 449.85 = 649.77; North 240 + 149.97 + 0 = 389.97",
+  },
+  {
+    sheet: "sales",
+    question: "top 3 products by revenue",
+    expect: ["Top 3 of 4 groups", "Widget A: 640"],
+    note: "Widget A 240 + 400 + 0 = 640; Widget B 549.78; Widget C 449.85",
+  },
+  {
+    sheet: "sales",
+    question: "highest revenue",
+    expect: ["Widget C", "449.85"],
+    note: "largest single revenue row is Widget C, South, 449.85",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where region is North",
+    expect: ["389.97"],
+    note: "240 + 149.97 + 0 = 389.97 over the 3 North rows",
+  },
+  {
+    sheet: "sales",
+    question: "show rows where region is North",
+    expect: ["3 matching rows", "Widget A"],
+    note: "3 North rows, all Widget A except the Deluxe row",
+  },
+  {
+    sheet: "sales",
+    question: "what is the weather",
+    expect: "abstain",
+    note: "no aggregate, no column, no filter — nothing to answer from",
+  },
+  {
+    sheet: "sales",
+    question: "total profit",
+    expect: "abstain",
+    note: "no 'profit' column exists — guessing would answer a different question",
+  },
+  {
+    sheet: "employees",
+    question: "average salary",
+    expect: ["93,000"],
+    note: "(95,000 + 98,000 + 88,000 + 91,000) / 4 = 93,000; the NA row is skipped",
+  },
+  {
+    sheet: "employees",
+    question: "median salary",
+    expect: ["93,000"],
+    note: "sorted 88,000 / 91,000 / 95,000 / 98,000 — middle pair averages to 93,000",
+  },
+  {
+    sheet: "employees",
+    question: "how many employees",
+    expect: ["5 matching rows"],
+    note: "employees.csv has 5 data rows",
+  },
+  {
+    sheet: "employees",
+    question: "total salary by department",
+    expect: ["Engineering: 193,000", "Data: 179,000"],
+    note: "Engineering 95,000 + 98,000 = 193,000 (NA skipped); Data 88,000 + 91,000",
+  },
+  {
+    sheet: "employees",
+    question: "highest salary",
+    expect: ["Grace Hopper", "98,000"],
+    note: "largest salary row is Grace Hopper, Engineering, 98,000",
+  },
+  {
+    sheet: "employees",
+    question: "average salary where department is Data",
+    expect: ["89,500"],
+    note: "(88,000 + 91,000) / 2 = 89,500",
+  },
+  {
+    sheet: "employees",
+    question: "how many employees in Engineering",
+    expect: ["3 matching rows"],
+    note: "'in Engineering' resolves to the department value; 3 of 5 rows match",
+  },
+  {
+    sheet: "employees",
+    question: "how many employees by department",
+    expect: ["Engineering: 3", "Data: 2"],
+    note: "group count: Engineering 3, Data 2",
+  },
+  {
+    sheet: "employees",
+    question: "total age",
+    expect: "abstain",
+    note: "no 'age' column exists",
+  },
+];
+
+export interface CaseResult {
+  case: EvalCase;
+  answer: string;
+  passed: boolean;
+  /** What was missing (expected substrings not found, or an answer where an abstention was expected). */
+  detail: string;
+}
+
+export interface EvalReport {
+  cases: CaseResult[];
+  answerable: number;
+  answerCorrect: number;
+  abstentionCases: number;
+  abstentionCorrect: number;
+  /** Fraction of answerable questions that produced an answer at all. */
+  answerRate: number;
+  answerAccuracy: number;
+  abstentionAccuracy: number;
+  overallAccuracy: number;
+  passed: boolean;
+}
+
+export function isAbstention(answer: string): boolean {
+  return answer.startsWith("I can't answer that");
+}
+
+/** Score one case against the answer the engine produced. */
+export function scoreCase(c: EvalCase, answer: string): CaseResult {
+  if (c.expect === "abstain") {
+    const passed = isAbstention(answer);
+    return {
+      case: c,
+      answer,
+      passed,
+      detail: passed ? "" : "expected an abstention, got an answer",
+    };
+  }
+  if (isAbstention(answer)) {
+    return {
+      case: c,
+      answer,
+      passed: false,
+      detail: "expected an answer, got an abstention",
+    };
+  }
+  const missing = c.expect.filter((s) => !answer.includes(s));
+  return {
+    case: c,
+    answer,
+    passed: missing.length === 0,
+    detail: missing.length > 0 ? `missing: ${missing.join("; ")}` : "",
+  };
+}
+
+const SHEET_FILES: Record<SheetName, string> = {
+  sales: "sales.csv",
+  employees: "employees.csv",
+};
+
+export function loadSheet(name: SheetName): ReturnType<typeof parseCsv> {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), "..", "examples");
+  return parseCsv(readFileSync(join(dir, SHEET_FILES[name]), "utf8"));
+}
+
+/** Run the whole gold set and score it. Pure apart from reading the sample CSVs. */
+export function runEval(cases: EvalCase[] = GOLD_SET): EvalReport {
+  const sheets = new Map<SheetName, ReturnType<typeof parseCsv>>();
+  const sheet = (name: SheetName) => {
+    const loaded = sheets.get(name) ?? loadSheet(name);
+    sheets.set(name, loaded);
+    return loaded;
+  };
+  const results = cases.map((c) =>
+    scoreCase(c, answerQuestion(c.question, sheet(c.sheet))),
+  );
+  const answerable = results.filter((r) => r.case.expect !== "abstain");
+  const abstentions = results.filter((r) => r.case.expect === "abstain");
+  const answerCorrect = answerable.filter((r) => r.passed).length;
+  const abstentionCorrect = abstentions.filter((r) => r.passed).length;
+  const answered = answerable.filter((r) => !isAbstention(r.answer)).length;
+  const overallAccuracy =
+    results.length === 0
+      ? 1
+      : (answerCorrect + abstentionCorrect) / results.length;
+  return {
+    cases: results,
+    answerable: answerable.length,
+    answerCorrect,
+    abstentionCases: abstentions.length,
+    abstentionCorrect,
+    answerRate: answerable.length === 0 ? 1 : answered / answerable.length,
+    answerAccuracy: answerable.length === 0 ? 1 : answerCorrect / answerable.length,
+    abstentionAccuracy:
+      abstentions.length === 0 ? 1 : abstentionCorrect / abstentions.length,
+    overallAccuracy,
+    passed: overallAccuracy >= EVAL_GATE,
+  };
+}
+
+function pct(n: number): string {
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+export function formatReport(report: EvalReport): string {
+  const lines = report.cases.map((r) => {
+    const mark = r.passed ? "PASS" : "FAIL";
+    const detail = r.detail ? ` — ${r.detail}` : "";
+    return `${mark} [${r.case.sheet}] ${r.case.question}${detail}`;
+  });
+  lines.push("");
+  lines.push(`Answer accuracy:     ${report.answerCorrect}/${report.answerable} (${pct(report.answerAccuracy)})`);
+  lines.push(`Abstention accuracy: ${report.abstentionCorrect}/${report.abstentionCases} (${pct(report.abstentionAccuracy)})`);
+  lines.push(`Answer rate:         ${pct(report.answerRate)}`);
+  lines.push(`Overall accuracy:    ${pct(report.overallAccuracy)} (gate: ${pct(EVAL_GATE)})`);
+  lines.push(report.passed ? "EVAL PASSED" : "EVAL FAILED");
+  return lines.join("\n");
+}
+
+export function main(): number {
+  const report = runEval();
+  console.log(formatReport(report));
+  return report.passed ? 0 : 1;
+}
+
+// `npm run eval` (tsx) and the built `node dist/eval.js` both land here.
+if (
+  process.argv[1] !== undefined &&
+  fileURLToPath(import.meta.url) === process.argv[1]
+) {
+  process.exitCode = main();
+}
