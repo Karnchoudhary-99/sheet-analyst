@@ -8,9 +8,13 @@
   },
   "license": "MIT",
   "name": "sheet-analyst",
+  "bin": {
+    "sheet": "dist/cli.js"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
     "test": "vitest run",
     "demo": "tsx examples/ask.ts"
   },
