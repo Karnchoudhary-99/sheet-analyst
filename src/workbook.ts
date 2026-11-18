@@ -10,9 +10,11 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
-import { answerQuestion } from "./answer.js";
+import { answerQuestion, composeAbstention, composeAnswer } from "./answer.js";
 import { parseCsv, CsvParseError, type ParsedCsv } from "./csv.js";
-import { normalize } from "./query.js";
+import { executeQuery, type QueryResult } from "./engine.js";
+import { normalize, parseQuestion } from "./query.js";
+import { inferSchema } from "./schema.js";
 
 /** A workbook load or lookup failure with a user-facing message. */
 export class WorkbookError extends Error {
@@ -106,60 +108,97 @@ export function listSheets(workbook: Workbook): string[] {
   return [...workbook.sheets.keys()];
 }
 
+type SheetRoute =
+  | { ok: true; sheet: string; parsed: ParsedCsv; question: string }
+  | { ok: false; answer: string };
+
 /**
- * Ask a question against a workbook: pick the sheet, then answer
- * from it. Returns the sheet used (null when the question could not
- * be routed to a sheet) and the answer text.
- *
- * Sheet routing, in order:
- * 1. `preferredSheet` wins when given; a missing name abstains and
- *    lists the sheets that do exist.
- * 2. A trailing "in|from|on <sheet>" clause in the question
- *    ("total revenue in sales") — stripped before parsing so the
- *    sheet name is never mistaken for a filter value.
- * 3. A single-sheet workbook answers from that sheet.
- * 4. Otherwise the question abstains and lists the sheets, so the
- *    user can name one — guessing a sheet would answer a different
- *    question than the one asked.
+ * Route a question to one sheet: preferred sheet wins, then a
+ * trailing "in|from|on <sheet>" clause, then a single-sheet
+ * workbook; otherwise abstain and list the sheets.
  */
-export function askWorkbook(
+function routeQuestion(
   question: string,
   workbook: Workbook,
   preferredSheet?: string,
-): { sheet: string | null; answer: string } {
+): SheetRoute {
   const sheets = listSheets(workbook);
   if (sheets.length === 0) {
-    return { sheet: null, answer: "I can't answer that from this data: the workbook has no sheets." };
+    return { ok: false, answer: "I can't answer that from this data: the workbook has no sheets." };
   }
   if (preferredSheet !== undefined) {
     const parsed = getSheet(workbook, preferredSheet);
     if (!parsed) {
       return {
-        sheet: null,
+        ok: false,
         answer:
           `I can't answer that from this data: there is no sheet named "${preferredSheet}". ` +
           `Sheets available: ${sheets.join(", ")}.`,
       };
     }
-    return { sheet: sheetNameOf(workbook, preferredSheet)!, answer: answerQuestion(question, parsed) };
+    return { ok: true, sheet: sheetNameOf(workbook, preferredSheet)!, parsed, question };
   }
   const extracted = extractSheetReference(question, sheets);
   if (extracted) {
-    const parsed = getSheet(workbook, extracted.sheet)!;
-    return { sheet: extracted.sheet, answer: answerQuestion(extracted.rest, parsed) };
+    return {
+      ok: true,
+      sheet: extracted.sheet,
+      parsed: getSheet(workbook, extracted.sheet)!,
+      question: extracted.rest,
+    };
   }
   if (sheets.length === 1) {
-    return { sheet: sheets[0], answer: answerQuestion(question, workbook.sheets.get(sheets[0])!) };
+    return { ok: true, sheet: sheets[0], parsed: workbook.sheets.get(sheets[0])!, question };
   }
   return {
-    sheet: null,
+    ok: false,
     answer:
       `I can't answer that from this data: the question does not say which sheet to use. ` +
       `Sheets available: ${sheets.join(", ")} — say e.g. "total revenue in ${sheets[0]}".`,
   };
 }
 
-/** The canonical (stored) spelling of a sheet name, looked up case-insensitively. */
+/**
+ * Ask a question against a workbook: pick the sheet, then answer
+ * from it. Returns the sheet used (null when the question could not
+ * be routed to a sheet) and the answer text. See {@link routeQuestion}
+ * for the routing order.
+ */
+export function askWorkbook(
+  question: string,
+  workbook: Workbook,
+  preferredSheet?: string,
+): { sheet: string | null; answer: string } {
+  const route = routeQuestion(question, workbook, preferredSheet);
+  if (!route.ok) return { sheet: null, answer: route.answer };
+  return { sheet: route.sheet, answer: answerQuestion(route.question, route.parsed) };
+}
+
+/**
+ * Like {@link askWorkbook} but also returns the structured query
+ * result (null when the engine abstained), for `--json` output.
+ */
+export function askWorkbookDetailed(
+  question: string,
+  workbook: Workbook,
+  preferredSheet?: string,
+): { sheet: string | null; answer: string; result: QueryResult | null } {
+  const route = routeQuestion(question, workbook, preferredSheet);
+  if (!route.ok) return { sheet: null, answer: route.answer, result: null };
+  const parsedQuestion = parseQuestion(route.question, route.parsed);
+  if (!parsedQuestion.ok) {
+    return {
+      sheet: route.sheet,
+      answer: composeAbstention(
+        parsedQuestion.reason,
+        inferSchema(route.parsed).map((c) => c.name),
+      ),
+      result: null,
+    };
+  }
+  const result = executeQuery(parsedQuestion.query, route.parsed);
+  return { sheet: route.sheet, answer: composeAnswer(result, route.parsed), result };
+}
 function sheetNameOf(workbook: Workbook, name: string): string | undefined {
   const wanted = name.trim().toLowerCase();
   for (const sheetName of workbook.sheets.keys()) {
