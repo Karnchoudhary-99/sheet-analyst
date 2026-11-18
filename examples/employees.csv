@@ -1,0 +1,6 @@
+id,name,department,salary,start_date,remote
+1,Ada Lovelace,Engineering,95000,2024-03-01,true
+2,Grace Hopper,Engineering,98000,2023-07-15,true
+3,Alan Turing,Data,88000,2025-01-20,false
+4,Katherine Johnson,Data,91000,2024-11-04,true
+5,Edsger Dijkstra,Engineering,NA,2022-05-30,false
