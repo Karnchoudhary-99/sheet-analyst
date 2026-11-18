@@ -9,6 +9,7 @@
  */
 
 import { formatNumber } from "./answer.js";
+import type { QueryResult } from "./engine.js";
 
 /** One bar: a label and the value it stands for. */
 export interface Bar {
@@ -92,6 +93,32 @@ export function sparkline(values: number[]): string {
       return SPARK_LEVELS[idx]!;
     })
     .join("");
+}
+
+/**
+ * Render a chart for a query result: group results become a bar
+ * chart, everything else has no chart (null) — a single number or a
+ * table of rows is already the answer, and inventing a chart for it
+ * would add noise, not information.
+ */
+export function renderResultChart(
+  result: QueryResult,
+  options: BarChartOptions = {},
+): string | null {
+  if (result.kind !== "groups") return null;
+  return renderBarChart(result.groups, options);
+}
+
+/**
+ * Render the same group result as an SVG bar chart, or null when
+ * the result has no chart.
+ */
+export function renderResultChartSvg(
+  result: QueryResult,
+  options: SvgChartOptions = {},
+): string | null {
+  if (result.kind !== "groups") return null;
+  return renderBarChartSvg(result.groups, options);
 }
 
 export interface SvgChartOptions {
