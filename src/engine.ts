@@ -33,6 +33,8 @@ export type QueryResult =
       groups: { key: string; value: number; count: number }[];
       rowsMatched: number;
       limitedTo?: number;
+      /** Groups before any top-N slicing, so "top 2 of 4" is honest. */
+      totalGroups?: number;
     }
   | {
       kind: "rows";
@@ -207,6 +209,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         op: query.op,
         groups,
         rowsMatched: rows.length,
+        totalGroups: groups.length,
       };
     }
 
@@ -245,6 +248,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
           groups: limited ? groups.slice(0, query.limit) : groups,
           rowsMatched: rows.length,
           limitedTo: limited ? query.limit : undefined,
+          totalGroups: groups.length,
         };
       }
 
