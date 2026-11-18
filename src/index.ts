@@ -32,3 +32,16 @@ export {
   WorkbookError,
   type Workbook,
 } from "./workbook.js";
+export {
+  histogram,
+  renderBarChart,
+  renderBarChartSvg,
+  renderHistogram,
+  renderResultChart,
+  renderResultChartSvg,
+  sparkline,
+  type Bar,
+  type BarChartOptions,
+  type HistogramBin,
+  type SvgChartOptions,
+} from "./charts.js";

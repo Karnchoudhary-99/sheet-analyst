@@ -349,3 +349,77 @@ describe("runCli workbooks", () => {
     );
   });
 });
+
+describe("runCli charts", () => {
+  const examplesDir = join(root, "examples");
+
+  it("charts a group-by answer with bars and values", async () => {
+    const c = capture();
+    expect(
+      await runCli(["chart", salesPath, "total revenue by region"], c.out),
+    ).toBe(0);
+    const text = c.stdout.join("");
+    expect(text).toContain("Total revenue by region");
+    expect(text).toContain("North");
+    expect(text).toContain("█");
+  });
+
+  it("says so instead of charting a scalar answer", async () => {
+    const c = capture();
+    expect(await runCli(["chart", salesPath, "total revenue"], c.out)).toBe(0);
+    const text = c.stdout.join("");
+    expect(text).toContain("1,789.6");
+    expect(text).toContain("No chart for this answer");
+    expect(text).not.toContain("█");
+  });
+
+  it("charts an abstention honestly with exit 0", async () => {
+    const c = capture();
+    expect(await runCli(["chart", salesPath, "total profit"], c.out)).toBe(0);
+    expect(c.stdout.join("")).toContain("I can't answer that");
+  });
+
+  it("writes an SVG file with --svg", async () => {
+    const { readFileSync, unlinkSync } = await import("node:fs");
+    const tmp = join(root, "examples", ".cli-chart.svg");
+    const c = capture();
+    try {
+      expect(
+        await runCli(
+          ["chart", salesPath, "total revenue by region", "--svg", tmp],
+          c.out,
+        ),
+      ).toBe(0);
+      expect(c.stdout.join("")).toContain(`Wrote ${tmp}`);
+      const svg = readFileSync(tmp, "utf8");
+      expect(svg).toContain("<svg");
+      expect(svg).toContain("North");
+    } finally {
+      unlinkSync(tmp);
+    }
+  });
+
+  it("rejects --svg on other commands and without a value", () => {
+    expect(() =>
+      parseArgs(["ask", "x.csv", "total revenue", "--svg", "out.svg"]),
+    ).toThrowError(/--svg is only for the chart command/);
+    expect(() => parseArgs(["chart", "x.csv", "total revenue", "--svg"])).toThrowError(
+      /--svg needs a file path/,
+    );
+  });
+
+  it("charts a workbook sheet named in the question", async () => {
+    const c = capture();
+    expect(
+      await runCli(["chart", examplesDir, "total revenue by region in sales"], c.out),
+    ).toBe(0);
+    expect(c.stdout.join("")).toContain("North");
+    expect(c.stdout.join("")).toContain("█");
+  });
+
+  it("describe shows a distribution sparkline for numeric columns", async () => {
+    const c = capture();
+    expect(await runCli(["describe", salesPath], c.out)).toBe(0);
+    expect(c.stdout.join("")).toContain("distribution:");
+  });
+});

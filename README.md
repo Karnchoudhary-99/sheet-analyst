@@ -19,7 +19,7 @@ top-N) directly from the spreadsheet.
 - [x] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
 - [x] Eval harness (gold question set, accuracy + abstention metrics)
 - [x] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
-- [ ] Charts (ASCII + SVG output for distributions and trends)
+- [x] Charts (ASCII + SVG output for distributions and trends)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -143,6 +143,29 @@ Exit codes: `0` success (an abstention still exits `0` — the question
 was answered, just not from this data), `1` unreadable file or
 malformed CSV, `2` usage error (unknown command, missing argument or
 flag).
+
+### Charts
+
+`sheet chart <file> <question>` asks the question and draws the
+answer as an ASCII bar chart — but only group-by answers chart
+(e.g. `"total revenue by region"`). A scalar or row answer prints the
+answer with a note that there is nothing to chart, and an abstention
+prints the abstention: the chart never invents a picture for an
+answer that has none. Bars are proportional to the largest value and
+every value is printed next to its bar, so a zero group is visible
+as an empty bar with its `0`.
+
+```bash
+node dist/cli.js chart examples/sales.csv "total revenue by region"
+node dist/cli.js chart examples/sales.csv "total revenue by region" --svg revenue-by-region.svg
+```
+
+`--svg <path>` also writes the chart as a standalone SVG document
+(group names are XML-escaped). `describe` prints a one-line
+distribution sparkline under each numeric column, so skew and
+clustering are visible at a glance. The chart helpers
+(`renderBarChart`, `histogram`, `sparkline`, `renderBarChartSvg`)
+are exported from the package for programmatic use.
 
 ## Evaluation
 
