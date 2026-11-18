@@ -35,7 +35,13 @@ function composeScalar(result: Extract<QueryResult, { kind: "scalar" }>): string
     );
   }
   const label = result.label.charAt(0).toUpperCase() + result.label.slice(1);
-  return `${label} is ${formatNumber(result.value)} (across ${result.rowsMatched} ${plural(result.rowsMatched, "row")}).`;
+  // Say so when some matching rows had no usable value, so a mean
+  // over 2 values is never presented as a mean over 3 rows.
+  const coverage =
+    result.valuesUsed < result.rowsMatched
+      ? `, ${result.valuesUsed} of ${result.rowsMatched} had a value`
+      : "";
+  return `${label} is ${formatNumber(result.value)} (across ${result.rowsMatched} ${plural(result.rowsMatched, "row")}${coverage}).`;
 }
 
 function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string {
