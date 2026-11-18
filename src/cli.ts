@@ -344,6 +344,16 @@ function formatDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+/** Sorted numeric values of a column, for the distribution sparkline. */
+function numericColumnValues(parsed: ParsedCsv, name: string): number[] {
+  const idx = parsed.headers.indexOf(name);
+  if (idx === -1) return [];
+  return parsed.rows
+    .map((row) => Number((row[idx] ?? "").trim().replace(/,/g, "")))
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => a - b);
+}
+
 export function formatDescribeText(parsed: ParsedCsv): string {
   const described = describeWithTypes(parsed);
   const lines = [
@@ -368,6 +378,12 @@ export function formatDescribeText(parsed: ParsedCsv): string {
       lines.push(
         `  min: ${formatNumber(stats.min)}, max: ${formatNumber(stats.max)}, mean: ${formatNumber(stats.mean)}, median: ${formatNumber(stats.median)}, stddev: ${formatNumber(stats.stddev)}`,
       );
+      // One-line shape of the distribution: sorted values as a
+      // sparkline, so skew and clustering are visible at a glance.
+      const values = numericColumnValues(parsed, name);
+      if (values.length > 1) {
+        lines.push(`  distribution: ${sparkline(values)}`);
+      }
       continue;
     }
     lines.push(
