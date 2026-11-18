@@ -11,9 +11,9 @@ top-N) directly from the spreadsheet.
 ## Roadmap
 
 - [x] Project scaffold (README roadmap, license, gitignore, CI)
-- [ ] CSV ingestion (RFC 4180 parser, quoted fields, ragged rows, encoding)
-- [ ] Schema inference (number / date / boolean / text, nulls, samples)
-- [ ] Descriptive statistics (count, mean, median, min/max, distinct)
+- [x] CSV ingestion (RFC 4180 parser, quoted fields, ragged rows, encoding)
+- [x] Schema inference (number / date / boolean / text, nulls, samples)
+- [x] Descriptive statistics (count, mean, median, min/max, distinct)
 - [ ] Natural-language query engine (filter, aggregate, group-by, top-N)
 - [ ] Answer composer (cited numbers, honest "not in the data" handling)
 - [ ] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
@@ -29,6 +29,28 @@ npm install
 npm run build
 npm test
 ```
+
+## Ingestion & schema
+
+`parseCsv` (in `src/csv.ts`) implements RFC 4180: quoted fields may
+contain commas and newlines, `""` unescapes to `"`, CRLF/LF/CR endings
+and a UTF-8 BOM are handled, and an unterminated quote fails loudly
+with `CsvParseError`. Duplicate or empty headers are disambiguated
+(`name_2`, `column_3`) and short rows are padded with `""`.
+
+`inferSchema` (in `src/schema.ts`) guesses each column's type —
+`boolean`, `integer`, `number`, `date` (ISO or day-first DD/MM/YYYY),
+`text`, or `empty` — treating `""`, `null`, `NA`, `N/A` and `-` as
+missing. It also reports null counts, distinct counts and samples.
+
+## Descriptive statistics
+
+`describe` (in `src/stats.ts`) summarizes every column: numeric
+columns get count, min/max, sum, mean, median and population stddev
+(dates are summarized as epoch ranges); text and boolean columns get
+their top 10 values by frequency, with ties broken alphabetically.
+Try it on the bundled samples in `examples/` (`sales.csv`,
+`employees.csv`).
 
 ## License
 
