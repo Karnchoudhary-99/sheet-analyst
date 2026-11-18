@@ -16,10 +16,11 @@ top-N) directly from the spreadsheet.
 - [x] Descriptive statistics (count, mean, median, min/max, distinct)
 - [x] Natural-language query engine (filter, aggregate, group-by, top-N)
 - [x] Answer composer (cited numbers, honest "not in the data" handling)
-- [x] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
+- [x] CLI (`sheet ask`, `sheet describe`, `sheet columns`, `sheet profile`)
 - [x] Eval harness (gold question set, accuracy + abstention metrics)
 - [x] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
 - [x] Charts (ASCII + SVG output for distributions and trends)
+- [x] Data-quality profile (null rates, duplicates, empty rows, constant columns, whitespace, IQR outliers)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -113,6 +114,10 @@ for machine-readable output; `sheet --help` lists all commands.
   "I can't answer that" when the question cannot be understood from
   this sheet. Quoting the question is optional. JSON output is
   `{ question, answer, result }`, with `result: null` on abstention.
+- `sheet profile <file>` — data-quality report: duplicate and empty
+  rows, per-column null rates, constant columns, cells with
+  leading/trailing whitespace, and numeric outliers by the Tukey IQR
+  fence. JSON output is the profile object.
 - `sheet sheets <directory>` — list the sheets of a workbook, one
   line per sheet with its row count.
 
@@ -166,6 +171,43 @@ distribution sparkline under each numeric column, so skew and
 clustering are visible at a glance. The chart helpers
 (`renderBarChart`, `histogram`, `sparkline`, `renderBarChartSvg`)
 are exported from the package for programmatic use.
+
+## Data quality
+
+`sheet profile <file>` (or `profileSheet(parsed)` in code) reports
+what is wrong — or suspicious — about a sheet before anyone trusts
+an answer computed from it:
+
+```bash
+node dist/cli.js profile messy.csv
+```
+
+```
+9 rows, 3 columns
+
+Warnings:
+  - 1 duplicate row
+  - "region" has a single distinct value
+  - "score" has 1 outlier outside [5.75, 19.75]
+
+id (integer)
+  nulls: 0 (0%), distinct: 8
+...
+score (integer)
+  nulls: 0 (0%), distinct: 7
+  outliers: 1 outside [5.75, 19.75] (seen 1000 to 1000)
+```
+
+What it checks: duplicate rows (counted after the first occurrence),
+fully-empty rows, per-column null rates (a column ≥50% null is
+flagged), constant columns, non-null cells with leading/trailing
+whitespace (a silent join breaker: `"Paris"` and `"Paris "` look
+identical but are not), and numeric outliers by the Tukey IQR fence
+(1.5 × IQR outside Q1/Q3, quartiles by the median-of-halves method;
+fewer than 4 values means no fence). A clean sheet says so plainly —
+`No quality issues found.` — instead of printing an empty report.
+Like every other command it works on workbooks too (`--sheet <name>`
+picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
