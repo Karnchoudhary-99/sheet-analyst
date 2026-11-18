@@ -1,6 +1,7 @@
 {
-  "description": "Chat with your CSVs \u2014 natural-language data analysis",
+  "description": "Chat with your CSVs — natural-language data analysis",
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "tsx": "^4.19.4",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
