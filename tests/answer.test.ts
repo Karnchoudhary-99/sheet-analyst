@@ -96,6 +96,17 @@ describe("composeAbstention", () => {
       "I can't answer that from this data: no column named in the question. Columns available: date, region.",
     );
   });
+
+  it("does not list the columns twice when the reason already names them", () => {
+    const out = composeAbstention(
+      "no column named in the question — columns are: date, region",
+      ["date", "region"],
+    );
+    expect(out).toBe(
+      "I can't answer that from this data: no column named in the question — columns are: date, region.",
+    );
+    expect(out).not.toContain("Columns available:");
+  });
 });
 
 describe("answerQuestion end to end", () => {
@@ -113,8 +124,9 @@ describe("answerQuestion end to end", () => {
 
   it("abstains honestly on an unanswerable question", () => {
     const out = answerQuestion("total profit", SALES);
-    expect(out).toMatch(/I can't answer that from this data/);
-    expect(out).toMatch(/Columns available: date, region, product, units, revenue/);
+    expect(out).toBe(
+      "I can't answer that from this data: no column named in the question — columns are: date, region, product, units, revenue.",
+    );
   });
 
   it("answers a filtered count", () => {
