@@ -4,6 +4,7 @@
  *
  *   sheet columns <file> [--json]   list columns with inferred types
  *   sheet describe <file> [--json]  per-column descriptive statistics
+ *   sheet profile <file> [--json]   data-quality report
  *   sheet ask <file> <question> [--json]
  *                                    answer a plain-English question
  *
@@ -27,6 +28,7 @@ import { executeQuery, type QueryResult } from "./engine.js";
 import { VERSION } from "./index.js";
 import { parseQuestion } from "./query.js";
 import { inferSchema, type ColumnInfo } from "./schema.js";
+import { profileSheet, type SheetProfile } from "./profile.js";
 import { describe, type ColumnStats } from "./stats.js";
 import {
   renderResultChart,
@@ -69,6 +71,7 @@ export const USAGE = `sheet — chat with your CSVs from the command line
 Usage:
   sheet columns <file.csv> [--json]    list columns with inferred types
   sheet describe <file.csv> [--json]   per-column descriptive statistics
+  sheet profile <file.csv> [--json]    data-quality report (nulls, duplicates, outliers)
   sheet ask <file.csv> <question> [--json]
                                         answer a plain-English question
   sheet chart <file.csv> <question> [--svg <path>]
@@ -102,6 +105,15 @@ median and population stddev; date columns get their range and median
 date; text and boolean columns get their most common values. With
 --json the output is an array of { name, type, stats } objects.
 `,
+  profile: `Usage: sheet profile <file.csv> [--json]
+
+Report on the quality of the data before trusting answers from it:
+duplicate and empty rows, per-column null rates, constant columns,
+cells with leading/trailing whitespace, and numeric outliers by the
+Tukey IQR fence. Warnings name the column and the count; a clean
+sheet says so plainly. With --json the output is the profile object
+(rows, columnCount, duplicateRows, emptyRows, columns, warnings).
+`,
   ask: `Usage: sheet ask <file.csv> <question> [--json]
 
 Ask a plain-English question about the sheet and print the answer
@@ -130,7 +142,7 @@ question or pass --sheet <name>.
 `,
 };
 
-export type CommandName = "columns" | "describe" | "ask" | "sheets" | "chart";
+export type CommandName = "columns" | "describe" | "ask" | "sheets" | "chart" | "profile";
 
 export interface ParsedArgs {
   command: CommandName | "help" | "version";
@@ -146,7 +158,7 @@ export interface ParsedArgs {
   json: boolean;
 }
 
-const COMMANDS = new Set(["columns", "describe", "ask", "sheets", "chart"]);
+const COMMANDS = new Set(["columns", "describe", "ask", "sheets", "chart", "profile"]);
 
 /**
  * Parse argv (without the node/script entries) into a command.
@@ -400,6 +412,40 @@ export function formatDescribeText(parsed: ParsedCsv): string {
   return lines.join("\n");
 }
 
+/** Human-readable rendering of a data-quality profile. */
+export function formatProfileText(parsed: ParsedCsv): string {
+  const profile: SheetProfile = profileSheet(parsed);
+  const lines = [
+    `${profile.rows} ${profile.rows === 1 ? "row" : "rows"}, ${profile.columnCount} ${profile.columnCount === 1 ? "column" : "columns"}`,
+  ];
+  if (profile.warnings.length === 0) {
+    lines.push("No quality issues found.");
+  } else {
+    lines.push("\nWarnings:");
+    for (const warning of profile.warnings) {
+      lines.push(`  - ${warning}`);
+    }
+  }
+  for (const col of profile.columns) {
+    lines.push(`\n${col.name} (${col.type})`);
+    lines.push(
+      `  nulls: ${col.nullCount} (${Math.round(col.nullRate * 100)}%), distinct: ${col.distinctCount}`,
+    );
+    if (col.constant) lines.push("  constant: a single distinct value");
+    if (col.whitespaceCells > 0) {
+      lines.push(
+        `  whitespace: ${col.whitespaceCells} ${col.whitespaceCells === 1 ? "cell" : "cells"} with leading/trailing whitespace`,
+      );
+    }
+    if (col.outliers) {
+      lines.push(
+        `  outliers: ${col.outliers.count} outside [${col.outliers.lowBound}, ${col.outliers.highBound}] (seen ${col.outliers.low} to ${col.outliers.high})`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
 export interface AskJson {
   question: string;
   answer: string;
@@ -461,6 +507,16 @@ function runDescribe(args: ParsedArgs, out: CliOutput): number {
     (args.json
       ? JSON.stringify(describeWithTypes(parsed), null, 2)
       : formatDescribeText(parsed)) + "\n",
+  );
+  return 0;
+}
+
+function runProfile(args: ParsedArgs, out: CliOutput): number {
+  const parsed = resolveSheet(loadWorkbook(args.file!), args.sheet);
+  out.stdout(
+    (args.json
+      ? JSON.stringify(profileSheet(parsed), null, 2)
+      : formatProfileText(parsed)) + "\n",
   );
   return 0;
 }
@@ -527,6 +583,8 @@ export async function runCli(
         return runColumns(args, out);
       case "describe":
         return runDescribe(args, out);
+      case "profile":
+        return runProfile(args, out);
       case "ask":
         return runAsk(args, out);
       case "chart":
