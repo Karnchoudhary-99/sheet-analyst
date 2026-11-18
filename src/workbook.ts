@@ -101,6 +101,11 @@ export function loadWorkbookFromDir(dir: string): Workbook {
   return loadWorkbookFromFiles(files);
 }
 
+/** Sheet names in load order. */
+export function listSheets(workbook: Workbook): string[] {
+  return [...workbook.sheets.keys()];
+}
+
 /**
  * Ask a question against a workbook: pick the sheet, then answer
  * from it. Returns the sheet used (null when the question could not
