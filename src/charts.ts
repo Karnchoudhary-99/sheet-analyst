@@ -73,6 +73,27 @@ export function renderHistogram(
     .join("\n");
 }
 
+const SPARK_LEVELS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+
+/**
+ * A one-line sparkline for a numeric series (e.g. revenue over
+ * time): each value becomes one block character scaled between the
+ * series min and max. A flat series renders as mid-level blocks;
+ * an empty series renders "(no data)".
+ */
+export function sparkline(values: number[]): string {
+  if (values.length === 0) return "(no data)";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) return SPARK_LEVELS[3]!.repeat(values.length);
+  return values
+    .map((v) => {
+      const idx = Math.round(((v - min) / (max - min)) * (SPARK_LEVELS.length - 1));
+      return SPARK_LEVELS[idx]!;
+    })
+    .join("");
+}
+
 const BLOCK = "█";
 
 /** Pad a label to `width` with spaces (left-aligned). */
