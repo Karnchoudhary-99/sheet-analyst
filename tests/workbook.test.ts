@@ -62,7 +62,56 @@ describe("loadWorkbookFromDir", () => {
   });
 });
 
-describe("getSheet", () => {
+describe("askWorkbook", () => {
+  it("answers from the sheet named in a trailing 'in <sheet>' clause", () => {
+    const { sheet, answer } = askWorkbook("total revenue in sales", twoSheetWorkbook());
+    expect(sheet).toBe("sales");
+    expect(answer).toContain("1,789.6");
+  });
+
+  it("strips the sheet clause so it is not read as a filter", () => {
+    // "sales" is not a region value; without stripping, the question
+    // would still parse — but the answer must come from sales.csv.
+    const { sheet, answer } = askWorkbook("average salary in employees", twoSheetWorkbook());
+    expect(sheet).toBe("employees");
+    expect(answer).toContain("salary");
+  });
+
+  it("uses the preferred sheet and ignores the question's sheet clause", () => {
+    const { sheet } = askWorkbook(
+      "total revenue in sales",
+      twoSheetWorkbook(),
+      "employees",
+    );
+    expect(sheet).toBe("employees");
+  });
+
+  it("abstains naming the sheets when no sheet is given", () => {
+    const { sheet, answer } = askWorkbook("total revenue", twoSheetWorkbook());
+    expect(sheet).toBeNull();
+    expect(answer).toContain("Sheets available: sales, employees");
+  });
+
+  it("abstains when the preferred sheet does not exist", () => {
+    const { sheet, answer } = askWorkbook("total revenue", twoSheetWorkbook(), "budgets");
+    expect(sheet).toBeNull();
+    expect(answer).toContain('no sheet named "budgets"');
+    expect(answer).toContain("Sheets available: sales, employees");
+  });
+
+  it("answers from the only sheet without being asked", () => {
+    const wb = loadWorkbookFromFiles([SALES]);
+    const { sheet, answer } = askWorkbook("total revenue", wb);
+    expect(sheet).toBe("sales");
+    expect(answer).toContain("1,789.6");
+  });
+
+  it("abstains on an empty workbook", () => {
+    const { sheet, answer } = askWorkbook("total revenue", { sheets: new Map() });
+    expect(sheet).toBeNull();
+    expect(answer).toContain("no sheets");
+  });
+});
   it("matches sheet names case-insensitively", () => {
     const wb = twoSheetWorkbook();
     expect(getSheet(wb, "SALES")?.headers).toContain("revenue");
