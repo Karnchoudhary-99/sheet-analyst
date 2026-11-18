@@ -18,7 +18,7 @@ top-N) directly from the spreadsheet.
 - [x] Answer composer (cited numbers, honest "not in the data" handling)
 - [x] CLI (`sheet ask`, `sheet describe`, `sheet columns`)
 - [x] Eval harness (gold question set, accuracy + abstention metrics)
-- [ ] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
+- [x] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
 - [ ] Charts (ASCII + SVG output for distributions and trends)
 - [ ] Self-review checklist, then public
 
@@ -113,6 +113,31 @@ for machine-readable output; `sheet --help` lists all commands.
   "I can't answer that" when the question cannot be understood from
   this sheet. Quoting the question is optional. JSON output is
   `{ question, answer, result }`, with `result: null` on abstention.
+- `sheet sheets <directory>` — list the sheets of a workbook, one
+  line per sheet with its row count.
+
+### Workbooks (multi-sheet)
+
+A directory of CSVs is one workbook — one sheet per file, named
+after the file (`examples/` is a workbook with sheets `employees`
+and `sales`). Every command accepts a directory where it accepts a
+file:
+
+```bash
+node dist/cli.js sheets examples
+node dist/cli.js ask examples "total revenue in sales"
+node dist/cli.js ask examples "average salary" --sheet employees
+node dist/cli.js describe examples --sheet sales
+```
+
+Sheet routing for `ask`: `--sheet <name>` wins; otherwise a
+trailing `in|from|on <sheet>` clause in the question picks the sheet;
+a one-sheet workbook needs no choice. When a multi-sheet workbook
+gets a question that names no sheet, the answer is an honest
+abstention listing the sheets — the engine never guesses. `columns`
+and `describe` on a multi-sheet workbook without `--sheet` exit `2`
+with the same list. Duplicate sheet names get a `_2` suffix rather
+than dropping a file.
 
 Exit codes: `0` success (an abstention still exits `0` — the question
 was answered, just not from this data), `1` unreadable file or

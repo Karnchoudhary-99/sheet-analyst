@@ -277,3 +277,75 @@ describe("runCli end-to-end", () => {
     }
   });
 });
+
+describe("runCli workbooks", () => {
+  const examplesDir = join(root, "examples");
+
+  it("lists sheets with row counts", async () => {
+    const c = capture();
+    expect(await runCli(["sheets", examplesDir], c.out)).toBe(0);
+    expect(c.stdout.join("")).toContain("employees (");
+    expect(c.stdout.join("")).toContain("sales (8 rows)");
+  });
+
+  it("asks a workbook by naming the sheet in the question", async () => {
+    const c = capture();
+    expect(
+      await runCli(["ask", examplesDir, "total revenue in sales"], c.out),
+    ).toBe(0);
+    expect(c.stdout.join("")).toContain("1,789.6");
+  });
+
+  it("asks a workbook with --sheet and reports the sheet in JSON", async () => {
+    const c = capture();
+    expect(
+      await runCli(
+        ["ask", examplesDir, "average salary", "--sheet", "employees", "--json"],
+        c.out,
+      ),
+    ).toBe(0);
+    const out = JSON.parse(c.stdout.join(""));
+    expect(out.sheet).toBe("employees");
+    expect(out.result.kind).toBe("scalar");
+  });
+
+  it("abstains with the sheet list when the workbook question names no sheet", async () => {
+    const c = capture();
+    expect(await runCli(["ask", examplesDir, "total revenue"], c.out)).toBe(0);
+    expect(c.stdout.join("")).toContain("Sheets available: employees, sales");
+  });
+
+  it("runs columns/describe on a workbook sheet with --sheet", async () => {
+    const c = capture();
+    expect(
+      await runCli(["columns", examplesDir, "--sheet", "sales"], c.out),
+    ).toBe(0);
+    expect(c.stdout.join("")).toContain("revenue");
+
+    const d = capture();
+    expect(
+      await runCli(["describe", examplesDir, "--sheet", "employees"], d.out),
+    ).toBe(0);
+    expect(d.stdout.join("")).toContain("salary (integer)");
+  });
+
+  it("requires --sheet for columns on a multi-sheet workbook", async () => {
+    const c = capture();
+    expect(await runCli(["columns", examplesDir], c.out)).toBe(2);
+    expect(c.stderr.join("")).toContain("Multiple sheets");
+  });
+
+  it("reports an unknown sheet with exit 2", async () => {
+    const c = capture();
+    expect(
+      await runCli(["columns", examplesDir, "--sheet", "budgets"], c.out),
+    ).toBe(2);
+    expect(c.stderr.join("")).toContain('No sheet named "budgets"');
+  });
+
+  it("rejects --sheet without a value", () => {
+    expect(() => parseArgs(["ask", "x.csv", "total revenue", "--sheet"])).toThrowError(
+      /--sheet needs a sheet name/,
+    );
+  });
+});

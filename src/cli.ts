@@ -15,7 +15,7 @@
  * spawning a process; the real process wiring is at the bottom.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import {
   answerQuestion,
   composeAbstention,
@@ -28,6 +28,16 @@ import { VERSION } from "./index.js";
 import { parseQuestion } from "./query.js";
 import { inferSchema, type ColumnInfo } from "./schema.js";
 import { describe, type ColumnStats } from "./stats.js";
+import {
+  askWorkbook,
+  askWorkbookDetailed,
+  getSheet,
+  listSheets,
+  loadWorkbookFromDir,
+  loadWorkbookFromFiles,
+  WorkbookError,
+  type Workbook,
+} from "./workbook.js";
 
 export interface CliOutput {
   stdout: (text: string) => void;
@@ -56,11 +66,17 @@ Usage:
   sheet describe <file.csv> [--json]   per-column descriptive statistics
   sheet ask <file.csv> <question> [--json]
                                         answer a plain-English question
+  sheet sheets <directory>             list the sheets in a workbook
   sheet --help                         show this help
   sheet --version                      show the version
 
+A <file.csv> may also be a directory: every .csv inside becomes a
+sheet of one workbook. Use --sheet <name> to pick a sheet, or name
+it in the question ("total revenue in sales").
+
 Options:
   --json    machine-readable JSON instead of human-readable text
+  --sheet <name>  which sheet of a workbook to use
   --help    show help for sheet, or for a command (sheet ask --help)
 `;
 
@@ -86,10 +102,18 @@ question cannot be understood from this sheet. The question may be
 several words; quoting it is optional. With --json the output is
 { question, answer, result } where result is the structured query
 result, or null when the engine abstained.
+
+The file may be a directory (a workbook): name the sheet in the
+question ("total revenue in sales") or pass --sheet <name>.
+`,
+  sheets: `Usage: sheet sheets <directory>
+
+List the sheets of a workbook: one line per sheet with its row
+count. A single .csv file is a one-sheet workbook.
 `,
 };
 
-export type CommandName = "columns" | "describe" | "ask";
+export type CommandName = "columns" | "describe" | "ask" | "sheets";
 
 export interface ParsedArgs {
   command: CommandName | "help" | "version";
@@ -98,10 +122,12 @@ export interface ParsedArgs {
   file?: string;
   /** The question words for `ask`, joined with spaces. */
   question?: string;
+  /** Workbook sheet to use, from `--sheet <name>`. */
+  sheet?: string;
   json: boolean;
 }
 
-const COMMANDS = new Set(["columns", "describe", "ask"]);
+const COMMANDS = new Set(["columns", "describe", "ask", "sheets"]);
 
 /**
  * Parse argv (without the node/script entries) into a command.
@@ -129,13 +155,23 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   const command = first as CommandName;
 
-  // Split off flags (--json, --help) from positionals. A flag may
-  // appear anywhere after the command; anything else is positional.
+  // Split off flags (--json, --sheet <name>, --help) from positionals.
+  // A flag may appear anywhere after the command; anything else is
+  // positional.
   const positionals: string[] = [];
   let json = false;
-  for (const arg of rest) {
+  let sheet: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
     if (arg === "--json") {
       json = true;
+    } else if (arg === "--sheet") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("-")) {
+        throw new CliError(`--sheet needs a sheet name.\n${COMMAND_HELP[command]}`, 2);
+      }
+      sheet = value;
+      i += 1;
     } else if (arg === "--help" || arg === "-h") {
       return { command: "help", helpFor: command, json: false };
     } else if (arg.startsWith("-")) {
@@ -159,7 +195,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         2,
       );
     }
-    return { command, file, question: questionWords.join(" "), json };
+    return { command, file, question: questionWords.join(" "), sheet, json };
   }
   if (questionWords.length > 0) {
     throw new CliError(
@@ -167,7 +203,47 @@ export function parseArgs(argv: string[]): ParsedArgs {
       2,
     );
   }
-  return { command, file, json };
+  return { command, file, sheet, json };
+}
+
+/** Load a workbook from a path: a directory becomes a multi-sheet workbook, a file a one-sheet workbook. */
+export function loadWorkbook(path: string): Workbook {
+  try {
+    const stat = statSync(path);
+    return stat.isDirectory()
+      ? loadWorkbookFromDir(path)
+      : loadWorkbookFromFiles([path]);
+  } catch (err) {
+    if (err instanceof WorkbookError) throw new CliError(err.message);
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new CliError(`Cannot read file: ${path} (ENOENT)`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Pick the sheet a columns/describe command works on: `--sheet`
+ * wins, a one-sheet workbook needs no choice, and a multi-sheet
+ * workbook without `--sheet` is a usage error naming the sheets.
+ */
+export function resolveSheet(workbook: Workbook, sheetName?: string): ParsedCsv {
+  const sheets = listSheets(workbook);
+  if (sheetName !== undefined) {
+    const parsed = getSheet(workbook, sheetName);
+    if (!parsed) {
+      throw new CliError(
+        `No sheet named "${sheetName}". Sheets available: ${sheets.join(", ")}.`,
+        2,
+      );
+    }
+    return parsed;
+  }
+  if (sheets.length === 1) return workbook.sheets.get(sheets[0])!;
+  throw new CliError(
+    `Multiple sheets — use --sheet <name>. Sheets available: ${sheets.join(", ")}.`,
+    2,
+  );
 }
 
 /** Read a CSV file and parse it, or throw a user-facing CliError. */
@@ -283,6 +359,8 @@ export interface AskJson {
   answer: string;
   /** Structured result, or null when the engine abstained. */
   result: QueryResult | null;
+  /** Sheet the answer came from, when the input was a workbook. */
+  sheet?: string;
 }
 
 export function askJson(question: string, parsed: ParsedCsv): AskJson {
@@ -301,8 +379,28 @@ export function askJson(question: string, parsed: ParsedCsv): AskJson {
   return { question, answer: composeAnswer(result, parsed), result };
 }
 
+/** `ask --json` against a workbook: the sheet is part of the output. */
+export function askWorkbookJson(
+  question: string,
+  workbook: Workbook,
+  sheetName?: string,
+): AskJson {
+  const { sheet, answer, result } = askWorkbookDetailed(question, workbook, sheetName);
+  return { question, answer, result, sheet: sheet ?? undefined };
+}
+
+function runSheets(args: ParsedArgs, out: CliOutput): number {
+  const workbook = loadWorkbook(args.file!);
+  const lines = listSheets(workbook).map((name) => {
+    const rows = workbook.sheets.get(name)!.rows.length;
+    return `${name} (${rows} ${rows === 1 ? "row" : "rows"})`;
+  });
+  out.stdout(lines.join("\n") + "\n");
+  return 0;
+}
+
 function runColumns(args: ParsedArgs, out: CliOutput): number {
-  const parsed = loadSheet(args.file!);
+  const parsed = resolveSheet(loadWorkbook(args.file!), args.sheet);
   out.stdout(
     (args.json
       ? JSON.stringify(inferSchema(parsed), null, 2)
@@ -312,7 +410,7 @@ function runColumns(args: ParsedArgs, out: CliOutput): number {
 }
 
 function runDescribe(args: ParsedArgs, out: CliOutput): number {
-  const parsed = loadSheet(args.file!);
+  const parsed = resolveSheet(loadWorkbook(args.file!), args.sheet);
   out.stdout(
     (args.json
       ? JSON.stringify(describeWithTypes(parsed), null, 2)
@@ -322,13 +420,13 @@ function runDescribe(args: ParsedArgs, out: CliOutput): number {
 }
 
 function runAsk(args: ParsedArgs, out: CliOutput): number {
-  const parsed = loadSheet(args.file!);
+  const workbook = loadWorkbook(args.file!);
   const question = args.question!;
   if (args.json) {
-    out.stdout(JSON.stringify(askJson(question, parsed), null, 2) + "\n");
+    out.stdout(JSON.stringify(askWorkbookJson(question, workbook, args.sheet), null, 2) + "\n");
     return 0;
   }
-  out.stdout(answerQuestion(question, parsed) + "\n");
+  out.stdout(askWorkbook(question, workbook, args.sheet).answer + "\n");
   return 0;
 }
 
@@ -357,6 +455,8 @@ export async function runCli(
         return runDescribe(args, out);
       case "ask":
         return runAsk(args, out);
+      case "sheets":
+        return runSheets(args, out);
     }
   } catch (err) {
     if (err instanceof CliError) {

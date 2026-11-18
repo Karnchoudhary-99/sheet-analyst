@@ -21,3 +21,14 @@ export {
   composeAbstention,
   formatNumber,
 } from "./answer.js";
+export {
+  askWorkbook,
+  askWorkbookDetailed,
+  getSheet,
+  listSheets,
+  loadWorkbookFromDir,
+  loadWorkbookFromFiles,
+  sheetNameFromPath,
+  WorkbookError,
+  type Workbook,
+} from "./workbook.js";
