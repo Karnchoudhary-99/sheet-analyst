@@ -112,6 +112,8 @@ describe("askWorkbook", () => {
     expect(answer).toContain("no sheets");
   });
 });
+
+describe("getSheet", () => {
   it("matches sheet names case-insensitively", () => {
     const wb = twoSheetWorkbook();
     expect(getSheet(wb, "SALES")?.headers).toContain("revenue");
