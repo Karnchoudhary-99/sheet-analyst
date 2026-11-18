@@ -298,7 +298,7 @@ export function askJson(question: string, parsed: ParsedCsv): AskJson {
     };
   }
   const result = executeQuery(parsedQuestion.query, parsed);
-  return { question, answer: composeAnswer(result), result };
+  return { question, answer: composeAnswer(result, parsed), result };
 }
 
 function runColumns(args: ParsedArgs, out: CliOutput): number {
