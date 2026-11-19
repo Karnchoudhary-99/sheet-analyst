@@ -23,6 +23,7 @@ top-N) directly from the spreadsheet.
 - [x] Time-series grouping (by day/week/month/quarter/year + line charts)
 - [x] Data-quality profile (null rates, duplicates, empty rows, constant columns, whitespace, IQR outliers)
 - [x] Query explanation + result export (`sheet explain`, `ask --out` .json/.csv)
+- [x] Correlation + quartiles (Pearson r questions, Q1/Q3 in `describe`)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -49,11 +50,11 @@ missing. It also reports null counts, distinct counts and samples.
 ## Descriptive statistics
 
 `describe` (in `src/stats.ts`) summarizes every column: numeric
-columns get count, min/max, sum, mean, median and population stddev
-(dates are summarized as epoch ranges); text and boolean columns get
-their top 10 values by frequency, with ties broken alphabetically.
-Try it on the bundled samples in `examples/` (`sales.csv`,
-`employees.csv`).
+columns get count, min/max, quartiles (Q1/median/Q3 by linear
+interpolation), sum, mean and population stddev (dates are summarized
+as epoch ranges); text and boolean columns get their top 10 values by
+frequency, with ties broken alphabetically. Try it on the bundled
+samples in `examples/` (`sales.csv`, `employees.csv`).
 
 ## Asking questions
 
@@ -80,6 +81,8 @@ answerQuestion("total profit", sales);
 // "I can't answer that from this data: no column named in the question…"
 answerQuestion("total revenue by month", monthlySales);
 // "Total revenue by month:\n- Jan 2026: 664.91 (4 rows)\n- Feb 2026: 914.81 (4 rows)…"
+answerQuestion("correlation between revenue and units", sales);
+// "The correlation between revenue and units is 0.90 (strong positive) across 7 paired rows."
 ```
 
 Time grouping (`src/time.ts`) collapses the sheet's date column
@@ -100,14 +103,20 @@ Supported shapes: totals, averages, medians, minimums, maximums
 group-by ("total revenue by region", "average salary per department"),
 top-N ("top 3 products by revenue", "highest revenue" = top 1), filters
 ("total revenue where region is North", "average salary where salary >
-90000", "sales in North"), and row queries ("show rows where region is
-North"). Filters compare numbers numerically, dates by day, and text
-case-insensitively. Aggregates skip null values and say so when some
-matching rows had no usable value; a column with no usable values at
-all is reported as such, never rendered as zero. When a question cannot
-be understood unambiguously — unknown or ambiguous column, a value that
-belongs to several columns — the parser abstains with a reason instead
-of answering a different question.
+90000", "sales in North"), row queries ("show rows where region is
+North"), and correlation ("correlation between revenue and units",
+"how correlated are salary and age"). A correlation is the Pearson
+coefficient over the rows where both columns have a value (a blank in
+either column drops that row from the pairing), reported with a
+strength word (strong ≥ 0.7, moderate ≥ 0.4, weak ≥ 0.1, negligible
+below that); fewer than two pairs, or a constant column, is reported
+as uncomputable rather than as zero. Filters compare numbers
+numerically, dates by day, and text case-insensitively. Aggregates skip
+null values and say so when some matching rows had no usable value; a
+column with no usable values at all is reported as such, never rendered
+as zero. When a question cannot be understood unambiguously — unknown
+or ambiguous column, a value that belongs to several columns — the
+parser abstains with a reason instead of answering a different question.
 
 ## Command-line interface
 
@@ -125,9 +134,9 @@ for machine-readable output; `sheet --help` lists all commands.
 - `sheet columns <file>` — one line per column: inferred type, null
   count, distinct count, samples. JSON output is the schema array.
 - `sheet describe <file>` — per-column statistics: numeric columns
-  get count, min/max, mean, median and population stddev; date
-  columns get their range and median date (never epoch sums); text
-  and boolean columns get their most common values.
+  get count, min/max, quartiles (Q1/median/Q3), mean and population
+  stddev; date columns get their range and median date (never epoch sums);
+  text and boolean columns get their most common values.
 - `sheet ask <file> <question>` — the composed answer, or an honest
   "I can't answer that" when the question cannot be understood from
   this sheet. Quoting the question is optional. JSON output is
@@ -274,16 +283,17 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 24-question gold set over
+`npm run eval` scores the engine against a 27-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, top-N, filters and row queries, time grouping
-(monthly totals, averages, counts, top months), plus four
-questions the honest answer is an abstention for (unknown column,
-unanswerable question, unsupported period). Expected values are hand-computed from the
+(monthly totals, averages, counts, top months), correlation (units vs
+revenue, id vs salary), plus five questions the honest answer is an
+abstention for (unknown column, unanswerable question, unsupported
+period, correlation with a text column). Expected values are hand-computed from the
 CSVs, never derived from the code under test.
 
-Baseline (2026-11-19): answer accuracy 20/20 (100%), abstention
-accuracy 4/4 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-19): answer accuracy 22/22 (100%), abstention
+accuracy 5/5 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row
