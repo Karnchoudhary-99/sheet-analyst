@@ -18,6 +18,10 @@ export interface NumericStats {
   sum: number;
   mean: number;
   median: number;
+  /** First quartile (25th percentile, linear interpolation). */
+  q1: number;
+  /** Third quartile (75th percentile, linear interpolation). */
+  q3: number;
   stddev: number;
 }
 
@@ -32,9 +36,23 @@ export interface CategoricalStats {
 
 export type ColumnStats = NumericStats | CategoricalStats;
 
+/**
+ * Percentile of a pre-sorted array by linear interpolation between
+ * the two nearest ranks (the same method as numpy's default): the
+ * rank is `p * (n - 1)`, so the median of an even-length sample is
+ * the average of the two middle values, matching `numericStats`.
+ */
+export function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) throw new Error("percentile of an empty array");
+  const rank = p * (sorted.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.min(lo + 1, sorted.length - 1);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo);
+}
+
 export function numericStats(values: number[]): Pick<
   NumericStats,
-  "min" | "max" | "sum" | "mean" | "median" | "stddev"
+  "min" | "max" | "sum" | "mean" | "median" | "q1" | "q3" | "stddev"
 > {
   const sorted = [...values].sort((a, b) => a - b);
   const n = sorted.length;
@@ -50,8 +68,35 @@ export function numericStats(values: number[]): Pick<
     sum,
     mean,
     median,
+    q1: percentile(sorted, 0.25),
+    q3: percentile(sorted, 0.75),
     stddev: Math.sqrt(variance),
   };
+}
+
+/**
+ * Pearson correlation coefficient between two paired series, or
+ * null when it cannot be computed: fewer than two pairs, or either
+ * series constant (zero variance makes the denominator zero, so
+ * there is no correlation to report — not a zero correlation).
+ */
+export function pearsonCorrelation(xs: number[], ys: number[]): number | null {
+  if (xs.length !== ys.length || xs.length < 2) return null;
+  const n = xs.length;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  let cov = 0;
+  let varX = 0;
+  let varY = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - meanX;
+    const dy = ys[i] - meanY;
+    cov += dx * dy;
+    varX += dx * dx;
+    varY += dy * dy;
+  }
+  if (varX === 0 || varY === 0) return null;
+  return cov / Math.sqrt(varX * varY);
 }
 
 function toNumber(value: string): number | null {
@@ -104,6 +149,8 @@ export function describeColumn(
       sum: stats.sum,
       mean: stats.mean,
       median: stats.median,
+      q1: stats.q1,
+      q3: stats.q3,
       stddev: stats.stddev,
     };
   }

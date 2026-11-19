@@ -246,3 +246,47 @@ describe("executeQuery time bucketing", () => {
     }
   });
 });
+
+describe("executeQuery correlation", () => {
+  it("computes Pearson r over the paired rows only", () => {
+    // The blank-units row pairs with nothing, so 5 pairs, not 6.
+    const r = ask("correlation between revenue and units");
+    expect(r.kind).toBe("correlation");
+    if (r.kind === "correlation") {
+      expect(r.value).toBeCloseTo(0.9761, 4);
+      expect(r.pairs).toBe(5);
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("respects filters when pairing", () => {
+    const r = ask("correlation between revenue and units where region is North");
+    expect(r.kind).toBe("correlation");
+    if (r.kind === "correlation") {
+      // North rows: (12, 240), (3, 149.97) — the blank-units row drops out.
+      expect(r.pairs).toBe(2);
+      expect(r.rowsMatched).toBe(3);
+      expect(r.value).toBeCloseTo(1, 4);
+    }
+  });
+
+  it("yields null for a constant column", () => {
+    const flat = parseCsv("a,b\n1,5\n2,5\n3,5\n");
+    const r = ask("correlation between a and b", flat);
+    expect(r.kind).toBe("correlation");
+    if (r.kind === "correlation") {
+      expect(r.value).toBeNull();
+      expect(r.pairs).toBe(3);
+    }
+  });
+
+  it("yields null with fewer than two pairs", () => {
+    const sparse = parseCsv("a,b\n1,\n,2\n");
+    const r = ask("correlation between a and b", sparse);
+    expect(r.kind).toBe("correlation");
+    if (r.kind === "correlation") {
+      expect(r.value).toBeNull();
+      expect(r.pairs).toBe(0);
+    }
+  });
+});

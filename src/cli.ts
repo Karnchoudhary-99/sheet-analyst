@@ -105,8 +105,8 @@ and a few sample values. With --json the output is the schema array
 `,
   describe: `Usage: sheet describe <file.csv> [--json]
 
-Summarize every column: numeric columns get count, min/max, mean,
-median and population stddev; date columns get their range and median
+Summarize every column: numeric columns get count, min/max, quartiles
+(Q1/median/Q3), mean and population stddev; date columns get their range and median
 date; text and boolean columns get their most common values. With
 --json the output is an array of { name, type, stats } objects.
 `,
@@ -445,7 +445,7 @@ export function formatDescribeText(parsed: ParsedCsv): string {
         `  values: ${stats.count}, nulls: ${stats.nullCount}, distinct: ${stats.distinctCount}`,
       );
       lines.push(
-        `  min: ${formatNumber(stats.min)}, max: ${formatNumber(stats.max)}, mean: ${formatNumber(stats.mean)}, median: ${formatNumber(stats.median)}, stddev: ${formatNumber(stats.stddev)}`,
+        `  min: ${formatNumber(stats.min)}, q1: ${formatNumber(stats.q1)}, median: ${formatNumber(stats.median)}, q3: ${formatNumber(stats.q3)}, max: ${formatNumber(stats.max)}, mean: ${formatNumber(stats.mean)}, stddev: ${formatNumber(stats.stddev)}`,
       );
       // One-line shape of the distribution: sorted values as a
       // sparkline, so skew and clustering are visible at a glance.

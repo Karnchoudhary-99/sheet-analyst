@@ -130,8 +130,14 @@ describe("formatDescribeText", () => {
     const text = formatDescribeText(sales);
     expect(text).toContain("revenue (number)");
     expect(text).toContain("min:");
+    expect(text).toContain("q1:");
+    expect(text).toContain("q3:");
     expect(text).toContain("mean:");
     expect(text).toContain("stddev:");
+    // sales.csv revenue sorted: 0, 124.95, 149.97, 199.92, 224.91,
+    // 240, 400, 449.85 — Q1 rank 1.75, Q3 rank 5.25.
+    expect(text).toContain("q1: 143.72");
+    expect(text).toContain("q3: 280");
   });
 
   it("shows a date range instead of epoch statistics", () => {

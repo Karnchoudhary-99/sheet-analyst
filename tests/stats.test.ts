@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseCsv } from "../src/csv.js";
-import { describe as describeSheet, numericStats } from "../src/stats.js";
+import {
+  describe as describeSheet,
+  numericStats,
+  pearsonCorrelation,
+  percentile,
+} from "../src/stats.js";
 
 describe("numericStats", () => {
   it("computes mean, median and population stddev", () => {
@@ -18,6 +23,56 @@ describe("numericStats", () => {
     expect(s.mean).toBe(7);
     expect(s.median).toBe(7);
     expect(s.stddev).toBe(0);
+  });
+
+  it("reports quartiles by linear interpolation", () => {
+    // Linear interpolation: Q1 rank 1.75 lands on 4, Q3 rank 5.25
+    // lands a quarter of the way from 5 to 7.
+    const s = numericStats([2, 4, 4, 4, 5, 5, 7, 9]);
+    expect(s.q1).toBe(4);
+    expect(s.q3).toBe(5.5);
+    // A single value has no spread: all quartiles equal it.
+    const one = numericStats([7]);
+    expect(one.q1).toBe(7);
+    expect(one.q3).toBe(7);
+  });
+});
+
+describe("percentile", () => {
+  it("interpolates between ranks", () => {
+    expect(percentile([0, 10], 0.5)).toBe(5);
+    expect(percentile([0, 10, 20, 30], 0.25)).toBe(7.5);
+    expect(percentile([1, 2, 3], 0)).toBe(1);
+    expect(percentile([1, 2, 3], 1)).toBe(3);
+  });
+
+  it("throws on an empty array", () => {
+    expect(() => percentile([], 0.5)).toThrow("empty array");
+  });
+});
+
+describe("pearsonCorrelation", () => {
+  it("is 1 for a perfect positive line, -1 for a perfect negative one", () => {
+    expect(pearsonCorrelation([1, 2, 3, 4], [2, 4, 6, 8])).toBeCloseTo(1, 10);
+    expect(pearsonCorrelation([1, 2, 3, 4], [8, 6, 4, 2])).toBeCloseTo(-1, 10);
+  });
+
+  it("is near 0 for unrelated series", () => {
+    expect(pearsonCorrelation([1, 2, 3, 4], [1, 4, 2, 3])).toBeCloseTo(0.4, 10);
+  });
+
+  it("returns null with fewer than two pairs", () => {
+    expect(pearsonCorrelation([1], [2])).toBeNull();
+    expect(pearsonCorrelation([], [])).toBeNull();
+  });
+
+  it("returns null for a constant series, not a misleading zero", () => {
+    expect(pearsonCorrelation([5, 5, 5], [1, 2, 3])).toBeNull();
+    expect(pearsonCorrelation([1, 2, 3], [5, 5, 5])).toBeNull();
+  });
+
+  it("returns null on mismatched lengths", () => {
+    expect(pearsonCorrelation([1, 2], [1])).toBeNull();
   });
 });
 

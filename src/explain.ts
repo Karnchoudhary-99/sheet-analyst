@@ -90,6 +90,14 @@ export function describeQuery(query: Query): string[] {
         `limit: ${query.limit}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
+    case "correlation":
+      return [
+        `correlation between ${query.columnA} and ${query.columnB}`,
+        "operation: correlation",
+        `column A: ${query.columnA}`,
+        `column B: ${query.columnB}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
   }
 }
 

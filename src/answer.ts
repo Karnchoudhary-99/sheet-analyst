@@ -78,6 +78,43 @@ function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string
   return `${scope}:\n${lines.join("\n")}`;
 }
 
+function composeCorrelation(
+  result: Extract<QueryResult, { kind: "correlation" }>,
+): string {
+  const { columnA, columnB, value, pairs, rowsMatched } = result;
+  if (value === null) {
+    if (pairs < 2) {
+      return (
+        `I could not compute the correlation between ${columnA} and ${columnB} — ` +
+        `only ${pairs} of the ${rowsMatched} matching ${plural(rowsMatched, "row")} ` +
+        `${pairs === 1 ? "has" : "have"} values in both columns.`
+      );
+    }
+    return (
+      `I could not compute the correlation between ${columnA} and ${columnB} — ` +
+      `one of the columns is constant in the matching rows, so there is no ` +
+      `variation to correlate.`
+    );
+  }
+  // -0.00 reads as a typo; round tiny values to a clean 0.00.
+  const display = Math.abs(value) < 0.005 ? 0 : value;
+  const abs = Math.abs(value);
+  const strength =
+    abs >= 0.7 ? "strong" : abs >= 0.4 ? "moderate" : abs >= 0.1 ? "weak" : "negligible";
+  const paired = `${pairs} paired ${plural(pairs, "row")}`;
+  if (strength === "negligible") {
+    return (
+      `The correlation between ${columnA} and ${columnB} is ${display.toFixed(2)} ` +
+      `(negligible — essentially no linear relationship) across ${paired}.`
+    );
+  }
+  const direction = value >= 0 ? "positive" : "negative";
+  return (
+    `The correlation between ${columnA} and ${columnB} is ${display.toFixed(2)} ` +
+    `(${strength} ${direction}) across ${paired}.`
+  );
+}
+
 function composeRows(
   result: Extract<QueryResult, { kind: "rows" }>,
   parsed?: ParsedCsv,
@@ -118,6 +155,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeGroups(result);
     case "rows":
       return composeRows(result, parsed);
+    case "correlation":
+      return composeCorrelation(result);
   }
 }
 

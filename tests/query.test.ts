@@ -341,3 +341,65 @@ describe("parseQuestion abstention", () => {
     if (!r.ok) expect(r.reason).toMatch(/could not understand the filter/);
   });
 });
+
+describe("parseQuestion correlation", () => {
+  it("parses 'correlation between X and Y'", () => {
+    const r = parseQuestion("correlation between revenue and units", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "correlation",
+        columnA: "revenue",
+        columnB: "units",
+        filters: [],
+      },
+    });
+  });
+
+  it("parses 'how correlated are X and Y'", () => {
+    const r = parseQuestion("how correlated are salary and id", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "correlation") {
+      expect(new Set([r.query.columnA, r.query.columnB])).toEqual(
+        new Set(["salary", "id"]),
+      );
+    }
+  });
+
+  it("keeps filters on a correlation question", () => {
+    const r = parseQuestion(
+      "correlation between revenue and units where region is North",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "correlation") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "=", value: "North" },
+      ]);
+    }
+  });
+
+  it("abstains when fewer than two columns are named", () => {
+    const r = parseQuestion("correlation between revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs two columns/);
+  });
+
+  it("abstains when a column is not numeric", () => {
+    const r = parseQuestion("correlation between revenue and region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/two numeric columns/);
+  });
+
+  it("abstains when a named column does not exist", () => {
+    const r = parseQuestion("correlation between revenue and profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs two columns/);
+  });
+
+  it("abstains on a time-grouped correlation", () => {
+    const r = parseQuestion("correlation between revenue and units by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+});

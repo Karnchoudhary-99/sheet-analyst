@@ -18,7 +18,7 @@
 import type { ParsedCsv } from "./csv.js";
 import type { Filter, Query } from "./query.js";
 import { inferSchema, isNullValue, type ColumnInfo } from "./schema.js";
-import { numericStats } from "./stats.js";
+import { numericStats, pearsonCorrelation } from "./stats.js";
 import { bucketDate, parseDate, type TimeBucket } from "./time.js";
 
 export type QueryResult =
@@ -48,6 +48,16 @@ export type QueryResult =
       rows: Record<string, string>[];
       totalMatched: number;
       limitedTo?: number;
+    }
+  | {
+      kind: "correlation";
+      columnA: string;
+      columnB: string;
+      /** Pearson r, or null when fewer than 2 paired values or a constant column. */
+      value: number | null;
+      /** Rows where both columns had a usable numeric value. */
+      pairs: number;
+      rowsMatched: number;
     };
 
 function toNumber(value: string): number | null {
@@ -318,6 +328,35 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         rows: records,
         totalMatched: rows.length,
         limitedTo: query.limit,
+      };
+    }
+
+    case "correlation": {
+      const aIdx = colIndex.get(query.columnA)!;
+      const bIdx = colIndex.get(query.columnB)!;
+      const rows = applyFilters(parsed, schema, query.filters);
+      // Only rows where BOTH columns have a usable numeric value
+      // pair up; a blank in either column drops the row from the
+      // pairing, never from the row count.
+      const xs: number[] = [];
+      const ys: number[] = [];
+      for (const row of rows) {
+        const aRaw = row[aIdx] ?? "";
+        const bRaw = row[bIdx] ?? "";
+        if (isNullValue(aRaw) || isNullValue(bRaw)) continue;
+        const a = toNumber(aRaw);
+        const b = toNumber(bRaw);
+        if (a === null || b === null) continue;
+        xs.push(a);
+        ys.push(b);
+      }
+      return {
+        kind: "correlation",
+        columnA: query.columnA,
+        columnB: query.columnB,
+        value: pearsonCorrelation(xs, ys),
+        pairs: xs.length,
+        rowsMatched: rows.length,
       };
     }
 
