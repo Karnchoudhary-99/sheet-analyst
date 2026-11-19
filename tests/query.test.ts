@@ -280,6 +280,22 @@ describe("parseQuestion time grouping", () => {
     if (!r.ok) expect(r.reason).toMatch(/one period at a time/);
   });
 
+  it("ranks periods for a bare period word in top-N", () => {
+    const r = parseQuestion("top 2 months by revenue", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "top",
+        column: "revenue",
+        limit: 2,
+        direction: "highest",
+        groupBy: "date",
+        filters: [],
+        bucket: "month",
+      },
+    });
+  });
+
   it("leaves plain group-by questions untouched", () => {
     const r = parseQuestion("total revenue by region", SALES);
     expect(r.ok).toBe(true);

@@ -420,11 +420,31 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
         reason: `could not tell which column to rank — matches ${groupHits.map((c) => c.name).join(", ")}`,
       };
     }
-    // A time bucket with a top-N question ranks the periods
-    // ("top 3 months by revenue") — the grouped column must be a
-    // date column, or there is nothing to bucket.
+    // A bare period word ranks the periods ("top 3 months by
+    // revenue") — the grouped column is the sheet's date column.
+    // A column actually named "months" still wins over the period.
     let topBucket: TimeBucket | undefined;
     let topGroupBy = groupHits[0]?.name;
+    if (groupHits.length === 0 && groupPhrase) {
+      const periodWord = normalize(groupPhrase);
+      const periodBucket =
+        BUCKET_WORDS[periodWord] ?? BUCKET_WORDS[singular(periodWord)];
+      if (periodBucket) {
+        if (bucket) {
+          return {
+            ok: false,
+            reason: "group by one period at a time — e.g. 'by month', not 'by month by year'",
+          };
+        }
+        const resolved = resolveBucketColumn(periodBucket, null, columns);
+        if (resolved.error) return { ok: false, reason: resolved.error };
+        topBucket = periodBucket;
+        topGroupBy = resolved.column!.name;
+      }
+    }
+    // A time bucket with a top-N question ranks the periods
+    // ("top 3 products by revenue by month" is two-dimensional and
+    // abstains — the grouped column must be a date column).
     if (bucket) {
       const resolved = resolveBucketColumn(bucket, groupHits[0] ?? null, columns);
       if (resolved.error) return { ok: false, reason: resolved.error };
