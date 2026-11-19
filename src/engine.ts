@@ -73,6 +73,24 @@ export type QueryResult =
       pctChange: number | null;
       /** Rows that fell in either period (rows outside both periods are not part of the comparison). */
       rowsMatched: number;
+    }
+  | {
+      kind: "share";
+      /** The column being shared out, or null for a row-count share. */
+      column: string | null;
+      /** The subset's total (sum of the column) or subset row count. */
+      subsetValue: number;
+      /** The whole sheet's total (sum of the column) or total row count. */
+      totalValue: number;
+      /** subsetValue / totalValue, or null when the total is zero. */
+      share: number | null;
+      /** Rows in the subset / rows in the whole sheet. */
+      subsetRows: number;
+      totalRows: number;
+      /** Subset rows with a usable numeric value (row shares: the subset row count). */
+      valuesUsed: number;
+      /** All rows with a usable numeric value (row shares: the total row count). */
+      totalValuesUsed: number;
     };
 
 function toNumber(value: string): number | null {
@@ -391,6 +409,55 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         rows: records,
         totalMatched: rows.length,
         limitedTo: rows.length > query.limit ? query.limit : undefined,
+      };
+    }
+
+    case "share": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      const totalRows = parsed.rows.length;
+      if (query.column === null) {
+        // Row-count share: the filtered rows as a fraction of all rows.
+        return {
+          kind: "share",
+          column: null,
+          subsetValue: rows.length,
+          totalValue: totalRows,
+          share: totalRows === 0 ? null : rows.length / totalRows,
+          subsetRows: rows.length,
+          totalRows,
+          valuesUsed: rows.length,
+          totalValuesUsed: totalRows,
+        };
+      }
+      // Value share: the subset's total of the column as a fraction
+      // of the whole sheet's total. Nulls are skipped on both sides,
+      // so a blank cell never counts as a zero in either total.
+      const cIdx = colIndex.get(query.column)!;
+      const sumOf = (rs: string[][]): { sum: number; used: number } => {
+        let sum = 0;
+        let used = 0;
+        for (const r of rs) {
+          const raw = r[cIdx] ?? "";
+          if (isNullValue(raw)) continue;
+          const n = toNumber(raw);
+          if (n === null) continue;
+          sum += n;
+          used += 1;
+        }
+        return { sum, used };
+      };
+      const subset = sumOf(rows);
+      const total = sumOf(parsed.rows);
+      return {
+        kind: "share",
+        column: query.column,
+        subsetValue: subset.sum,
+        totalValue: total.sum,
+        share: total.sum === 0 ? null : subset.sum / total.sum,
+        subsetRows: rows.length,
+        totalRows,
+        valuesUsed: subset.used,
+        totalValuesUsed: total.used,
       };
     }
 
