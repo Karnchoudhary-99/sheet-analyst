@@ -76,6 +76,11 @@ export const EVAL_GATE = 0.8;
  * South 649.77 / 1,789.60 = 36.31%; North is 3 of 8 rows (37.5%);
  * employees salary: Engineering 193,000 / 372,000 = 51.88%. A share
  * with no group, of an average, or of a missing column abstains.
+ *
+ * distinct values — sales regions: North 3, East 2, South 2, West 1
+ * (most frequent first, alphabetical tie-break); sales products in
+ * North: Widget A 2, "Widget, Deluxe" 1; employees departments:
+ * Engineering 3, Data 2. A distinct question naming no column abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -315,6 +320,30 @@ export const GOLD_SET: EvalCase[] = [
   {
     sheet: "sales",
     question: "what share of profit is North",
+    expect: "abstain",
+    note: "no 'profit' column exists",
+  },
+  {
+    sheet: "sales",
+    question: "list unique regions",
+    expect: ["North: 3", "East: 2", "South: 2", "West: 1"],
+    note: "North 3 rows, East and South 2 each (alphabetical tie-break), West 1",
+  },
+  {
+    sheet: "sales",
+    question: "list unique products in North",
+    expect: ["Widget A: 2", "Widget, Deluxe: 1"],
+    note: "North rows are Widget A twice and 'Widget, Deluxe' once (Widget C is South)",
+  },
+  {
+    sheet: "employees",
+    question: "what are the distinct departments",
+    expect: ["Engineering: 3", "Data: 2"],
+    note: "3 of the 5 employees are in Engineering, 2 in Data",
+  },
+  {
+    sheet: "sales",
+    question: "list unique profit",
     expect: "abstain",
     note: "no 'profit' column exists",
   },
