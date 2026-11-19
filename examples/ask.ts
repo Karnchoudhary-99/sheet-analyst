@@ -23,6 +23,7 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["average salary by department", staff],
   ["how many employees in Engineering", staff],
   ["lowest salary", staff],
+  ["correlation between revenue and units", sales],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];
