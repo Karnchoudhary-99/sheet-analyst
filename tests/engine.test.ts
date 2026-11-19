@@ -375,6 +375,7 @@ describe("executeQuery share", () => {
     expect(r).toEqual({
       kind: "share",
       column: "revenue",
+      filters: [{ column: "region", op: "=", value: "North" }],
       subsetValue: 389.97,
       totalValue: 1114.84,
       share: 389.97 / 1114.84,
@@ -390,6 +391,7 @@ describe("executeQuery share", () => {
     expect(r).toEqual({
       kind: "share",
       column: null,
+      filters: [{ column: "region", op: "=", value: "North" }],
       subsetValue: 3,
       totalValue: 6,
       share: 0.5,

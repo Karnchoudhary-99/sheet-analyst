@@ -713,7 +713,19 @@ function tryParseShare(
         reason: `"${rest}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0].name} is ${rest}"`,
       };
     }
-    allFilters.push({ column: owners[0].name, op: "=", value: rest });
+    // Keep the value's spelling as it appears in the sheet ("North",
+    // not the lowercased "north" the parser matched on), so answers
+    // read naturally.
+    const ownerIdx = columns.indexOf(owners[0]);
+    let rawValue = rest;
+    for (const row of parsed.rows) {
+      const cell = (row[ownerIdx] ?? "").trim();
+      if (cell.toLowerCase() === rest) {
+        rawValue = cell;
+        break;
+      }
+    }
+    allFilters.push({ column: owners[0].name, op: "=", value: rawValue });
   }
   if (allFilters.length === 0) {
     return {

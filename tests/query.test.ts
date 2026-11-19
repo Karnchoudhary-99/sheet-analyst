@@ -525,7 +525,7 @@ describe("parseQuestion share", () => {
       query: {
         kind: "share",
         column: "revenue",
-        filters: [{ column: "region", op: "=", value: "north" }],
+        filters: [{ column: "region", op: "=", value: "North" }],
       },
     });
   });
@@ -540,7 +540,7 @@ describe("parseQuestion share", () => {
       query: {
         kind: "share",
         column: "revenue",
-        filters: [{ column: "region", op: "=", value: "north" }],
+        filters: [{ column: "region", op: "=", value: "North" }],
       },
     });
   });
@@ -576,7 +576,7 @@ describe("parseQuestion share", () => {
       query: {
         kind: "share",
         column: "revenue",
-        filters: [{ column: "product", op: "=", value: "widget a" }],
+        filters: [{ column: "product", op: "=", value: "Widget A" }],
       },
     });
   });
