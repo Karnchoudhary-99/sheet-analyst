@@ -3,7 +3,7 @@
  * JSON shape, and end-to-end runs with captured output (no process
  * spawning — `runCli` takes an output sink).
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -524,5 +524,123 @@ describe("runCli profile", () => {
     const missing = capture();
     expect(await runCli(["profile", examplesDir], missing.out)).toBe(2);
     expect(missing.stderr.join("")).toContain("Multiple sheets");
+  });
+});
+
+describe("runCli explain", () => {
+  it("explains an aggregate question as text", async () => {
+    const c = capture();
+    expect(await runCli(["explain", salesPath, "total revenue by region"], c.out)).toBe(0);
+    const out = c.stdout.join("");
+    expect(out).toContain('Question: "total revenue by region"');
+    expect(out).toContain("Understood as: total of revenue, grouped by region");
+    expect(out).toContain("group by: region");
+    expect(out).toContain("filters: none");
+  });
+
+  it("explains as JSON with the structured query", async () => {
+    const c = capture();
+    expect(
+      await runCli(["explain", salesPath, "top 2 products by revenue", "--json"], c.out),
+    ).toBe(0);
+    const out = JSON.parse(c.stdout.join(""));
+    expect(out.ok).toBe(true);
+    expect(out.query).toEqual({
+      kind: "top",
+      column: "revenue",
+      limit: 2,
+      direction: "highest",
+      groupBy: "product",
+      filters: [],
+      bucket: undefined,
+    });
+  });
+
+  it("explains an abstention with the reason", async () => {
+    const c = capture();
+    expect(await runCli(["explain", salesPath, "total profit"], c.out)).toBe(0);
+    const out = c.stdout.join("");
+    expect(out).toContain("I could not understand this question");
+    expect(out).toContain("Columns available:");
+  });
+
+  it("explains a workbook question routed by sheet name", async () => {
+    const c = capture();
+    expect(
+      await runCli(["explain", join(root, "examples"), "average salary in employees"], c.out),
+    ).toBe(0);
+    expect(c.stdout.join("")).toContain("Understood as: average of salary");
+  });
+
+  it("requires a question", async () => {
+    const c = capture();
+    expect(await runCli(["explain", salesPath], c.out)).toBe(2);
+    expect(c.stderr.join("")).toContain("Missing question");
+  });
+});
+
+describe("runCli ask --out", () => {
+  it("writes a group answer as CSV and still prints it", async () => {
+    const tmp = join(root, "examples", ".cli-out.csv");
+    try {
+      const c = capture();
+      expect(
+        await runCli(["ask", salesPath, "total revenue by region", "--out", tmp], c.out),
+      ).toBe(0);
+      expect(c.stdout.join("")).toContain("Total revenue by region");
+      expect(c.stdout.join("")).toContain(`Wrote ${tmp}`);
+      const written = readFileSync(tmp, "utf8");
+      expect(written).toContain("region,revenue,rows");
+      expect(written).toContain("North,");
+    } finally {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+  });
+
+  it("writes a scalar answer as JSON with --json --out", async () => {
+    const tmp = join(root, "examples", ".cli-out.json");
+    try {
+      const c = capture();
+      expect(
+        await runCli(["ask", salesPath, "total revenue", "--json", "--out", tmp], c.out),
+      ).toBe(0);
+      const written = JSON.parse(readFileSync(tmp, "utf8"));
+      expect(written.question).toBe("total revenue");
+      expect(written.result.kind).toBe("scalar");
+      expect(written.result.value).toBeCloseTo(1789.6);
+    } finally {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+  });
+
+  it("exports an abstention as a question/answer CSV row", async () => {
+    const tmp = join(root, "examples", ".cli-out-abstain.csv");
+    try {
+      const c = capture();
+      expect(
+        await runCli(["ask", salesPath, "total profit", "--out", tmp], c.out),
+      ).toBe(0);
+      const written = readFileSync(tmp, "utf8");
+      expect(written).toContain("question,answer");
+      expect(written).toContain("total profit");
+    } finally {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+  });
+
+  it("rejects a non-json/csv --out path with exit 2", async () => {
+    const c = capture();
+    expect(
+      await runCli(["ask", salesPath, "total revenue", "--out", "out.txt"], c.out),
+    ).toBe(2);
+    expect(c.stderr.join("")).toContain("--out needs a .json or .csv path");
+  });
+
+  it("rejects --out on other commands", async () => {
+    const c = capture();
+    expect(
+      await runCli(["describe", salesPath, "--out", "out.csv"], c.out),
+    ).toBe(2);
+    expect(c.stderr.join("")).toContain("--out is only for the ask command");
   });
 });
