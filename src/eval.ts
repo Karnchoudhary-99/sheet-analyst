@@ -71,6 +71,11 @@ export const EVAL_GATE = 0.8;
  * average salary 2023 (Grace, 98,000) → 2024 (Ada 95,000 and
  * Katherine 91,000, average 93,000) is −5,000 (−5.10%). A
  * comparison naming one period, or the same period twice, abstains.
+ *
+ * share — sales revenue by region: North 389.97 / 1,789.60 = 21.79%,
+ * South 649.77 / 1,789.60 = 36.31%; North is 3 of 8 rows (37.5%);
+ * employees salary: Engineering 193,000 / 372,000 = 51.88%. A share
+ * with no group, of an average, or of a missing column abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -270,6 +275,48 @@ export const GOLD_SET: EvalCase[] = [
     question: "compare revenue Jan 2026 vs Jan 2026",
     expect: "abstain",
     note: "both periods are the same month",
+  },
+  {
+    sheet: "sales",
+    question: "what share of revenue is North",
+    expect: ["21.79%", "389.97", "1,789.6"],
+    note: "North 240 + 149.97 + 0 = 389.97; total 1,789.60; 389.97/1789.60 = 21.79%",
+  },
+  {
+    sheet: "sales",
+    question: "what percentage of rows are in North",
+    expect: ["3 of 8 rows", "37.5%"],
+    note: "3 of the 8 sales rows are North: 3/8 = 37.5%",
+  },
+  {
+    sheet: "employees",
+    question: "what share of salary is Engineering",
+    expect: ["51.88%", "193,000", "372,000"],
+    note: "Engineering 95,000 + 98,000 = 193,000 (NA skipped); total 372,000; 193000/372000 = 51.88%",
+  },
+  {
+    sheet: "sales",
+    question: "what share of revenue is South",
+    expect: ["36.31%", "649.77"],
+    note: "South 199.92 + 449.85 = 649.77; 649.77/1789.60 = 36.31%",
+  },
+  {
+    sheet: "sales",
+    question: "what share of revenue",
+    expect: "abstain",
+    note: "no group named — a share needs a subset to compare against the whole",
+  },
+  {
+    sheet: "sales",
+    question: "what share of average revenue is North",
+    expect: "abstain",
+    note: "a share compares totals, not averages",
+  },
+  {
+    sheet: "sales",
+    question: "what share of profit is North",
+    expect: "abstain",
+    note: "no 'profit' column exists",
   },
 ];
 

@@ -368,3 +368,69 @@ describe("executeQuery comparison", () => {
     expect(r.pctChange).toBeNull();
   });
 });
+
+describe("executeQuery share", () => {
+  it("shares out a filtered subset's total against the whole sheet", () => {
+    const r = ask("what share of revenue is North");
+    expect(r).toEqual({
+      kind: "share",
+      column: "revenue",
+      filters: [{ column: "region", op: "=", value: "North" }],
+      subsetValue: 389.97,
+      totalValue: 1114.84,
+      share: 389.97 / 1114.84,
+      subsetRows: 3,
+      totalRows: 6,
+      valuesUsed: 3,
+      totalValuesUsed: 6,
+    });
+  });
+
+  it("shares out row counts", () => {
+    const r = ask("what share of rows are in North");
+    expect(r).toEqual({
+      kind: "share",
+      column: null,
+      filters: [{ column: "region", op: "=", value: "North" }],
+      subsetValue: 3,
+      totalValue: 6,
+      share: 0.5,
+      subsetRows: 3,
+      totalRows: 6,
+      valuesUsed: 3,
+      totalValuesUsed: 6,
+    });
+  });
+
+  it("skips nulls on both sides of a value share", () => {
+    // North units are 12 + 3 (the blank row contributes nothing);
+    // the sheet total is 48 over 5 valued rows.
+    const r = ask("what share of units is North");
+    expect(r.kind).toBe("share");
+    if (r.kind === "share") {
+      expect(r.subsetValue).toBe(15);
+      expect(r.totalValue).toBe(48);
+      expect(r.share).toBeCloseTo(15 / 48, 10);
+      expect(r.valuesUsed).toBe(2);
+      expect(r.totalValuesUsed).toBe(5);
+    }
+  });
+
+  it("returns a null share when the whole-sheet total is zero", () => {
+    const zeros = parseCsv("a,b\n1,0\n2,0\n");
+    const r = executeQuery(
+      {
+        kind: "share",
+        column: "b",
+        filters: [{ column: "a", op: "=", value: "1" }],
+      },
+      zeros,
+    );
+    expect(r.kind).toBe("share");
+    if (r.kind === "share") {
+      expect(r.subsetValue).toBe(0);
+      expect(r.totalValue).toBe(0);
+      expect(r.share).toBeNull();
+    }
+  });
+});

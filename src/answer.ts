@@ -174,6 +174,43 @@ function composeComparison(
   );
 }
 
+function composeShare(result: Extract<QueryResult, { kind: "share" }>): string {
+  // Filters are described plainly here: "region is North".
+  const filterDesc = result.filters
+    .map((f) => `${f.column} is ${f.value}`)
+    .join(" and ");
+  // A share needs a non-zero total to divide by; a zero total means
+  // the whole sheet has nothing to share out, not a 0% share.
+  if (result.share === null) {
+    if (result.column === null) {
+      return "The sheet has no rows, so there is no share to compute.";
+    }
+    return (
+      `I could not compute the share of total ${result.column} — ` +
+      `the total is 0, so there is nothing to share out.`
+    );
+  }
+  const pct = formatNumber(result.share * 100);
+  if (result.column === null) {
+    return (
+      `${result.subsetRows} of ${result.totalRows} ${plural(result.totalRows, "row")} ` +
+      `(${pct}%) match ${filterDesc}.`
+    );
+  }
+  const what = filterDesc.charAt(0).toUpperCase() + filterDesc.slice(1);
+  // Flag a subset where some rows had no usable value, so a share
+  // over 2 values is never presented as a share over 3 rows.
+  const coverage =
+    result.valuesUsed < result.subsetRows
+      ? `, ${result.valuesUsed} of ${result.subsetRows} had a value`
+      : "";
+  return (
+    `${what} accounts for ${pct}% of total ${result.column} ` +
+    `(${formatNumber(result.subsetValue)} of ${formatNumber(result.totalValue)}, ` +
+    `from ${result.subsetRows} of ${result.totalRows} ${plural(result.totalRows, "row")}${coverage}).`
+  );
+}
+
 function composeRows(
   result: Extract<QueryResult, { kind: "rows" }>,
   parsed?: ParsedCsv,
@@ -218,6 +255,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeCorrelation(result);
     case "comparison":
       return composeComparison(result);
+    case "share":
+      return composeShare(result);
   }
 }
 
