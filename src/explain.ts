@@ -112,6 +112,17 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters)}`,
       ];
     }
+    case "share": {
+      const what = query.column
+        ? `share of total ${query.column}`
+        : "share of rows";
+      return [
+        `${what} for ${describeFilters(query.filters)}`,
+        "operation: share",
+        ...(query.column ? [`column: ${query.column}`] : []),
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    }
   }
 }
 
