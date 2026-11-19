@@ -122,8 +122,8 @@ describe("executeQuery groups", () => {
     const r = ask("how many employees by department", STAFF);
     if (r.kind === "groups") {
       expect(r.groups).toEqual([
-        { key: "Engineering", value: 2, count: 2 },
-        { key: "Data", value: 1, count: 1 },
+        { key: "Engineering", keys: ["Engineering"], value: 2, count: 2 },
+        { key: "Data", keys: ["Data"], value: 1, count: 1 },
       ]);
     }
   });
@@ -138,14 +138,78 @@ describe("executeQuery groups", () => {
   });
 });
 
+describe("executeQuery multi-column groups", () => {
+  it("groups a total by two columns, largest first", () => {
+    const r = ask("total revenue by region and product");
+    expect(r.kind).toBe("groups");
+    if (r.kind === "groups") {
+      expect(r.groupBy).toEqual(["region", "product"]);
+      expect(r.groups.map((g) => [g.key, g.value, g.count])).toEqual([
+        ["East · Widget A", 400, 1],
+        ["North · Widget A", 240, 2],
+        ["South · Widget B", 199.92, 1],
+        ["North · Widget C", 149.97, 1],
+        ["West · Widget B", 124.95, 1],
+      ]);
+      expect(r.groups[0].keys).toEqual(["East", "Widget A"]);
+      expect(r.totalGroups).toBe(5);
+    }
+  });
+
+  it("counts rows per two-column group", () => {
+    const r = ask("how many employees by department and remote", STAFF);
+    if (r.kind === "groups") {
+      expect(r.groups).toEqual([
+        { key: "Engineering · true", keys: ["Engineering", "true"], value: 2, count: 2 },
+        { key: "Data · false", keys: ["Data", "false"], value: 1, count: 1 },
+      ]);
+    }
+  });
+
+  it("labels blank cells as (blank) inside a composite key", () => {
+    const messy = parseCsv(
+      "region,product,revenue\n" +
+        "North,Widget A,100\n" +
+        ",Widget A,50\n" +
+        "North,,25\n",
+    );
+    const r = ask("total revenue by region and product", messy);
+    if (r.kind === "groups") {
+      expect(r.groups.map((g) => [g.key, g.value])).toEqual([
+        ["North · Widget A", 100],
+        ["(blank) · Widget A", 50],
+        ["North · (blank)", 25],
+      ]);
+      expect(r.groups[1].keys).toEqual(["(blank)", "Widget A"]);
+    }
+  });
+
+  it("breaks value ties by the composite key, alphabetically", () => {
+    const tied = parseCsv(
+      "region,product,revenue\n" +
+        "South,Widget A,100\n" +
+        "North,Widget B,100\n" +
+        "East,Widget A,100\n",
+    );
+    const r = ask("total revenue by region and product", tied);
+    if (r.kind === "groups") {
+      expect(r.groups.map((g) => g.key)).toEqual([
+        "East · Widget A",
+        "North · Widget B",
+        "South · Widget A",
+      ]);
+    }
+  });
+});
+
 describe("executeQuery top-N", () => {
   it("ranks groups by summed column", () => {
     const r = ask("top 2 products by revenue");
     expect(r.kind).toBe("groups");
     if (r.kind === "groups") {
       expect(r.groups).toEqual([
-        { key: "Widget A", value: 640, count: 3 },
-        { key: "Widget B", value: 324.87, count: 2 },
+        { key: "Widget A", keys: ["Widget A"], value: 640, count: 3 },
+        { key: "Widget B", keys: ["Widget B"], value: 324.87, count: 2 },
       ]);
       expect(r.limitedTo).toBe(2);
     }
@@ -209,8 +273,8 @@ describe("executeQuery time bucketing", () => {
     const r = ask("total revenue by quarter", MONTHLY);
     if (r.kind === "groups") {
       expect(r.groups).toEqual([
-        { key: "Q1 2026", value: 1639.63, count: 6 },
-        { key: "(no date)", value: 60, count: 1 },
+        { key: "Q1 2026", keys: ["Q1 2026"], value: 1639.63, count: 6 },
+        { key: "(no date)", keys: ["(no date)"], value: 60, count: 1 },
       ]);
     }
   });
@@ -229,8 +293,8 @@ describe("executeQuery time bucketing", () => {
     expect(r.kind).toBe("groups");
     if (r.kind === "groups") {
       expect(r.groups).toEqual([
-        { key: "Mar 2026", value: 674.76, count: 2 },
-        { key: "Feb 2026", value: 524.95, count: 2 },
+        { key: "Mar 2026", keys: ["Mar 2026"], value: 674.76, count: 2 },
+        { key: "Feb 2026", keys: ["Feb 2026"], value: 524.95, count: 2 },
       ]);
       expect(r.limitedTo).toBe(2);
       expect(r.totalGroups).toBe(4);

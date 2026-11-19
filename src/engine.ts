@@ -12,7 +12,9 @@
  *   then by key (ascending) so ties are stable. Time-bucketed groups
  *   are the exception: their keys are period labels ("Jan 2026") and
  *   they sort chronologically, with rows whose date is blank or
- *   unparseable in a trailing "(no date)" group.
+ *   unparseable in a trailing "(no date)" group. Multi-column groups
+ *   join their per-column values with " · " ("North · Widget A") and
+ *   keep the parts in `keys` for export.
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -31,10 +33,18 @@ export type QueryResult =
     }
   | {
       kind: "groups";
-      groupBy: string;
+      /** The group-by columns, in the order named in the question. */
+      groupBy: string[];
       column: string | null;
       op: string;
-      groups: { key: string; value: number; count: number }[];
+      groups: {
+        /** Composite label: the per-column values joined with " · ". */
+        key: string;
+        /** The per-column values, in `groupBy` order. */
+        keys: string[];
+        value: number;
+        count: number;
+      }[];
       rowsMatched: number;
       limitedTo?: number;
       /** Groups before any top-N slicing, so "top 2 of 4" is honest. */
@@ -268,17 +278,21 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
 
     case "group": {
       const rows = applyFilters(parsed, schema, query.filters);
-      const gIdx = colIndex.get(query.groupBy)!;
+      const gIdxs = query.groupBy.map((name) => colIndex.get(name)!);
       const cIdx = query.column ? colIndex.get(query.column)! : -1;
+      // A time bucket only ever groups one column (the parser
+      // refuses a bucket plus a second group column), so at most one
+      // part of a composite key is a period label.
       const buckets = new Map<
         string,
-        { label: string; sortKey: string; values: number[]; count: number }
+        { labels: string[]; sortKeys: string[]; values: number[]; count: number }
       >();
       for (const row of rows) {
-        const k = groupKey(row[gIdx] ?? "", query.bucket);
-        const bucket = buckets.get(k.mapKey) ?? {
-          label: k.label,
-          sortKey: k.sortKey,
+        const parts = gIdxs.map((gi) => groupKey(row[gi] ?? "", query.bucket));
+        const mapKey = parts.map((p) => p.mapKey).join("\u0000");
+        const bucket = buckets.get(mapKey) ?? {
+          labels: parts.map((p) => p.label),
+          sortKeys: parts.map((p) => p.sortKey),
           values: [],
           count: 0,
         };
@@ -290,14 +304,15 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
             if (n !== null) bucket.values.push(n);
           }
         }
-        buckets.set(k.mapKey, bucket);
+        buckets.set(mapKey, bucket);
       }
       const groups = [...buckets.values()]
         .map((b) => ({
-          key: b.label,
+          key: b.labels.join(" · "),
+          keys: b.labels,
           value: query.column ? (aggregateValues(query.op, b.values) ?? 0) : b.count,
           count: b.count,
-          sortKey: b.sortKey,
+          sortKey: b.sortKeys.join("\u0000"),
         }))
         // Time buckets read chronologically; plain groups read
         // largest first with alphabetical tie-breaks.
@@ -306,7 +321,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
             ? a.sortKey.localeCompare(b.sortKey)
             : b.value - a.value || a.key.localeCompare(b.key),
         )
-        .map(({ key, value, count }) => ({ key, value, count }));
+        .map(({ key, keys, value, count }) => ({ key, keys, value, count }));
       return {
         kind: "groups",
         groupBy: query.groupBy,
@@ -340,7 +355,12 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
           buckets.set(k.mapKey, bucket);
         }
         const groups = [...buckets.values()]
-          .map((b) => ({ key: b.label, value: b.sum, count: b.count }))
+          .map((b) => ({
+            key: b.label,
+            keys: [b.label],
+            value: b.sum,
+            count: b.count,
+          }))
           .sort((a, b) =>
             query.direction === "highest"
               ? b.value - a.value || a.key.localeCompare(b.key)
@@ -349,7 +369,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         const limited = groups.length > query.limit;
         return {
           kind: "groups",
-          groupBy: query.groupBy,
+          groupBy: [query.groupBy],
           column: query.column,
           op: "sum",
           groups: limited ? groups.slice(0, query.limit) : groups,
