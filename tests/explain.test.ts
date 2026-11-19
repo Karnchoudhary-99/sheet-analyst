@@ -42,7 +42,7 @@ describe("explainQuestion", () => {
     if (result.ok) {
       expect(result.query).toEqual({
         kind: "group",
-        groupBy: "region",
+        groupBy: ["region"],
         column: "revenue",
         op: "sum",
         filters: [{ column: "region", op: "=", value: "North" }],
@@ -71,7 +71,7 @@ describe("explainQuestion", () => {
     if (result.ok) {
       expect(result.query).toEqual({
         kind: "group",
-        groupBy: "date",
+        groupBy: ["date"],
         column: "revenue",
         op: "sum",
         filters: [],
@@ -104,7 +104,7 @@ describe("describeQuery", () => {
   it("names the bucket on a time-grouped query", () => {
     const lines = describeQuery({
       kind: "group",
-      groupBy: "date",
+      groupBy: ["date"],
       column: "revenue",
       op: "sum",
       filters: [],
@@ -112,6 +112,18 @@ describe("describeQuery", () => {
     });
     expect(lines[0]).toBe("total of revenue, grouped by date, bucketed by month");
     expect(lines).toContain("time bucket: month");
+  });
+
+  it("names every group column on a multi-column group query", () => {
+    const lines = describeQuery({
+      kind: "group",
+      groupBy: ["region", "product"],
+      column: "revenue",
+      op: "sum",
+      filters: [],
+    });
+    expect(lines[0]).toBe("total of revenue, grouped by region and product");
+    expect(lines).toContain("group by: region, product");
   });
 
   it("lists filters on a rows query", () => {
