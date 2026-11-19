@@ -138,10 +138,18 @@ describe("formatExplainText", () => {
     expect(text).toContain("filters: none");
   });
 
-  it("renders an abstention with the reason and the columns", () => {
+  it("renders an abstention with the reason, without repeating the columns", () => {
     const result = explainQuestion("total profit", sales);
     const text = formatExplainText("total profit", result, sales);
     expect(text).toContain("I could not understand this question");
+    expect(text).toContain("columns are: date, region, product, units, revenue.");
+    expect(text).not.toContain("Columns available:");
+  });
+
+  it("lists the columns when the reason does not name them", () => {
+    const result = explainQuestion("total revenue by decade", sales);
+    const text = formatExplainText("total revenue by decade", result, sales);
+    expect(text).toContain("I can't group by decade");
     expect(text).toContain("Columns available: date, region, product, units, revenue.");
   });
 });

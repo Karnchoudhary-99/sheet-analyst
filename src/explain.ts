@@ -106,8 +106,12 @@ export function formatExplainText(
 ): string {
   if (!result.ok) {
     const columns = inferSchema(parsed).map((c) => c.name);
+    // Several parser reasons already name the columns ("… — columns
+    // are: a, b"); don't list them a second time.
     const available =
-      columns.length > 0 ? `\nColumns available: ${columns.join(", ")}.` : "";
+      !result.reason.includes("columns are:") && columns.length > 0
+        ? `\nColumns available: ${columns.join(", ")}.`
+        : "";
     return `Question: "${question}"\nI could not understand this question: ${result.reason}.${available}`;
   }
   const lines = describeQuery(result.query);

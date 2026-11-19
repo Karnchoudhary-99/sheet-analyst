@@ -561,7 +561,14 @@ describe("runCli explain", () => {
     expect(await runCli(["explain", salesPath, "total profit"], c.out)).toBe(0);
     const out = c.stdout.join("");
     expect(out).toContain("I could not understand this question");
-    expect(out).toContain("Columns available:");
+    expect(out).toContain("columns are: date, region, product, units, revenue.");
+    expect(out).not.toContain("Columns available:");
+
+    const listed = capture();
+    expect(await runCli(["explain", salesPath, "total revenue by decade"], listed.out)).toBe(0);
+    expect(listed.stdout.join("")).toContain(
+      "Columns available: date, region, product, units, revenue.",
+    );
   });
 
   it("explains a workbook question routed by sheet name", async () => {
