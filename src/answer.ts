@@ -44,6 +44,14 @@ function composeScalar(result: Extract<QueryResult, { kind: "scalar" }>): string
   return `${label} is ${formatNumber(result.value)} (across ${result.rowsMatched} ${plural(result.rowsMatched, "row")}${coverage}).`;
 }
 
+const BUCKET_PLURAL: Record<string, string> = {
+  day: "days",
+  week: "weeks",
+  month: "months",
+  quarter: "quarters",
+  year: "years",
+};
+
 function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string {
   if (result.groups.length === 0) return "No rows match.";
   const opLabel: Record<string, string> = {
@@ -57,10 +65,13 @@ function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string
   const what = result.column
     ? `${opLabel[result.op] ?? result.op} ${result.column}`
     : "count";
+  // A time-bucketed answer groups by period, not by the raw date
+  // column: "Total revenue by month", "Top 2 of 4 months".
+  const by = result.bucket ? `by ${result.bucket}` : `by ${result.groupBy}`;
   const scope =
     result.limitedTo !== undefined && result.totalGroups !== undefined
-      ? `Top ${result.limitedTo} of ${result.totalGroups} groups`
-      : `${what.charAt(0).toUpperCase() + what.slice(1)} by ${result.groupBy}`;
+      ? `Top ${result.limitedTo} of ${result.totalGroups} ${result.bucket ? BUCKET_PLURAL[result.bucket] : "groups"}`
+      : `${what.charAt(0).toUpperCase() + what.slice(1)} ${by}`;
   const lines = result.groups.map(
     (g) => `- ${g.key}: ${formatNumber(g.value)} (${g.count} ${plural(g.count, "row")})`,
   );
