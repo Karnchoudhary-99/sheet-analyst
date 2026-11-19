@@ -4,10 +4,13 @@ import {
   renderBarChart,
   renderBarChartSvg,
   renderHistogram,
+  renderLineChart,
+  renderLineChartSvg,
   renderResultChart,
   renderResultChartSvg,
   sparkline,
 } from "../src/charts.js";
+import type { QueryResult } from "../src/engine.js";
 
 describe("renderBarChart", () => {
   it("scales bars to the largest value at full width", () => {
@@ -177,5 +180,109 @@ describe("renderBarChartSvg", () => {
     const rects = [...svg.matchAll(/<rect[^>]*width="([\d.]+)"/g)].map((m) => Number(m[1]));
     expect(rects[1]!).toBeCloseTo(rects[0]! / 2, 0);
     expect(widths.length).toBeGreaterThan(0);
+  });
+});
+
+describe("renderLineChart", () => {
+  const MONTHS = [
+    { key: "Jan 2026", value: 439.92 },
+    { key: "Feb 2026", value: 524.95 },
+    { key: "Mar 2026", value: 674.76 },
+  ];
+
+  it("plots one dot per point in input order", () => {
+    const chart = renderLineChart(MONTHS, { width: 12, height: 5 });
+    expect(chart).toContain("●");
+    expect(chart.match(/●/g)).toHaveLength(3);
+    expect(chart).toContain("674.76"); // max labelled at the top
+    expect(chart).toContain("439.92"); // min labelled at the bottom
+    expect(chart).toContain("Jan 2026");
+    expect(chart).toContain("Mar 2026");
+  });
+
+  it("draws a flat series as a horizontal line", () => {
+    const chart = renderLineChart(
+      [
+        { key: "A", value: 10 },
+        { key: "B", value: 10 },
+        { key: "C", value: 10 },
+      ],
+      { width: 10, height: 5 },
+    );
+    expect(chart).toContain("─");
+    expect(chart).not.toContain("╱");
+    expect(chart).not.toContain("╲");
+  });
+
+  it("slopes up and down with the values", () => {
+    const chart = renderLineChart(
+      [
+        { key: "A", value: 0 },
+        { key: "B", value: 10 },
+        { key: "C", value: 0 },
+      ],
+      { width: 10, height: 5 },
+    );
+    expect(chart).toContain("╱");
+    expect(chart).toContain("╲");
+  });
+
+  it("renders a single point as one dot", () => {
+    const chart = renderLineChart([{ key: "Jan 2026", value: 5 }], { width: 10, height: 5 });
+    expect(chart.match(/●/g)).toHaveLength(1);
+    expect(chart).toContain("Jan 2026");
+  });
+
+  it("renders an empty series as (no data)", () => {
+    expect(renderLineChart([])).toBe("(no data)");
+  });
+});
+
+describe("renderLineChartSvg", () => {
+  it("draws a polyline with one circle per point", () => {
+    const svg = renderLineChartSvg(
+      [
+        { key: "Jan 2026", value: 100 },
+        { key: "Feb 2026", value: 200 },
+      ],
+      { title: "Revenue by month" },
+    );
+    expect(svg).toContain("<polyline");
+    expect(svg.match(/<circle/g)).toHaveLength(2);
+    expect(svg).toContain("Revenue by month");
+    expect(svg).toContain("Jan 2026");
+    expect(svg).toContain("Feb 2026");
+  });
+
+  it("escapes labels so a hostile key cannot break the document", () => {
+    const svg = renderLineChartSvg([{ key: "<script>", value: 1 }]);
+    expect(svg).toContain("&lt;script&gt;");
+    expect(svg).not.toContain("<script>");
+  });
+});
+
+describe("renderResultChart time routing", () => {
+  it("draws a line chart for bucketed groups, a bar chart otherwise", () => {
+    const timeGroups: QueryResult = {
+      kind: "groups",
+      groupBy: "date",
+      column: "revenue",
+      op: "sum",
+      groups: [
+        { key: "Jan 2026", value: 100, count: 2 },
+        { key: "Feb 2026", value: 200, count: 2 },
+      ],
+      rowsMatched: 4,
+      bucket: "month",
+    };
+    const line = renderResultChart(timeGroups);
+    expect(line).toContain("●");
+    expect(line).not.toContain("█");
+    expect(renderResultChartSvg(timeGroups)).toContain("<polyline");
+
+    const plainGroups = { ...timeGroups, bucket: undefined };
+    const bar = renderResultChart(plainGroups);
+    expect(bar).toContain("█");
+    expect(bar).not.toContain("●");
   });
 });
