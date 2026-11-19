@@ -176,3 +176,65 @@ describe("composeAnswer time groups", () => {
     expect(answer).toMatch(/^Total revenue by region:/);
   });
 });
+
+describe("composeAnswer correlation", () => {
+  it("states r with a strength word and the pair count", () => {
+    // SALES fixture: 5 paired rows, r ≈ 0.98.
+    const answer = answerQuestion("correlation between revenue and units", SALES);
+    expect(answer).toBe(
+      "The correlation between revenue and units is 0.98 (strong positive) across 5 paired rows.",
+    );
+  });
+
+  it("labels a moderate negative correlation", () => {
+    const result: QueryResult = {
+      kind: "correlation",
+      columnA: "id",
+      columnB: "salary",
+      value: -0.6459,
+      pairs: 4,
+      rowsMatched: 5,
+    };
+    expect(composeAnswer(result)).toBe(
+      "The correlation between id and salary is -0.65 (moderate negative) across 4 paired rows.",
+    );
+  });
+
+  it("calls a near-zero correlation negligible", () => {
+    const result: QueryResult = {
+      kind: "correlation",
+      columnA: "a",
+      columnB: "b",
+      value: 0.03,
+      pairs: 10,
+      rowsMatched: 10,
+    };
+    expect(composeAnswer(result)).toContain("(negligible — essentially no linear relationship)");
+  });
+
+  it("says plainly when too few pairs exist", () => {
+    const result: QueryResult = {
+      kind: "correlation",
+      columnA: "a",
+      columnB: "b",
+      value: null,
+      pairs: 1,
+      rowsMatched: 4,
+    };
+    expect(composeAnswer(result)).toMatch(
+      /could not compute the correlation between a and b — only 1 of the 4 matching rows has values in both columns/,
+    );
+  });
+
+  it("says plainly when a column is constant", () => {
+    const result: QueryResult = {
+      kind: "correlation",
+      columnA: "a",
+      columnB: "b",
+      value: null,
+      pairs: 3,
+      rowsMatched: 3,
+    };
+    expect(composeAnswer(result)).toMatch(/one of the columns is constant/);
+  });
+});
