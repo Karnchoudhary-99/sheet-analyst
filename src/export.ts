@@ -12,7 +12,11 @@
  *   one row of `column_a,column_b,correlation,paired_rows,rows_matched`
  *   (empty correlation when it could not be computed); a comparison
  *   becomes one row per period plus `change` and `percent_change`
- *   rows (empty when the comparison could not be computed).
+ *   rows (empty when the comparison could not be computed); a share
+ *   becomes one row of
+ *   `label,share,subset_value,total_value,subset_rows,total_rows`
+ *   where `share` is the fraction (0.35 for 35%, empty when the
+ *   total is zero) and `label` is `total <column>` or `rows`.
  *   An abstention (no result) exports as a single `question,answer` row — the file still says
  *   what happened instead of being silently empty.
  */
@@ -98,6 +102,18 @@ export function resultToCsv(
         ]),
       ].join("\n");
     }
+    case "share":
+      return [
+        csvRow(["label", "share", "subset_value", "total_value", "subset_rows", "total_rows"]),
+        csvRow([
+          result.column ? `total ${result.column}` : "rows",
+          result.share === null ? "" : String(result.share),
+          String(result.subsetValue),
+          String(result.totalValue),
+          String(result.subsetRows),
+          String(result.totalRows),
+        ]),
+      ].join("\n");
   }
 }
 
