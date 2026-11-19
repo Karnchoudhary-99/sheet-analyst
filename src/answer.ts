@@ -67,7 +67,10 @@ function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string
     : "count";
   // A time-bucketed answer groups by period, not by the raw date
   // column: "Total revenue by month", "Top 2 of 4 months".
-  const by = result.bucket ? `by ${result.bucket}` : `by ${result.groupBy}`;
+  // Multi-column groups name every column: "by region and product".
+  const by = result.bucket
+    ? `by ${result.bucket}`
+    : `by ${result.groupBy.join(" and ")}`;
   const scope =
     result.limitedTo !== undefined && result.totalGroups !== undefined
       ? `Top ${result.limitedTo} of ${result.totalGroups} ${result.bucket ? BUCKET_PLURAL[result.bucket] : "groups"}`

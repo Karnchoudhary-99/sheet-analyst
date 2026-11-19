@@ -111,12 +111,12 @@ describe("sparkline", () => {
 describe("renderResultChart", () => {
   const groups = {
     kind: "groups" as const,
-    groupBy: "region",
+    groupBy: ["region"],
     column: "revenue",
     op: "sum",
     groups: [
-      { key: "North", value: 100, count: 2 },
-      { key: "South", value: 50, count: 1 },
+      { key: "North", keys: ["North"], value: 100, count: 2 },
+      { key: "South", keys: ["South"], value: 50, count: 1 },
     ],
     rowsMatched: 3,
     totalGroups: 2,
@@ -125,6 +125,25 @@ describe("renderResultChart", () => {
   it("charts group results", () => {
     const chart = renderResultChart(groups);
     expect(chart).toContain("North");
+    expect(chart).toContain("█");
+  });
+
+  it("charts multi-column groups under their composite labels", () => {
+    const multi: QueryResult = {
+      kind: "groups",
+      groupBy: ["region", "product"],
+      column: "revenue",
+      op: "sum",
+      groups: [
+        { key: "North · Widget A", keys: ["North", "Widget A"], value: 240, count: 2 },
+        { key: "East · Widget A", keys: ["East", "Widget A"], value: 400, count: 1 },
+      ],
+      rowsMatched: 3,
+      totalGroups: 2,
+    };
+    const chart = renderResultChart(multi);
+    expect(chart).toContain("North · Widget A");
+    expect(chart).toContain("East · Widget A");
     expect(chart).toContain("█");
   });
 
@@ -265,12 +284,12 @@ describe("renderResultChart time routing", () => {
   it("draws a line chart for bucketed groups, a bar chart otherwise", () => {
     const timeGroups: QueryResult = {
       kind: "groups",
-      groupBy: "date",
+      groupBy: ["date"],
       column: "revenue",
       op: "sum",
       groups: [
-        { key: "Jan 2026", value: 100, count: 2 },
-        { key: "Feb 2026", value: 200, count: 2 },
+        { key: "Jan 2026", keys: ["Jan 2026"], value: 100, count: 2 },
+        { key: "Feb 2026", keys: ["Feb 2026"], value: 200, count: 2 },
       ],
       rowsMatched: 4,
       bucket: "month",

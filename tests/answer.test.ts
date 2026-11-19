@@ -57,12 +57,12 @@ describe("composeAnswer groups and rows", () => {
   it("lists groups largest first with row counts", () => {
     const r: QueryResult = {
       kind: "groups",
-      groupBy: "region",
+      groupBy: ["region"],
       column: "revenue",
       op: "sum",
       groups: [
-        { key: "East", value: 400, count: 1 },
-        { key: "North", value: 389.97, count: 3 },
+        { key: "East", keys: ["East"], value: 400, count: 1 },
+        { key: "North", keys: ["North"], value: 389.97, count: 3 },
       ],
       rowsMatched: 6,
       totalGroups: 4,
@@ -72,6 +72,25 @@ describe("composeAnswer groups and rows", () => {
     expect(out).toContain("Top 2 of 4 groups:");
     expect(out).toContain("- East: 400 (1 row)");
     expect(out).toContain("- North: 389.97 (3 rows)");
+  });
+
+  it("names every group column in a multi-column answer", () => {
+    const r: QueryResult = {
+      kind: "groups",
+      groupBy: ["region", "product"],
+      column: "revenue",
+      op: "sum",
+      groups: [
+        { key: "East · Widget A", keys: ["East", "Widget A"], value: 400, count: 1 },
+        { key: "North · Widget A", keys: ["North", "Widget A"], value: 240, count: 2 },
+      ],
+      rowsMatched: 6,
+      totalGroups: 5,
+    };
+    const out = composeAnswer(r);
+    expect(out).toContain("Total revenue by region and product:");
+    expect(out).toContain("- East · Widget A: 400 (1 row)");
+    expect(out).toContain("- North · Widget A: 240 (2 rows)");
   });
 
   it("renders rows as a table with the shown/total scope", () => {
