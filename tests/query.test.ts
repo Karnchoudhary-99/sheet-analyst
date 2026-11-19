@@ -189,6 +189,120 @@ describe("parseQuestion filters", () => {
   });
 });
 
+describe("parseQuestion time grouping", () => {
+  it("groups a total by month using the sheet's only date column", () => {
+    const r = parseQuestion("total revenue by month", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "group",
+        groupBy: "date",
+        column: "revenue",
+        op: "sum",
+        filters: [],
+        bucket: "month",
+      },
+    });
+  });
+
+  it("accepts 'per year' and period aliases", () => {
+    const r = parseQuestion("average salary per year", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.query.kind).toBe("group");
+      if (r.query.kind === "group") {
+        expect(r.query.groupBy).toBe("start_date");
+        expect(r.query.bucket).toBe("year");
+      }
+    }
+    const monthly = parseQuestion("total revenue by monthly", SALES);
+    expect(monthly.ok).toBe(true);
+    if (monthly.ok && monthly.query.kind === "group") {
+      expect(monthly.query.bucket).toBe("month");
+    }
+  });
+
+  it("accepts an explicit date column with a period", () => {
+    const r = parseQuestion("total salary by start date by month", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") {
+      expect(r.query.groupBy).toBe("start_date");
+      expect(r.query.bucket).toBe("month");
+    }
+  });
+
+  it("counts rows by month", () => {
+    const r = parseQuestion("how many rows by month", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "group",
+        groupBy: "date",
+        column: null,
+        op: "count",
+        filters: [],
+        bucket: "month",
+      },
+    });
+  });
+
+  it("abstains on an unsupported period instead of answering the plain total", () => {
+    const r = parseQuestion("total revenue by decade", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't group by decade/);
+  });
+
+  it("abstains when the named group-by column is not a date", () => {
+    const r = parseQuestion("total revenue by region by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a date column/);
+  });
+
+  it("abstains when the sheet has no date column", () => {
+    const noDates = parseCsv("region,revenue\nNorth,100\nSouth,200\n");
+    const r = parseQuestion("total revenue by month", noDates);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no date column/);
+  });
+
+  it("abstains when several date columns could be meant", () => {
+    const twoDates = parseCsv(
+      "start_date,end_date,revenue\n2026-01-05,2026-01-06,100\n2026-02-05,2026-02-06,200\n",
+    );
+    const r = parseQuestion("total revenue by month", twoDates);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/which date column/);
+  });
+
+  it("abstains on two periods in one question", () => {
+    const r = parseQuestion("total revenue by month by year", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one period at a time/);
+  });
+
+  it("ranks periods for a bare period word in top-N", () => {
+    const r = parseQuestion("top 2 months by revenue", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "top",
+        column: "revenue",
+        limit: 2,
+        direction: "highest",
+        groupBy: "date",
+        filters: [],
+        bucket: "month",
+      },
+    });
+  });
+
+  it("leaves plain group-by questions untouched", () => {
+    const r = parseQuestion("total revenue by region", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") expect(r.query.bucket).toBeUndefined();
+  });
+});
+
 describe("parseQuestion abstention", () => {
   it("abstains on an empty question", () => {
     const r = parseQuestion("   ", SALES);

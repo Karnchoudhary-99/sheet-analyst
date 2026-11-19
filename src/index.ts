@@ -37,12 +37,15 @@ export {
   renderBarChart,
   renderBarChartSvg,
   renderHistogram,
+  renderLineChart,
+  renderLineChartSvg,
   renderResultChart,
   renderResultChartSvg,
   sparkline,
   type Bar,
   type BarChartOptions,
   type HistogramBin,
+  type LineChartOptions,
   type SvgChartOptions,
 } from "./charts.js";
 export {
@@ -53,3 +56,11 @@ export {
   type OutlierSummary,
   type SheetProfile,
 } from "./profile.js";
+export {
+  bucketDate,
+  isoWeek,
+  parseDate,
+  type DateBucket,
+  type ParsedDate,
+  type TimeBucket,
+} from "./time.js";

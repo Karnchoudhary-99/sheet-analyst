@@ -96,29 +96,167 @@ export function sparkline(values: number[]): string {
 }
 
 /**
- * Render a chart for a query result: group results become a bar
- * chart, everything else has no chart (null) — a single number or a
- * table of rows is already the answer, and inventing a chart for it
- * would add noise, not information.
+ * Render a chart for a query result: time-bucketed groups become a
+ * line chart (the shape over time is the point), other groups become
+ * a bar chart, and everything else has no chart (null) — a single
+ * number or a table of rows is already the answer, and inventing a
+ * chart for it would add noise, not information.
  */
 export function renderResultChart(
   result: QueryResult,
   options: BarChartOptions = {},
 ): string | null {
   if (result.kind !== "groups") return null;
+  if (result.bucket) return renderLineChart(result.groups, options);
   return renderBarChart(result.groups, options);
 }
 
 /**
- * Render the same group result as an SVG bar chart, or null when
- * the result has no chart.
+ * Render the same group result as an SVG chart, or null when the
+ * result has no chart. Time-bucketed groups render as a line chart.
  */
 export function renderResultChartSvg(
   result: QueryResult,
   options: SvgChartOptions = {},
 ): string | null {
   if (result.kind !== "groups") return null;
+  if (result.bucket) return renderLineChartSvg(result.groups, options);
   return renderBarChartSvg(result.groups, options);
+}
+
+export interface LineChartOptions {
+  /** Plot width in characters for ASCII (default 60). */
+  width?: number;
+  /** Plot height in rows for ASCII (default 10). */
+  height?: number;
+  /** Format a value for the axis labels (default: thousands-separated). */
+  formatValue?: (n: number) => string;
+}
+
+/**
+ * Render a series as an ASCII line chart: one point per entry in
+ * input order, connected by slope characters, with the max value
+ * labelled at the top and the min at the bottom. A flat series
+ * renders as a horizontal line through the middle; a single point
+ * renders as one dot. An empty input renders "(no data)".
+ */
+export function renderLineChart(points: Bar[], options: LineChartOptions = {}): string {
+  if (points.length === 0) return "(no data)";
+  const width = options.width ?? 60;
+  const height = options.height ?? 10;
+  const format = options.formatValue ?? formatNumber;
+  const values = points.map((p) => p.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const xs = points.map((_, i) =>
+    points.length === 1
+      ? Math.floor(width / 2)
+      : Math.round((i * (width - 1)) / (points.length - 1)),
+  );
+  const yOf = (v: number): number =>
+    max === min
+      ? Math.floor(height / 2)
+      : height - 1 - Math.round(((v - min) / (max - min)) * (height - 1));
+  const grid: string[][] = Array.from({ length: height }, () =>
+    Array<string>(width).fill(" "),
+  );
+  for (let i = 0; i + 1 < points.length; i++) {
+    const x0 = xs[i]!;
+    const x1 = xs[i + 1]!;
+    const y0 = yOf(points[i]!.value);
+    const y1 = yOf(points[i + 1]!.value);
+    for (let x = x0; x <= x1; x++) {
+      const t = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
+      const y = Math.round(y0 + (y1 - y0) * t);
+      // Row 0 is the top, so a rising value has y1 < y0.
+      grid[y]![x] = y1 === y0 ? "─" : y1 < y0 ? "╱" : "╲";
+    }
+  }
+  points.forEach((p, i) => {
+    grid[yOf(p.value)]![xs[i]!] = "●";
+  });
+  const labelWidth = Math.max(format(max).length, format(min).length);
+  const lines = grid.map((row, r) => {
+    const label = r === 0 ? format(max) : r === height - 1 ? format(min) : "";
+    return `${label.padStart(labelWidth)} │${row.join("")}`;
+  });
+  const axis = `${" ".repeat(labelWidth)} └${"─".repeat(width)}`;
+  const first = points[0]!.key;
+  const last = points[points.length - 1]!.key;
+  const xLabel =
+    points.length === 1
+      ? `${" ".repeat(labelWidth + 2)}${first}`
+      : `${" ".repeat(labelWidth + 2)}${first}${" ".repeat(Math.max(1, width - first.length - last.length))}${last}`;
+  return [...lines, axis, xLabel].join("\n");
+}
+
+/**
+ * Render a series as an SVG line chart: a polyline through the
+ * points with a dot per point, min/max on the y-axis and the first
+ * and last (or every, when there are few) keys on the x-axis.
+ * Labels are XML-escaped like the bar chart's.
+ */
+export function renderLineChartSvg(points: Bar[], options: SvgChartOptions = {}): string {
+  const width = options.width ?? 640;
+  const height = 320;
+  const format = options.formatValue ?? formatNumber;
+  const padLeft = 70;
+  const padRight = 20;
+  const padTop = options.title ? 40 : 16;
+  const padBottom = 40;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const values = points.map((p) => p.value);
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const xOf = (i: number): number =>
+    points.length === 1
+      ? padLeft + plotWidth / 2
+      : padLeft + (i / (points.length - 1)) * plotWidth;
+  const yOf = (v: number): number =>
+    max === min
+      ? padTop + plotHeight / 2
+      : padTop + plotHeight - ((v - min) / (max - min)) * plotHeight;
+  const parts: string[] = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="sans-serif" font-size="13">`,
+  ];
+  if (options.title) {
+    parts.push(`<text x="8" y="20" font-size="15" font-weight="bold">${escapeXml(options.title)}</text>`);
+  }
+  // Y-axis labels.
+  parts.push(
+    `<text x="${padLeft - 8}" y="${padTop + 4}" text-anchor="end">${escapeXml(format(max))}</text>`,
+    `<text x="${padLeft - 8}" y="${padTop + plotHeight + 4}" text-anchor="end">${escapeXml(format(min))}</text>`,
+    `<line x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + plotHeight}" stroke="#94a3b8"/>`,
+    `<line x1="${padLeft}" y1="${padTop + plotHeight}" x2="${padLeft + plotWidth}" y2="${padTop + plotHeight}" stroke="#94a3b8"/>`,
+  );
+  if (points.length > 0) {
+    const line = points
+      .map((p, i) => `${xOf(i).toFixed(1)},${yOf(p.value).toFixed(1)}`)
+      .join(" ");
+    parts.push(
+      `<polyline points="${line}" fill="none" stroke="#2563eb" stroke-width="2"/>`,
+    );
+    points.forEach((p, i) => {
+      parts.push(
+        `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(p.value).toFixed(1)}" r="4" fill="#2563eb"/>`,
+      );
+    });
+    // X labels: every key when there are few, else first and last.
+    const labelled = points.length <= 12 ? points : [points[0]!, points[points.length - 1]!];
+    const labelledIdx = points.length <= 12
+      ? points.map((_, i) => i)
+      : [0, points.length - 1];
+    labelled.forEach((p, j) => {
+      const i = labelledIdx[j]!;
+      const anchor = i === 0 ? "start" : i === points.length - 1 ? "end" : "middle";
+      parts.push(
+        `<text x="${xOf(i).toFixed(1)}" y="${padTop + plotHeight + 20}" text-anchor="${anchor}">${escapeXml(p.key)}</text>`,
+      );
+    });
+  }
+  parts.push("</svg>");
+  return parts.join("\n");
 }
 
 export interface SvgChartOptions {

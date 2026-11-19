@@ -20,6 +20,7 @@ top-N) directly from the spreadsheet.
 - [x] Eval harness (gold question set, accuracy + abstention metrics)
 - [x] Multi-sheet workbooks (XLSX via sheet names, CSV directory import)
 - [x] Charts (ASCII + SVG output for distributions and trends)
+- [x] Time-series grouping (by day/week/month/quarter/year + line charts)
 - [x] Data-quality profile (null rates, duplicates, empty rows, constant columns, whitespace, IQR outliers)
 - [ ] Self-review checklist, then public
 
@@ -67,6 +68,7 @@ import { parseCsv } from "./src/csv.js";
 import { answerQuestion } from "./src/answer.js";
 
 const sales = parseCsv(await readFile("examples/sales.csv", "utf8"));
+const monthlySales = parseCsv(await readFile("examples/monthly-sales.csv", "utf8"));
 answerQuestion("total revenue", sales);
 // "Total revenue is 1,789.6 (across 8 rows)."
 answerQuestion("total revenue by region", sales);
@@ -75,7 +77,22 @@ answerQuestion("top 3 products by revenue", sales);
 // "Top 3 of 4 groups:\n- Widget A: 640 (3 rows)…"
 answerQuestion("total profit", sales);
 // "I can't answer that from this data: no column named in the question…"
+answerQuestion("total revenue by month", monthlySales);
+// "Total revenue by month:\n- Jan 2026: 664.91 (4 rows)\n- Feb 2026: 914.81 (4 rows)…"
 ```
+
+Time grouping (`src/time.ts`) collapses the sheet's date column
+into periods — `"total revenue by month"`, `"average salary by
+year"`, `"top 2 months by revenue"`, `"how many rows by quarter"`.
+Periods are day, week (ISO-8601, keyed on the week-year), month,
+quarter and year, with aliases (`daily`, `weekly`, `monthly`,
+`quarterly`, `yearly`, `annual`). Time groups list chronologically,
+not largest-first, and rows whose date is blank or unparseable land
+in a trailing `(no date)` group instead of being dropped silently.
+A period the engine cannot bucket (`"by decade"`) abstains with a
+reason rather than answering the plain total, and a `"by month"`
+clause on a sheet with no date column — or on a non-date column
+(`"total revenue by region by month"`) — abstains too.
 
 Supported shapes: totals, averages, medians, minimums, maximums
 ("total revenue", "average salary"), counts ("how many employees"),
@@ -124,8 +141,8 @@ for machine-readable output; `sheet --help` lists all commands.
 ### Workbooks (multi-sheet)
 
 A directory of CSVs is one workbook — one sheet per file, named
-after the file (`examples/` is a workbook with sheets `employees`
-and `sales`). Every command accepts a directory where it accepts a
+after the file (`examples/` is a workbook with sheets `employees`,
+`monthly-sales` and `sales`). Every command accepts a directory where it accepts a
 file:
 
 ```bash
@@ -153,7 +170,9 @@ flag).
 
 `sheet chart <file> <question>` asks the question and draws the
 answer as an ASCII bar chart — but only group-by answers chart
-(e.g. `"total revenue by region"`). A scalar or row answer prints the
+(e.g. `"total revenue by region"`). Time-grouped answers chart as a
+line chart instead (e.g. `"total revenue by month"`), so the shape
+over time is visible at a glance. A scalar or row answer prints the
 answer with a note that there is nothing to chart, and an abstention
 prints the abstention: the chart never invents a picture for an
 answer that has none. Bars are proportional to the largest value and
@@ -162,6 +181,7 @@ as an empty bar with its `0`.
 
 ```bash
 node dist/cli.js chart examples/sales.csv "total revenue by region"
+node dist/cli.js chart examples/monthly-sales.csv "total revenue by month"
 node dist/cli.js chart examples/sales.csv "total revenue by region" --svg revenue-by-region.svg
 ```
 
@@ -169,7 +189,8 @@ node dist/cli.js chart examples/sales.csv "total revenue by region" --svg revenu
 (group names are XML-escaped). `describe` prints a one-line
 distribution sparkline under each numeric column, so skew and
 clustering are visible at a glance. The chart helpers
-(`renderBarChart`, `histogram`, `sparkline`, `renderBarChartSvg`)
+(`renderBarChart`, `renderLineChart`, `histogram`, `sparkline`,
+`renderBarChartSvg`, `renderLineChartSvg`)
 are exported from the package for programmatic use.
 
 ## Data quality
@@ -211,15 +232,16 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 19-question gold set over
+`npm run eval` scores the engine against a 24-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
-medians, group-bys, top-N, filters and row queries, plus three
+medians, group-bys, top-N, filters and row queries, time grouping
+(monthly totals, averages, counts, top months), plus four
 questions the honest answer is an abstention for (unknown column,
-unanswerable question). Expected values are hand-computed from the
+unanswerable question, unsupported period). Expected values are hand-computed from the
 CSVs, never derived from the code under test.
 
-Baseline (2026-11-18): answer accuracy 16/16 (100%), abstention
-accuracy 3/3 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-19): answer accuracy 20/20 (100%), abstention
+accuracy 4/4 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row

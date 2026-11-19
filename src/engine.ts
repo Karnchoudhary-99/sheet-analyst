@@ -9,13 +9,17 @@
  *   values yields `value: null` and the composer says so plainly.
  * - `count` counts matching rows, including rows where the column is null.
  * - Group keys are the raw cell text, sorted by value (descending) and
- *   then by key (ascending) so ties are stable.
+ *   then by key (ascending) so ties are stable. Time-bucketed groups
+ *   are the exception: their keys are period labels ("Jan 2026") and
+ *   they sort chronologically, with rows whose date is blank or
+ *   unparseable in a trailing "(no date)" group.
  */
 
 import type { ParsedCsv } from "./csv.js";
 import type { Filter, Query } from "./query.js";
 import { inferSchema, isNullValue, type ColumnInfo } from "./schema.js";
 import { numericStats } from "./stats.js";
+import { bucketDate, parseDate, type TimeBucket } from "./time.js";
 
 export type QueryResult =
   | {
@@ -35,6 +39,8 @@ export type QueryResult =
       limitedTo?: number;
       /** Groups before any top-N slicing, so "top 2 of 4" is honest. */
       totalGroups?: number;
+      /** When set, `groupBy` is a date column and `key` is a period label ("Jan 2026"). */
+      bucket?: TimeBucket;
     }
   | {
       kind: "rows";
@@ -52,12 +58,34 @@ function toNumber(value: string): number | null {
 }
 
 function toEpoch(value: string): number | null {
-  const v = value.trim();
-  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
-  const ms = dmy
-    ? Date.parse(`${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`)
-    : Date.parse(v);
-  return Number.isFinite(ms) ? ms : null;
+  // Dates compare by day (see the module doc): a datetime cell
+  // counts as its calendar day, so "after 2026-03-01" matches the
+  // whole of 2026-03-02 and nothing on 2026-03-01 itself.
+  const d = parseDate(value);
+  return d ? Date.UTC(d.year, d.month - 1, d.day) : null;
+}
+
+/**
+ * The key a row's group-by cell maps to. Without a bucket it is the
+ * raw cell text ("(blank)" when empty). With a bucket the cell must
+ * be a date: it maps to the period's label ("Jan 2026"), sorted by
+ * its chronological key; a blank or unparseable date maps to
+ * "(no date)", which always sorts last so it never looks like a
+ * period.
+ */
+function groupKey(
+  raw: string,
+  bucket: TimeBucket | undefined,
+): { mapKey: string; label: string; sortKey: string } {
+  const cell = raw.trim();
+  if (!bucket) {
+    const label = cell === "" ? "(blank)" : cell;
+    return { mapKey: label, label, sortKey: label };
+  }
+  const b = cell === "" ? null : bucketDate(cell, bucket);
+  if (b) return { mapKey: b.key, label: b.label, sortKey: b.key };
+  // "\uFFFF" sorts after any ISO period key ("2026-01", "2026-Q1").
+  return { mapKey: "(no date)", label: "(no date)", sortKey: "\uFFFF" };
 }
 
 function compareValues(cell: string, info: ColumnInfo, op: Filter["op"], raw: string): boolean {
@@ -180,10 +208,18 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
       const rows = applyFilters(parsed, schema, query.filters);
       const gIdx = colIndex.get(query.groupBy)!;
       const cIdx = query.column ? colIndex.get(query.column)! : -1;
-      const buckets = new Map<string, { values: number[]; count: number }>();
+      const buckets = new Map<
+        string,
+        { label: string; sortKey: string; values: number[]; count: number }
+      >();
       for (const row of rows) {
-        const key = (row[gIdx] ?? "").trim() === "" ? "(blank)" : (row[gIdx] ?? "").trim();
-        const bucket = buckets.get(key) ?? { values: [], count: 0 };
+        const k = groupKey(row[gIdx] ?? "", query.bucket);
+        const bucket = buckets.get(k.mapKey) ?? {
+          label: k.label,
+          sortKey: k.sortKey,
+          values: [],
+          count: 0,
+        };
         bucket.count += 1;
         if (cIdx >= 0) {
           const raw = row[cIdx] ?? "";
@@ -192,16 +228,23 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
             if (n !== null) bucket.values.push(n);
           }
         }
-        buckets.set(key, bucket);
+        buckets.set(k.mapKey, bucket);
       }
-      const groups = [...buckets.entries()]
-        .map(([key, b]) => ({
-          key,
+      const groups = [...buckets.values()]
+        .map((b) => ({
+          key: b.label,
           value: query.column ? (aggregateValues(query.op, b.values) ?? 0) : b.count,
           count: b.count,
+          sortKey: b.sortKey,
         }))
-        // Largest group first; ties break alphabetically so output is stable.
-        .sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
+        // Time buckets read chronologically; plain groups read
+        // largest first with alphabetical tie-breaks.
+        .sort((a, b) =>
+          query.bucket
+            ? a.sortKey.localeCompare(b.sortKey)
+            : b.value - a.value || a.key.localeCompare(b.key),
+        )
+        .map(({ key, value, count }) => ({ key, value, count }));
       return {
         kind: "groups",
         groupBy: query.groupBy,
@@ -210,6 +253,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         groups,
         rowsMatched: rows.length,
         totalGroups: groups.length,
+        bucket: query.bucket,
       };
     }
 
@@ -217,23 +261,24 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
       const rows = applyFilters(parsed, schema, query.filters);
       if (query.groupBy) {
         // Rank groups by the summed column (the "by revenue" in
-        // "top 3 products by revenue").
+        // "top 3 products by revenue"). With a time bucket the
+        // groups are periods ("top 3 months by revenue").
         const gIdx = colIndex.get(query.groupBy)!;
         const cIdx = colIndex.get(query.column)!;
-        const buckets = new Map<string, { sum: number; count: number }>();
+        const buckets = new Map<string, { label: string; sum: number; count: number }>();
         for (const row of rows) {
-          const key = (row[gIdx] ?? "").trim() === "" ? "(blank)" : (row[gIdx] ?? "").trim();
-          const bucket = buckets.get(key) ?? { sum: 0, count: 0 };
+          const k = groupKey(row[gIdx] ?? "", query.bucket);
+          const bucket = buckets.get(k.mapKey) ?? { label: k.label, sum: 0, count: 0 };
           bucket.count += 1;
           const raw = row[cIdx] ?? "";
           if (!isNullValue(raw)) {
             const n = toNumber(raw);
             if (n !== null) bucket.sum += n;
           }
-          buckets.set(key, bucket);
+          buckets.set(k.mapKey, bucket);
         }
-        const groups = [...buckets.entries()]
-          .map(([key, b]) => ({ key, value: b.sum, count: b.count }))
+        const groups = [...buckets.values()]
+          .map((b) => ({ key: b.label, value: b.sum, count: b.count }))
           .sort((a, b) =>
             query.direction === "highest"
               ? b.value - a.value || a.key.localeCompare(b.key)
@@ -249,6 +294,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
           rowsMatched: rows.length,
           limitedTo: limited ? query.limit : undefined,
           totalGroups: groups.length,
+          bucket: query.bucket,
         };
       }
 

@@ -145,3 +145,34 @@ describe("answerQuestion end to end", () => {
     );
   });
 });
+
+describe("composeAnswer time groups", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,12,240.00\n" +
+      "2026-01-20,South,Widget B,8,199.92\n" +
+      "2026-02-03,East,Widget A,20,400.00\n" +
+      "2026-02-10,West,Widget B,5,124.95\n" +
+      "2026-03-02,North,Widget C,15,449.85\n" +
+      "2026-03-15,East,Widget B,9,224.91\n",
+  );
+
+  it("names the period, not the raw date column", () => {
+    const answer = answerQuestion("total revenue by month", MONTHLY);
+    expect(answer).toMatch(/^Total revenue by month:/);
+    expect(answer).toContain("- Jan 2026: 439.92 (2 rows)");
+    expect(answer).toContain("- Mar 2026: 674.76 (2 rows)");
+    expect(answer).not.toContain("by date");
+  });
+
+  it("counts months in the top-N scope line", () => {
+    const answer = answerQuestion("top 2 months by revenue", MONTHLY);
+    expect(answer).toMatch(/^Top 2 of 3 months:/);
+    expect(answer).toContain("- Mar 2026: 674.76 (2 rows)");
+  });
+
+  it("keeps plain group answers unchanged", () => {
+    const answer = answerQuestion("total revenue by region", MONTHLY);
+    expect(answer).toMatch(/^Total revenue by region:/);
+  });
+});

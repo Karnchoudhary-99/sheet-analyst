@@ -312,7 +312,7 @@ describe("runCli workbooks", () => {
   it("abstains with the sheet list when the workbook question names no sheet", async () => {
     const c = capture();
     expect(await runCli(["ask", examplesDir, "total revenue"], c.out)).toBe(0);
-    expect(c.stdout.join("")).toContain("Sheets available: employees, sales");
+    expect(c.stdout.join("")).toContain("Sheets available: employees, monthly-sales, sales");
   });
 
   it("runs columns/describe on a workbook sheet with --sheet", async () => {
@@ -362,6 +362,19 @@ describe("runCli charts", () => {
     expect(text).toContain("Total revenue by region");
     expect(text).toContain("North");
     expect(text).toContain("█");
+  });
+
+  it("charts a time-grouped answer with a line chart, not bars", async () => {
+    const monthlyPath = join(root, "examples", "monthly-sales.csv");
+    const c = capture();
+    expect(
+      await runCli(["chart", monthlyPath, "total revenue by month"], c.out),
+    ).toBe(0);
+    const text = c.stdout.join("");
+    expect(text).toContain("Total revenue by month");
+    expect(text).toContain("Jan 2026");
+    expect(text).toContain("●");
+    expect(text).not.toContain("█");
   });
 
   it("says so instead of charting a scalar answer", async () => {

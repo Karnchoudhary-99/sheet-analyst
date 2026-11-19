@@ -170,3 +170,79 @@ describe("executeQuery top-N", () => {
     }
   });
 });
+
+describe("executeQuery time bucketing", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,12,240.00\n" +
+      "2026-01-20,South,Widget B,8,199.92\n" +
+      "2026-02-03,East,Widget A,20,400.00\n" +
+      "2026-02-10,West,Widget B,5,124.95\n" +
+      "2026-03-02,North,Widget C,15,449.85\n" +
+      "2026-03-15,East,Widget B,9,224.91\n" +
+      ",South,Widget A,3,60.00\n",
+  );
+
+  it("groups monthly totals in chronological order", () => {
+    const r = ask("total revenue by month", MONTHLY);
+    expect(r.kind).toBe("groups");
+    if (r.kind === "groups") {
+      expect(r.bucket).toBe("month");
+      // toEqual on sums would fail on float dust (240 + 199.92 is
+      // 439.91999999999996 in binary), so compare each value loosely.
+      expect(r.groups.map((g) => g.key)).toEqual([
+        "Jan 2026",
+        "Feb 2026",
+        "Mar 2026",
+        "(no date)",
+      ]);
+      expect(r.groups.map((g) => g.count)).toEqual([2, 2, 2, 1]);
+      expect(r.groups[0].value).toBeCloseTo(439.92, 2);
+      expect(r.groups[1].value).toBeCloseTo(524.95, 2);
+      expect(r.groups[2].value).toBeCloseTo(674.76, 2);
+      expect(r.groups[3].value).toBeCloseTo(60, 2);
+      expect(r.rowsMatched).toBe(7);
+    }
+  });
+
+  it("buckets a whole quarter into one group", () => {
+    const r = ask("total revenue by quarter", MONTHLY);
+    if (r.kind === "groups") {
+      expect(r.groups).toEqual([
+        { key: "Q1 2026", value: 1639.63, count: 6 },
+        { key: "(no date)", value: 60, count: 1 },
+      ]);
+    }
+  });
+
+  it("counts rows per month, undated rows last", () => {
+    const r = ask("how many rows by month", MONTHLY);
+    if (r.kind === "groups") {
+      expect(r.groups.map((g) => `${g.key}:${g.value}`).join(",")).toBe(
+        "Jan 2026:2,Feb 2026:2,Mar 2026:2,(no date):1",
+      );
+    }
+  });
+
+  it("ranks periods by value for top-N over months", () => {
+    const r = ask("top 2 months by revenue", MONTHLY);
+    expect(r.kind).toBe("groups");
+    if (r.kind === "groups") {
+      expect(r.groups).toEqual([
+        { key: "Mar 2026", value: 674.76, count: 2 },
+        { key: "Feb 2026", value: 524.95, count: 2 },
+      ]);
+      expect(r.limitedTo).toBe(2);
+      expect(r.totalGroups).toBe(4);
+    }
+  });
+
+  it("still compares dates by day in filters", () => {
+    const r = ask("total revenue where date is after 2026-02-01", MONTHLY);
+    if (r.kind === "scalar") {
+      // Feb + Mar only; the undated row never matches a date filter.
+      expect(r.value).toBeCloseTo(1199.71, 2);
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+});

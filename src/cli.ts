@@ -133,9 +133,10 @@ count. A single .csv file is a one-sheet workbook.
 `,
   chart: `Usage: sheet chart <file.csv> <question> [--svg <path>]
 
-Ask a question and draw the answer as a bar chart. Only group-by
-answers chart (e.g. "total revenue by region"); a scalar or row
-answer prints the answer with a note that there is nothing to
+Ask a question and draw the answer as a chart: a bar chart for
+group-by answers (e.g. "total revenue by region"), a line chart for
+time-grouped answers (e.g. "total revenue by month"). A scalar or
+row answer prints the answer with a note that there is nothing to
 chart. With --svg <path> the chart is also written as an SVG file.
 The file may be a directory (a workbook): name the sheet in the
 question or pass --sheet <name>.

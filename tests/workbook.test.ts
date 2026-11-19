@@ -50,7 +50,7 @@ describe("loadWorkbookFromFiles", () => {
 describe("loadWorkbookFromDir", () => {
   it("loads every .csv in the directory, sorted", () => {
     const wb = loadWorkbookFromDir("examples");
-    expect(listSheets(wb)).toEqual(["employees", "sales"]);
+    expect(listSheets(wb)).toEqual(["employees", "monthly-sales", "sales"]);
   });
 
   it("errors on a directory with no CSV files", () => {

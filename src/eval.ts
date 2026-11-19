@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { answerQuestion } from "./answer.js";
 import { parseCsv } from "./csv.js";
 
-export type SheetName = "sales" | "employees";
+export type SheetName = "sales" | "employees" | "monthly";
 
 /**
  * One gold case. `expect` is either the substrings a correct answer
@@ -43,8 +43,9 @@ export interface EvalCase {
 export const EVAL_GATE = 0.8;
 
 /**
- * Gold set over examples/sales.csv (8 rows) and
- * examples/employees.csv (5 rows). Expected figures hand-computed:
+ * Gold set over examples/sales.csv (8 rows),
+ * examples/employees.csv (5 rows) and examples/monthly-sales.csv
+ * (12 rows, Jan–Mar 2026). Expected figures hand-computed:
  *
  * sales — revenue total 1,789.60; units total 72 over 7 valued rows
  * (one blank) so average units is 10.29; revenue by region:
@@ -55,6 +56,10 @@ export const EVAL_GATE = 0.8;
  * so average and median are both 93,000; total salary by department:
  * Engineering 193,000, Data 179,000; highest salary is Grace Hopper
  * at 98,000; 3 of the 5 employees are in Engineering.
+ *
+ * monthly — revenue by month: Jan 664.91 (4 rows), Feb 914.81
+ * (4 rows), Mar 834.81 (4 rows), total 2,414.53; average revenue by
+ * month: Jan 166.23, Feb 228.70, Mar 208.70; top month is Feb 914.81.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -171,6 +176,36 @@ export const GOLD_SET: EvalCase[] = [
     expect: "abstain",
     note: "no 'age' column exists",
   },
+  {
+    sheet: "monthly",
+    question: "total revenue by month",
+    expect: ["Jan 2026: 664.91", "Feb 2026: 914.81", "Mar 2026: 834.81"],
+    note: "Jan 200 + 124.95 + 160 + 179.96 = 664.91; Feb 299.88 + 120 + 314.93 + 180 = 914.81; Mar 134.97 + 300 + 249.90 + 149.94 = 834.81",
+  },
+  {
+    sheet: "monthly",
+    question: "average revenue by month",
+    expect: ["Jan 2026: 166.23", "Feb 2026: 228.7", "Mar 2026: 208.7"],
+    note: "Jan 664.91/4 = 166.2275; Feb 914.81/4 = 228.7025; Mar 834.81/4 = 208.7025",
+  },
+  {
+    sheet: "monthly",
+    question: "how many rows by month",
+    expect: ["Jan 2026: 4", "Feb 2026: 4", "Mar 2026: 4"],
+    note: "4 rows in each of Jan, Feb and Mar 2026",
+  },
+  {
+    sheet: "monthly",
+    question: "top 2 months by revenue",
+    expect: ["Top 2 of 3 months", "Feb 2026: 914.81", "Mar 2026: 834.81"],
+    note: "Feb 914.81 is the top month, Mar 834.81 second; Jan 664.91 is cut",
+  },
+  {
+    sheet: "monthly",
+    question: "total revenue by decade",
+    expect: "abstain",
+    note: "decade is not a supported period — must not silently answer the plain total",
+  },
 ];
 
 export interface CaseResult {
@@ -230,6 +265,7 @@ export function scoreCase(c: EvalCase, answer: string): CaseResult {
 const SHEET_FILES: Record<SheetName, string> = {
   sales: "sales.csv",
   employees: "employees.csv",
+  monthly: "monthly-sales.csv",
 };
 
 export function loadSheet(name: SheetName): ReturnType<typeof parseCsv> {
