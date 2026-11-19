@@ -192,3 +192,38 @@ describe("describeQuery comparison", () => {
     ]);
   });
 });
+
+describe("describeQuery share", () => {
+  it("describes a value share with its column and filter", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,12,240.00\n" +
+        "2026-01-06,South,Widget B,8,199.92\n",
+    );
+    const explained = explainQuestion("what share of revenue is North", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "share of total revenue for region = North",
+      "operation: share",
+      "column: revenue",
+      "filters: region = North",
+    ]);
+  });
+
+  it("describes a row-count share without a column line", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,12,240.00\n" +
+        "2026-01-06,South,Widget B,8,199.92\n",
+    );
+    const explained = explainQuestion("what share of rows are in North", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "share of rows for region = North",
+      "operation: share",
+      "filters: region = North",
+    ]);
+  });
+});

@@ -201,3 +201,43 @@ describe("resultToCsv comparison", () => {
     );
   });
 });
+
+describe("resultToCsv share", () => {
+  it("writes the share as a fraction with subset and whole-sheet totals", () => {
+    const result: QueryResult = {
+      kind: "share",
+      column: "revenue",
+      filters: [{ column: "region", op: "=", value: "North" }],
+      subsetValue: 389.97,
+      totalValue: 1789.6,
+      share: 389.97 / 1789.6,
+      subsetRows: 3,
+      totalRows: 8,
+      valuesUsed: 3,
+      totalValuesUsed: 8,
+    };
+    expect(resultToCsv(result, "what share of revenue is North", "…")).toBe(
+      "label,share,subset_value,total_value,subset_rows,total_rows\n" +
+        `total revenue,${389.97 / 1789.6},389.97,1789.6,3,8`,
+    );
+  });
+
+  it("labels a row-count share 'rows' and leaves a zero-total share blank", () => {
+    const result: QueryResult = {
+      kind: "share",
+      column: "b",
+      filters: [{ column: "a", op: "=", value: "1" }],
+      subsetValue: 0,
+      totalValue: 0,
+      share: null,
+      subsetRows: 1,
+      totalRows: 2,
+      valuesUsed: 1,
+      totalValuesUsed: 2,
+    };
+    expect(resultToCsv(result, "what share of b where a is 1", "…")).toBe(
+      "label,share,subset_value,total_value,subset_rows,total_rows\n" +
+        "total b,,0,0,1,2",
+    );
+  });
+});
