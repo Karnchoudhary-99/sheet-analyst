@@ -81,6 +81,23 @@ export const EVAL_GATE = 0.8;
  * (most frequent first, alphabetical tie-break); sales products in
  * North: Widget A 2, "Widget, Deluxe" 1; employees departments:
  * Engineering 3, Data 2. A distinct question naming no column abstains.
+ *
+ * multi-column group-by — sales revenue by region and product:
+ * South · Widget C 449.85, East · Widget A 400, North · Widget A
+ * 240 (2 rows), East · Widget B 224.91, South · Widget B 199.92,
+ * North · "Widget, Deluxe" 149.97, West · Widget B 124.95;
+ * employees by department and remote: Engineering · true 2, then
+ * Data · false, Data · true and Engineering · false at 1 each
+ * (alphabetical tie-break); monthly revenue by region and product:
+ * South · Widget A 420 (120 + 300, 2 rows), East · Widget C
+ * 314.93, North · Widget B 299.88. A time bucket plus a second
+ * group column, or a group word that is not a column, abstains.
+ *
+ * top-N over multi-column groups — sales top 3 region and product
+ * by revenue: South · Widget C 449.85, East · Widget A 400,
+ * North · Widget A 240 (7 pairs in all); monthly top 2: South ·
+ * Widget A 420, East · Widget C 314.93 (11 pairs in all). A top-N
+ * over two groups plus a time bucket abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -346,6 +363,60 @@ export const GOLD_SET: EvalCase[] = [
     question: "list unique profit",
     expect: "abstain",
     note: "no 'profit' column exists",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue by region and product",
+    expect: ["South · Widget C: 449.85", "North · Widget A: 240"],
+    note: "South · Widget C 449.85 is the largest pair; North · Widget A is 240 + 0 = 240 over 2 rows",
+  },
+  {
+    sheet: "employees",
+    question: "how many employees by department and remote",
+    expect: ["Engineering · true: 2", "Data · false: 1"],
+    note: "Engineering · true is Ada + Grace (2); the three 1-count pairs sort alphabetically by composite key",
+  },
+  {
+    sheet: "monthly",
+    question: "total revenue by region and product",
+    expect: ["South · Widget A: 420", "East · Widget C: 314.93"],
+    note: "South · Widget A is 120 + 300 = 420 over 2 rows; East · Widget C is a single 314.93 row",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue by region and product by month",
+    expect: "abstain",
+    note: "a time bucket plus a second group column is two dimensions at once",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue by month and region",
+    expect: "abstain",
+    note: "same two-dimensions problem, written the other way round — must not silently answer the monthly grouping",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue by region and profit",
+    expect: "abstain",
+    note: "'profit' is not a column — must not silently answer as 'by region'",
+  },
+  {
+    sheet: "sales",
+    question: "top 3 region and product by revenue",
+    expect: ["Top 3 of 7 groups", "South · Widget C: 449.85", "North · Widget A: 240"],
+    note: "7 region × product pairs; top 3 are South · Widget C 449.85, East · Widget A 400, North · Widget A 240",
+  },
+  {
+    sheet: "monthly",
+    question: "top 2 region and product by revenue",
+    expect: ["Top 2 of 11 groups", "South · Widget A: 420"],
+    note: "11 region × product pairs; top 2 are South · Widget A 420 (2 rows) and East · Widget C 314.93",
+  },
+  {
+    sheet: "sales",
+    question: "top 3 region and product by revenue by month",
+    expect: "abstain",
+    note: "a top-N over two groups plus a time bucket is two dimensions at once",
   },
 ];
 

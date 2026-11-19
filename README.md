@@ -27,6 +27,7 @@ top-N) directly from the spreadsheet.
 - [x] Period comparison (change/growth between two named months, quarters or years)
 - [x] Share / percentage-of-total questions (subset total vs whole-sheet total, row-count share)
 - [x] Distinct-values listing (every distinct value with row counts, most frequent first)
+- [x] Multi-column group-by ("by region and product", up to three columns, composite keys, CSV export splits them)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -112,7 +113,11 @@ clause on a sheet with no date column — or on a non-date column
 Supported shapes: totals, averages, medians, minimums, maximums
 ("total revenue", "average salary"), counts ("how many employees"),
 group-by ("total revenue by region", "average salary per department"),
-top-N ("top 3 products by revenue", "highest revenue" = top 1), filters
+multi-column group-by ("total revenue by region and product",
+"how many employees by department and remote" — up to three columns,
+in the order named, comma-separated too), top-N ("top 3 products by
+revenue", "top 3 region and product by revenue", "highest revenue" =
+top 1), filters
 ("total revenue where region is North", "average salary where salary >
 90000", "sales in North"), row queries ("show rows where region is
 North"), correlation ("correlation between revenue and units",
@@ -125,7 +130,14 @@ values ("list unique regions", "what are the distinct products").
 A distinct-values answer lists every distinct value of the column
 with its row count, most frequent first (alphabetical tie-break),
 showing the first 20 when there are more; blank cells are never
-listed as values. A share compares
+listed as values. A multi-column group-by answer lists one line per
+combination ("North · Widget A: 240 (2 rows)"), largest first, and a
+blank cell in any group column shows as "(blank)" rather than being
+dropped. A time bucket plus a second group column ("by region and
+product by month", "by month and region") abstains — group by one
+dimension at a time — as does a group word that is not a column
+("by region and profit" must not silently answer as "by region").
+A share compares
 a filtered subset's total against the whole sheet's total — the subset
 is named by a `where` clause, a trailing `in`/`for` value, or a trailing
 `from`/`is` value ("revenue comes from North", "revenue is North") —
@@ -268,7 +280,8 @@ columns available so it can be rephrased. With `--json` the output is
 `sheet ask --out <path>` writes the answer to a file as well as
 printing it: `.json` writes the same `{ question, answer, result }`
 object `--json` prints; `.csv` writes the result as a table — groups
-as `<group-by>,<column>,rows`, row results with their headers, a
+as one column per group-by column plus `<column>,rows`
+(`region,product,revenue,rows`), row results with their headers, a
 scalar as one `label,value,rows_matched,values_used` row (a null value
 stays blank, never `0`), a comparison as one row per period plus
 `change` and `percent_change` rows. An abstention exports as a single
@@ -318,20 +331,25 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 33-question gold set over
+`npm run eval` scores the engine against a 53-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
-medians, group-bys, top-N, filters and row queries, time grouping
+medians, group-bys, multi-column group-bys (region × product,
+department × remote) and top-N over them, top-N, filters and row
+queries, time grouping
 (monthly totals, averages, counts, top months), correlation (units vs
 revenue, id vs salary), period comparison (monthly revenue Jan→Feb
-and Feb→Mar, average salary 2023→2024), plus seven questions the
+and Feb→Mar, average salary 2023→2024), share and distinct-values
+questions, plus fifteen questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
-comparison naming one period or the same period twice). Expected
+comparison naming one period or the same period twice, a time bucket
+combined with a second group column, a group word that is not a
+column, a top-N over two groups plus a time bucket). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-19): answer accuracy 26/26 (100%), abstention
-accuracy 7/7 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-19): answer accuracy 38/38 (100%), abstention
+accuracy 15/15 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row

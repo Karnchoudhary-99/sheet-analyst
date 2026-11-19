@@ -59,26 +59,29 @@ export function describeQuery(query: Query): string[] {
       ];
     case "group": {
       const bucket = query.bucket ? `, bucketed by ${query.bucket}` : "";
+      const groupedBy = query.groupBy.join(" and ");
       const what = query.column
         ? `${OP_LABEL[query.op] ?? query.op} of ${query.column}`
         : "count";
       return [
-        `${what}, grouped by ${query.groupBy}${bucket}`,
+        `${what}, grouped by ${groupedBy}${bucket}`,
         `operation: ${query.op}`,
         ...(query.column ? [`column: ${query.column}`] : []),
-        `group by: ${query.groupBy}`,
+        `group by: ${query.groupBy.join(", ")}`,
         ...(query.bucket ? [`time bucket: ${query.bucket}`] : []),
         `filters: ${describeFilters(query.filters)}`,
       ];
     }
     case "top": {
       const bucket = query.bucket ? `, bucketed by ${query.bucket}` : "";
-      const grouped = query.groupBy ? `, grouped by ${query.groupBy}${bucket}` : "";
+      const grouped = query.groupBy
+        ? `, grouped by ${query.groupBy.join(" and ")}${bucket}`
+        : "";
       return [
         `top ${query.limit} ${query.direction} by ${query.column}${grouped}`,
         `operation: rank by ${query.column}`,
         `limit: ${query.limit} (${query.direction})`,
-        ...(query.groupBy ? [`group by: ${query.groupBy}`] : []),
+        ...(query.groupBy ? [`group by: ${query.groupBy.join(", ")}`] : []),
         ...(query.bucket ? [`time bucket: ${query.bucket}`] : []),
         `filters: ${describeFilters(query.filters)}`,
       ];

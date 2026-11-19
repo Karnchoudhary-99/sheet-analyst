@@ -16,6 +16,14 @@ const STAFF = parseCsv(
     "3,Alan,Data,88000,2025-01-20,false\n",
 );
 
+// A sheet with both "date" and "start date" columns: "by start date"
+// must resolve to the one column, not to "start date" plus "date".
+const DATES = parseCsv(
+  "date,start_date,region,revenue\n" +
+    "2026-01-05,2024-03-01,North,240.00\n" +
+    "2026-01-06,2023-07-15,South,199.92\n",
+);
+
 describe("parseQuestion aggregates", () => {
   it("parses a total", () => {
     const r = parseQuestion("total revenue", SALES);
@@ -65,7 +73,7 @@ describe("parseQuestion counts", () => {
     const r = parseQuestion("how many employees by department", STAFF);
     expect(r).toEqual({
       ok: true,
-      query: { kind: "group", groupBy: "department", column: null, op: "count", filters: [] },
+      query: { kind: "group", groupBy: ["department"], column: null, op: "count", filters: [] },
     });
   });
 });
@@ -75,7 +83,7 @@ describe("parseQuestion group-by", () => {
     const r = parseQuestion("total revenue by region", SALES);
     expect(r).toEqual({
       ok: true,
-      query: { kind: "group", groupBy: "region", column: "revenue", op: "sum", filters: [] },
+      query: { kind: "group", groupBy: ["region"], column: "revenue", op: "sum", filters: [] },
     });
   });
 
@@ -83,8 +91,105 @@ describe("parseQuestion group-by", () => {
     const r = parseQuestion("average salary per department", STAFF);
     expect(r).toEqual({
       ok: true,
-      query: { kind: "group", groupBy: "department", column: "salary", op: "mean", filters: [] },
+      query: { kind: "group", groupBy: ["department"], column: "salary", op: "mean", filters: [] },
     });
+  });
+});
+
+describe("parseQuestion multi-column group-by", () => {
+  it("groups by two columns joined with 'and'", () => {
+    const r = parseQuestion("total revenue by region and product", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "group",
+        groupBy: ["region", "product"],
+        column: "revenue",
+        op: "sum",
+        filters: [],
+      },
+    });
+  });
+
+  it("keeps the order the columns were named in", () => {
+    const r = parseQuestion("total revenue by product and region", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") {
+      expect(r.query.groupBy).toEqual(["product", "region"]);
+    }
+  });
+
+  it("accepts a comma-separated group list", () => {
+    const r = parseQuestion("total revenue by region, product", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") {
+      expect(r.query.groupBy).toEqual(["region", "product"]);
+    }
+  });
+
+  it("counts per two-column group", () => {
+    const r = parseQuestion("how many employees by department and remote", STAFF);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "group",
+        groupBy: ["department", "remote"],
+        column: null,
+        op: "count",
+        filters: [],
+      },
+    });
+  });
+
+  it("groups by three columns", () => {
+    const r = parseQuestion("total revenue by date and region and product", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") {
+      expect(r.query.groupBy).toEqual(["date", "region", "product"]);
+    }
+  });
+
+  it("abstains on more than three group columns", () => {
+    const r = parseQuestion(
+      "total revenue by date and region and product and units",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/at most three columns/);
+  });
+
+  it("abstains when a word after 'and' is not a column, instead of dropping it", () => {
+    const r = parseQuestion("total revenue by region and profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find a column named "profit"/);
+  });
+
+  it("abstains on a time bucket combined with a second group column", () => {
+    const r = parseQuestion("total revenue by region and product by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one dimension at a time/);
+  });
+
+  it("abstains on 'by month and region' instead of silently dropping the region", () => {
+    const r = parseQuestion("total revenue by month and region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one dimension at a time/);
+  });
+
+  it("treats a multi-word column name as one group, not two", () => {
+    const r = parseQuestion("total salary by start date", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") {
+      expect(r.query.groupBy).toEqual(["start_date"]);
+    }
+  });
+
+  it("does not split a multi-word name when a shorter column also matches", () => {
+    const r = parseQuestion("total revenue by start date", DATES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") {
+      expect(r.query.groupBy).toEqual(["start_date"]);
+    }
   });
 });
 
@@ -98,7 +203,7 @@ describe("parseQuestion top-N", () => {
         column: "revenue",
         limit: 3,
         direction: "highest",
-        groupBy: "product",
+        groupBy: ["product"],
         filters: [],
       },
     });
@@ -196,7 +301,7 @@ describe("parseQuestion time grouping", () => {
       ok: true,
       query: {
         kind: "group",
-        groupBy: "date",
+        groupBy: ["date"],
         column: "revenue",
         op: "sum",
         filters: [],
@@ -211,7 +316,7 @@ describe("parseQuestion time grouping", () => {
     if (r.ok) {
       expect(r.query.kind).toBe("group");
       if (r.query.kind === "group") {
-        expect(r.query.groupBy).toBe("start_date");
+        expect(r.query.groupBy).toEqual(["start_date"]);
         expect(r.query.bucket).toBe("year");
       }
     }
@@ -226,7 +331,7 @@ describe("parseQuestion time grouping", () => {
     const r = parseQuestion("total salary by start date by month", STAFF);
     expect(r.ok).toBe(true);
     if (r.ok && r.query.kind === "group") {
-      expect(r.query.groupBy).toBe("start_date");
+      expect(r.query.groupBy).toEqual(["start_date"]);
       expect(r.query.bucket).toBe("month");
     }
   });
@@ -237,7 +342,7 @@ describe("parseQuestion time grouping", () => {
       ok: true,
       query: {
         kind: "group",
-        groupBy: "date",
+        groupBy: ["date"],
         column: null,
         op: "count",
         filters: [],
@@ -289,11 +394,41 @@ describe("parseQuestion time grouping", () => {
         column: "revenue",
         limit: 2,
         direction: "highest",
-        groupBy: "date",
+        groupBy: ["date"],
         filters: [],
         bucket: "month",
       },
     });
+  });
+
+  it("ranks two-column groups", () => {
+    const r = parseQuestion("top 3 region and product by revenue", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "top",
+        column: "revenue",
+        limit: 3,
+        direction: "highest",
+        groupBy: ["region", "product"],
+        filters: [],
+      },
+    });
+  });
+
+  it("abstains on a top-N over two groups plus a time bucket", () => {
+    const r = parseQuestion("top 3 region and product by revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one dimension at a time/);
+  });
+
+  it("abstains on ranking more than three columns", () => {
+    const r = parseQuestion(
+      "top 3 date and region and product and units by revenue",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/at most three columns/);
   });
 
   it("leaves plain group-by questions untouched", () => {
