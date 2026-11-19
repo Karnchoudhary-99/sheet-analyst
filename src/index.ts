@@ -59,10 +59,14 @@ export {
 } from "./profile.js";
 export {
   bucketDate,
+  findPeriodMentions,
   isoWeek,
   parseDate,
+  resolvePeriodYear,
   type DateBucket,
   type ParsedDate,
+  type PeriodMention,
+  type PeriodSpec,
   type TimeBucket,
 } from "./time.js";
 export {
