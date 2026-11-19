@@ -403,3 +403,116 @@ describe("parseQuestion correlation", () => {
     if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
   });
 });
+
+describe("parseQuestion period comparison", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,10,200.00\n" +
+      "2026-01-12,South,Widget B,5,124.95\n" +
+      "2026-02-03,North,Widget B,12,299.88\n" +
+      "2026-02-10,South,Widget A,6,120.00\n",
+  );
+  const TWOYEAR = parseCsv(
+    "date,product,revenue\n" +
+      "2025-01-05,Widget A,100\n" +
+      "2026-01-05,Widget A,200\n",
+  );
+  const NODATE = parseCsv(
+    "product,units,revenue\n" + "Widget A,10,200.00\n" + "Widget B,5,124.95\n",
+  );
+
+  it("parses a two-month comparison, defaulting to the total", () => {
+    const r = parseQuestion("compare revenue Jan 2026 vs Feb 2026", MONTHLY);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "comparison",
+        column: "revenue",
+        op: "sum",
+        dateColumn: "date",
+        periodA: { bucket: "month", key: "2026-01", label: "Jan 2026", year: 2026 },
+        periodB: { bucket: "month", key: "2026-02", label: "Feb 2026", year: 2026 },
+        filters: [],
+      },
+    });
+  });
+
+  it("parses 'change from X to Y' and resolves bare months to the sheet's only year", () => {
+    const r = parseQuestion("revenue change from January to February", MONTHLY);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "comparison") {
+      expect(r.query.periodA.key).toBe("2026-01");
+      expect(r.query.periodB.key).toBe("2026-02");
+      expect(r.query.op).toBe("sum");
+    }
+  });
+
+  it("parses an average comparison and a quarter comparison", () => {
+    const avg = parseQuestion("compare average revenue Jan 2026 vs Feb 2026", MONTHLY);
+    expect(avg.ok).toBe(true);
+    if (avg.ok && avg.query.kind === "comparison") expect(avg.query.op).toBe("mean");
+    const q = parseQuestion("compare revenue Q1 2026 vs Q2 2026", MONTHLY);
+    expect(q.ok).toBe(true);
+    if (q.ok && q.query.kind === "comparison") {
+      expect(q.query.periodA).toEqual({ bucket: "quarter", key: "2026-Q1", label: "Q1 2026", year: 2026 });
+    }
+  });
+
+  it("parses a row-count comparison", () => {
+    const r = parseQuestion("compare rows in Jan vs Feb", MONTHLY);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "comparison",
+        column: null,
+        op: "count",
+        dateColumn: "date",
+        periodA: { bucket: "month", key: "2026-01", label: "Jan 2026", year: 2026 },
+        periodB: { bucket: "month", key: "2026-02", label: "Feb 2026", year: 2026 },
+        filters: [],
+      },
+    });
+  });
+
+  it("abstains when only one period is named", () => {
+    const r = parseQuestion("compare revenue Jan 2026", MONTHLY);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/two periods/);
+  });
+
+  it("abstains when both periods are the same", () => {
+    const r = parseQuestion("compare revenue Jan 2026 vs Jan 2026", MONTHLY);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/both periods are/);
+  });
+
+  it("abstains when the periods are different kinds", () => {
+    const r = parseQuestion("compare revenue Jan 2026 vs 2026", MONTHLY);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/like with like/);
+  });
+
+  it("abstains when the sheet has no date column", () => {
+    const r = parseQuestion("compare revenue Jan 2026 vs Feb 2026", NODATE);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a date column/);
+  });
+
+  it("abstains when the compared column is not numeric", () => {
+    const r = parseQuestion("compare region Jan 2026 vs Feb 2026", MONTHLY);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains on a bare month when the sheet spans several years", () => {
+    const r = parseQuestion("revenue change from January to February", TWOYEAR);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/more than one year/);
+  });
+
+  it("does not treat a plain question as a comparison", () => {
+    const r = parseQuestion("total revenue", MONTHLY);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.query.kind).toBe("aggregate");
+  });
+});
