@@ -21,6 +21,8 @@
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
  * - rows: "show rows where region is North", "list employees in Data"
+ * - correlation: "correlation between revenue and units",
+ *   "how correlated are salary and age" (both columns must be numeric)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -63,7 +65,8 @@ export type Query =
       filters: Filter[];
       bucket?: TimeBucket;
     }
-  | { kind: "rows"; filters: Filter[]; limit: number };
+  | { kind: "rows"; filters: Filter[]; limit: number }
+  | { kind: "correlation"; columnA: string; columnB: string; filters: Filter[] };
 
 export type ParseResult =
   | { ok: true; query: Query }
@@ -372,6 +375,58 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   return { filters, rest };
 }
 
+/**
+ * Try to read a correlation question ("correlation between revenue
+ * and units", "how correlated are salary and age"). Returns null
+ * when the question is not about correlation; otherwise a result —
+ * a correlation query, or an abstention when the two columns cannot
+ * be pinned down (fewer/more than two, or not numeric).
+ */
+function tryParseCorrelation(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\bcorrelat\w*\b/.test(norm)) return null;
+  const stripped = norm
+    .replace(/\bcorrelat\w*\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const hits = findColumns(stripped, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length < 2) {
+    return {
+      ok: false,
+      reason: `correlation needs two columns named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 2) {
+    return {
+      ok: false,
+      reason: `could not tell which two columns to correlate — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const nonNumeric = distinct.filter(
+    (c) => c.type !== "integer" && c.type !== "number",
+  );
+  if (nonNumeric.length > 0) {
+    return {
+      ok: false,
+      reason: `correlation needs two numeric columns — "${nonNumeric[0].name}" is ${nonNumeric[0].type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: {
+      kind: "correlation",
+      columnA: distinct[0].name,
+      columnB: distinct[1].name,
+      filters,
+    },
+  };
+}
+
 export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult {
   if (!question || question.trim() === "") {
     return { ok: false, reason: "empty question — ask about a column, e.g. 'total revenue'" };
@@ -388,6 +443,18 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   const timeBucket = extractTimeBucket(extracted.rest);
   if (timeBucket.error) return { ok: false, reason: timeBucket.error };
   const bucket = timeBucket.bucket;
+
+  // Correlation: two numeric columns, no grouping or ranking.
+  const correlation = tryParseCorrelation(timeBucket.rest, columns, filters);
+  if (correlation) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "correlation can't be grouped by a time period — ask about two columns, e.g. 'correlation between revenue and units'",
+      };
+    }
+    return correlation;
+  }
 
   // Top-N: "top 3 products by revenue" ranks groups by the column
   // named after "by"; without "by" it ranks rows by the one column
