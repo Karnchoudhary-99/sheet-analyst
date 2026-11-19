@@ -116,7 +116,8 @@ group-by ("total revenue by region", "average salary per department"),
 multi-column group-by ("total revenue by region and product",
 "how many employees by department and remote" — up to three columns,
 in the order named, comma-separated too), top-N ("top 3 products by
-revenue", "highest revenue" = top 1), filters
+revenue", "top 3 region and product by revenue", "highest revenue" =
+top 1), filters
 ("total revenue where region is North", "average salary where salary >
 90000", "sales in North"), row queries ("show rows where region is
 North"), correlation ("correlation between revenue and units",
@@ -330,24 +331,25 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 50-question gold set over
+`npm run eval` scores the engine against a 53-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, multi-column group-bys (region × product,
-department × remote), top-N, filters and row queries, time grouping
+department × remote) and top-N over them, top-N, filters and row
+queries, time grouping
 (monthly totals, averages, counts, top months), correlation (units vs
 revenue, id vs salary), period comparison (monthly revenue Jan→Feb
 and Feb→Mar, average salary 2023→2024), share and distinct-values
-questions, plus fourteen questions the
+questions, plus fifteen questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
 comparison naming one period or the same period twice, a time bucket
 combined with a second group column, a group word that is not a
-column). Expected
+column, a top-N over two groups plus a time bucket). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-19): answer accuracy 36/36 (100%), abstention
-accuracy 14/14 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-19): answer accuracy 38/38 (100%), abstention
+accuracy 15/15 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row
