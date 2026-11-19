@@ -24,6 +24,7 @@ export {
 export {
   askWorkbook,
   askWorkbookDetailed,
+  explainWorkbook,
   getSheet,
   listSheets,
   loadWorkbookFromDir,
@@ -64,3 +65,15 @@ export {
   type ParsedDate,
   type TimeBucket,
 } from "./time.js";
+export {
+  describeQuery,
+  explainQuestion,
+  formatExplainText,
+  type ExplainResult,
+} from "./explain.js";
+export {
+  abstentionToCsv,
+  csvCell,
+  exportFormat,
+  resultToCsv,
+} from "./export.js";
