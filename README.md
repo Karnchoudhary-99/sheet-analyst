@@ -26,6 +26,7 @@ top-N) directly from the spreadsheet.
 - [x] Correlation + quartiles (Pearson r questions, Q1/Q3 in `describe`)
 - [x] Period comparison (change/growth between two named months, quarters or years)
 - [x] Share / percentage-of-total questions (subset total vs whole-sheet total, row-count share)
+- [x] Distinct-values listing (every distinct value with row counts, most frequent first)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -91,6 +92,8 @@ answerQuestion("what share of revenue is North", sales);
 // "Region is North accounts for 21.79% of total revenue (389.97 of 1,789.6, from 3 of 8 rows)."
 answerQuestion("what percentage of rows are in North", sales);
 // "3 of 8 rows (37.5%) match region is North."
+answerQuestion("list unique regions", sales);
+// "Distinct region (4 values):\n- North: 3 rows\n- East: 2 rows…"
 ```
 
 Time grouping (`src/time.ts`) collapses the sheet's date column
@@ -117,7 +120,12 @@ North"), correlation ("correlation between revenue and units",
 ("compare revenue Jan 2026 vs Feb 2026", "revenue change from
 January to February", "compare rows in Jan vs Feb"), and share
 ("what share of revenue is North", "what percentage of total revenue
-comes from North", "what share of rows are in North"). A share compares
+comes from North", "what share of rows are in North"), and distinct
+values ("list unique regions", "what are the distinct products").
+A distinct-values answer lists every distinct value of the column
+with its row count, most frequent first (alphabetical tie-break),
+showing the first 20 when there are more; blank cells are never
+listed as values. A share compares
 a filtered subset's total against the whole sheet's total — the subset
 is named by a `where` clause, a trailing `in`/`for` value, or a trailing
 `from`/`is` value ("revenue comes from North", "revenue is North") —
