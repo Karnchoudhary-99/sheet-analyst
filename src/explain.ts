@@ -123,6 +123,14 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters)}`,
       ];
     }
+    case "distinct":
+      return [
+        `distinct values of ${query.column}`,
+        "operation: list distinct values",
+        `column: ${query.column}`,
+        `limit: ${query.limit}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
   }
 }
 
