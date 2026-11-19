@@ -123,6 +123,23 @@ describe("describeQuery", () => {
     expect(lines).toContain("filters: region = North");
     expect(lines).toContain("limit: 10");
   });
+
+  it("names both columns of a correlation", () => {
+    expect(
+      describeQuery({
+        kind: "correlation",
+        columnA: "revenue",
+        columnB: "units",
+        filters: [],
+      }),
+    ).toEqual([
+      "correlation between revenue and units",
+      "operation: correlation",
+      "column A: revenue",
+      "column B: units",
+      "filters: none",
+    ]);
+  });
 });
 
 describe("formatExplainText", () => {

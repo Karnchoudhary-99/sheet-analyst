@@ -8,7 +8,9 @@
  * - CSV: one table per result kind. Groups become
  *   `<group-by>,<column>,rows` (e.g. `region,revenue,rows`); row
  *   results keep their headers; a scalar becomes one row of
- *   `label,value,rows_matched,values_used`. An abstention (no result)
+ *   `label,value,rows_matched,values_used`; a correlation becomes
+ *   one row of `column_a,column_b,correlation,paired_rows,rows_matched`
+ *   (empty correlation when it could not be computed). An abstention (no result)
  *   exports as a single `question,answer` row — the file still says
  *   what happened instead of being silently empty.
  */
@@ -62,6 +64,17 @@ export function resultToCsv(
       }
       return lines.join("\n");
     }
+    case "correlation":
+      return [
+        csvRow(["column_a", "column_b", "correlation", "paired_rows", "rows_matched"]),
+        csvRow([
+          result.columnA,
+          result.columnB,
+          result.value === null ? "" : String(result.value),
+          String(result.pairs),
+          String(result.rowsMatched),
+        ]),
+      ].join("\n");
   }
 }
 

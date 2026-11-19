@@ -101,6 +101,34 @@ describe("resultToCsv", () => {
       "department,count,rows\nEngineering,4,4",
     );
   });
+
+  it("writes a correlation as one column_a/column_b row", () => {
+    const correlation: QueryResult = {
+      kind: "correlation",
+      columnA: "revenue",
+      columnB: "units",
+      value: 0.9015,
+      pairs: 7,
+      rowsMatched: 8,
+    };
+    expect(resultToCsv(correlation, "correlation between revenue and units", "")).toBe(
+      "column_a,column_b,correlation,paired_rows,rows_matched\nrevenue,units,0.9015,7,8",
+    );
+  });
+
+  it("leaves an uncomputable correlation blank instead of zero", () => {
+    const correlation: QueryResult = {
+      kind: "correlation",
+      columnA: "a",
+      columnB: "b",
+      value: null,
+      pairs: 1,
+      rowsMatched: 4,
+    };
+    expect(resultToCsv(correlation, "correlation between a and b", "")).toBe(
+      "column_a,column_b,correlation,paired_rows,rows_matched\na,b,,1,4",
+    );
+  });
 });
 
 describe("abstentionToCsv", () => {
