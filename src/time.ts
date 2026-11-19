@@ -157,3 +157,190 @@ export function bucketDate(value: string, bucket: TimeBucket): DateBucket | null
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
+
+// ---------------------------------------------------------------------------
+// Named periods ("Jan 2026", "Q1 2026", "2026") for comparison questions
+// ("compare revenue Jan 2026 vs Feb 2026"). A period is a bucket plus a
+// chronological key in the same shape `bucketDate` produces, so the
+// engine can test membership by bucketing each row's date cell.
+// ---------------------------------------------------------------------------
+
+/** A named period: month, quarter or year, with the year optional. */
+export interface PeriodSpec {
+  bucket: Exclude<TimeBucket, "day" | "week">;
+  /** Chronological key, same shape as `bucketDate` keys ("2026-01", "2026-Q1", "2026"). */
+  key: string;
+  label: string;
+  /** The year the period belongs to, when the question named one. */
+  year?: number;
+}
+
+/** One period mention found in a question, with its span so the parser can strip it. */
+export interface PeriodMention {
+  spec: PeriodSpec;
+  /** Character offsets into the (normalized) text the mention was scanned from. */
+  start: number;
+  end: number;
+}
+
+const MONTH_WORDS: Record<string, number> = {
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
+  may: 5,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
+};
+
+/**
+ * Find every named period in a normalized question ("jan 2026",
+ * "february", "q1 2026", "2026", "2026-01"). Mentions are returned
+ * in the order they appear; overlapping scans are resolved longest
+ * first so the year in "jan 2026" is not also reported as a
+ * standalone year. Day/week periods cannot be named ("week 3" is a
+ * count, not a date), so only month, quarter and year are matched.
+ */
+export function findPeriodMentions(text: string): PeriodMention[] {
+  const mentions: PeriodMention[] = [];
+  const taken: boolean[] = new Array(text.length).fill(false);
+  const claim = (start: number, end: number): boolean => {
+    for (let i = start; i < end; i++) if (taken[i]) return false;
+    for (let i = start; i < end; i++) taken[i] = true;
+    return true;
+  };
+
+  // ISO month first ("2026-01") so its year is not re-read below.
+  const iso = /\b(\d{4})-(\d{2})\b/g;
+  for (const m of text.matchAll(iso)) {
+    const month = Number(m[2]);
+    if (month < 1 || month > 12 || m.index === undefined) continue;
+    const year = Number(m[1]);
+    if (!claim(m.index, m.index + m[0].length)) continue;
+    mentions.push({
+      spec: {
+        bucket: "month",
+        key: `${year}-${pad2(month)}`,
+        label: `${MONTH_NAMES[month - 1]} ${year}`,
+        year,
+      },
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+
+  // Quarters ("q1 2026", "q3").
+  const quarter = /\bq([1-4])(?:\s+(\d{4}))?\b/g;
+  for (const m of text.matchAll(quarter)) {
+    if (m.index === undefined) continue;
+    if (!claim(m.index, m.index + m[0].length)) continue;
+    const q = Number(m[1]);
+    const year = m[2] ? Number(m[2]) : undefined;
+    mentions.push({
+      spec: {
+        bucket: "quarter",
+        key: year === undefined ? `Q${q}` : `${year}-Q${q}`,
+        label: year === undefined ? `Q${q}` : `Q${q} ${year}`,
+        year,
+      },
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+
+  // Months ("jan 2026", "february", "may").
+  const monthNames = Object.keys(MONTH_WORDS).sort((a, b) => b.length - a.length).join("|");
+  const month = new RegExp(`\\b(${monthNames})(?:\\s+(\\d{4}))?\\b`, "g");
+  for (const m of text.matchAll(month)) {
+    if (m.index === undefined) continue;
+    if (!claim(m.index, m.index + m[0].length)) continue;
+    const monthNum = MONTH_WORDS[m[1]];
+    const year = m[2] ? Number(m[2]) : undefined;
+    mentions.push({
+      spec: {
+        bucket: "month",
+        key: year === undefined ? `M${monthNum}` : `${year}-${pad2(monthNum)}`,
+        label: year === undefined ? MONTH_NAMES[monthNum - 1] : `${MONTH_NAMES[monthNum - 1]} ${year}`,
+        year,
+      },
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+
+  // Bare years ("2026") — only where nothing else claimed the span.
+  const yearRe = /\b(19|20)\d{2}\b/g;
+  for (const m of text.matchAll(yearRe)) {
+    if (m.index === undefined) continue;
+    if (!claim(m.index, m.index + m[0].length)) continue;
+    const year = Number(m[0]);
+    mentions.push({
+      spec: { bucket: "year", key: `${year}`, label: `${year}`, year },
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+
+  return mentions.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Fill in a period's missing year from the years actually present in
+ * a date column. A period that already names a year is returned as
+ * is; one without a year resolves to the sheet's only year, and
+ * abstains (null + reason) when the sheet spans several years.
+ */
+export function resolvePeriodYear(
+  spec: PeriodSpec,
+  years: number[],
+): { spec: PeriodSpec; error?: string } {
+  if (spec.year !== undefined) return { spec };
+  const distinct = [...new Set(years)].sort((a, b) => a - b);
+  if (distinct.length === 0) {
+    return { spec, error: `no dates in the sheet to place "${spec.label}" in a year` };
+  }
+  if (distinct.length > 1) {
+    return {
+      spec,
+      error: `"${spec.label}" appears in more than one year (${distinct.join(", ")}) — say which year, e.g. "${spec.label} ${distinct[0]}"`,
+    };
+  }
+  const year = distinct[0];
+  if (spec.bucket === "month") {
+    const month = Number(spec.key.slice(1));
+    return {
+      spec: {
+        bucket: "month",
+        key: `${year}-${pad2(month)}`,
+        label: `${MONTH_NAMES[month - 1]} ${year}`,
+        year,
+      },
+    };
+  }
+  const q = Number(spec.key.slice(1));
+  return {
+    spec: {
+      bucket: "quarter",
+      key: `${year}-Q${q}`,
+      label: `Q${q} ${year}`,
+      year,
+    },
+  };
+}
