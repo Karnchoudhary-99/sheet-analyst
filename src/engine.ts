@@ -78,6 +78,8 @@ export type QueryResult =
       kind: "share";
       /** The column being shared out, or null for a row-count share. */
       column: string | null;
+      /** The subset whose share this is (at least one filter). */
+      filters: Filter[];
       /** The subset's total (sum of the column) or subset row count. */
       subsetValue: number;
       /** The whole sheet's total (sum of the column) or total row count. */
@@ -420,6 +422,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         return {
           kind: "share",
           column: null,
+          filters: query.filters,
           subsetValue: rows.length,
           totalValue: totalRows,
           share: totalRows === 0 ? null : rows.length / totalRows,
@@ -451,6 +454,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
       return {
         kind: "share",
         column: query.column,
+        filters: query.filters,
         subsetValue: subset.sum,
         totalValue: total.sum,
         share: total.sum === 0 ? null : subset.sum / total.sum,
