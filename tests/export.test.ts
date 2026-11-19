@@ -106,9 +106,12 @@ describe("resultToCsv", () => {
 describe("abstentionToCsv", () => {
   it("writes the question and the answer as one row", () => {
     expect(
-      abstentionToCsv("total profit", "I can't answer that from this data: no column named in the question."),
+      abstentionToCsv(
+        "total profit",
+        "I can't answer that from this data: no column named in the question — columns are: date, region, product, units, revenue.",
+      ),
     ).toBe(
-      'question,answer\ntotal profit,"I can\'t answer that from this data: no column named in the question."',
+      'question,answer\ntotal profit,"I can\'t answer that from this data: no column named in the question — columns are: date, region, product, units, revenue."',
     );
   });
 });
