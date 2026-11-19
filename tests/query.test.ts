@@ -516,3 +516,104 @@ describe("parseQuestion period comparison", () => {
     if (r.ok) expect(r.query.kind).toBe("aggregate");
   });
 });
+
+describe("parseQuestion share", () => {
+  it("parses 'what share of revenue is North'", () => {
+    const r = parseQuestion("what share of revenue is North", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "share",
+        column: "revenue",
+        filters: [{ column: "region", op: "=", value: "north" }],
+      },
+    });
+  });
+
+  it("parses 'what percentage of total revenue comes from North'", () => {
+    const r = parseQuestion(
+      "what percentage of total revenue comes from North",
+      SALES,
+    );
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "share",
+        column: "revenue",
+        filters: [{ column: "region", op: "=", value: "north" }],
+      },
+    });
+  });
+
+  it("parses a row-count share", () => {
+    const r = parseQuestion("what share of rows are in North", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "share",
+        column: null,
+        filters: [{ column: "region", op: "=", value: "North" }],
+      },
+    });
+  });
+
+  it("keeps a where filter on a share question", () => {
+    const r = parseQuestion("what share of revenue where region is North", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "share",
+        column: "revenue",
+        filters: [{ column: "region", op: "=", value: "North" }],
+      },
+    });
+  });
+
+  it("resolves a multi-word value to its column", () => {
+    const r = parseQuestion("what share of revenue is Widget A", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "share",
+        column: "revenue",
+        filters: [{ column: "product", op: "=", value: "widget a" }],
+      },
+    });
+  });
+
+  it("abstains when no group is named", () => {
+    const r = parseQuestion("what share of revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a group/);
+  });
+
+  it("abstains on a share of an average", () => {
+    const r = parseQuestion("what share of average revenue is North", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/compare totals/);
+  });
+
+  it("abstains when the named column does not exist", () => {
+    const r = parseQuestion("what share of profit is North", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains when the column is not numeric", () => {
+    const r = parseQuestion("what share of region is North", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains when the value belongs to no column", () => {
+    const r = parseQuestion("what share of revenue is Atlantis", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "atlantis"/);
+  });
+
+  it("abstains on a time-grouped share", () => {
+    const r = parseQuestion("what share of revenue is North by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+});
