@@ -5,10 +5,10 @@
  *
  * - JSON: the same `{ question, answer, result }` object `sheet ask
  *   --json` prints.
- * - CSV: one table per result kind. Groups become
- *   `<group-by>,<column>,rows` (e.g. `region,revenue,rows`); row
- *   results keep their headers; a scalar becomes one row of
- *   `label,value,rows_matched,values_used`; a correlation becomes
+ * - CSV: one table per result kind. Groups become one column per
+ *   group-by column plus `<column>,rows` (e.g. `region,product,
+ *   revenue,rows`); row results keep their headers; a scalar
+ *   becomes one row of `label,value,rows_matched,values_used`; a correlation becomes
  *   one row of `column_a,column_b,correlation,paired_rows,rows_matched`
  *   (empty correlation when it could not be computed); a comparison
  *   becomes one row per period plus `change` and `percent_change`
@@ -58,9 +58,11 @@ export function resultToCsv(
       ].join("\n");
     case "groups": {
       const valueHeader = result.column ?? "count";
-      const lines = [csvRow([result.groupBy, valueHeader, "rows"])];
+      // One column per group-by column, so a composite group splits
+      // back into its parts instead of arriving as one joined label.
+      const lines = [csvRow([...result.groupBy, valueHeader, "rows"])];
       for (const g of result.groups) {
-        lines.push(csvRow([g.key, String(g.value), String(g.count)]));
+        lines.push(csvRow([...g.keys, String(g.value), String(g.count)]));
       }
       return lines.join("\n");
     }

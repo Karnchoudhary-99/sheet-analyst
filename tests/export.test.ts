@@ -13,12 +13,12 @@ import type { QueryResult } from "../src/engine.js";
 
 const groupsResult: QueryResult = {
   kind: "groups",
-  groupBy: "region",
+  groupBy: ["region"],
   column: "revenue",
   op: "sum",
   groups: [
-    { key: "North", value: 1000.5, count: 3 },
-    { key: "South", value: 789.1, count: 2 },
+    { key: "North", keys: ["North"], value: 1000.5, count: 3 },
+    { key: "South", keys: ["South"], value: 789.1, count: 2 },
   ],
   rowsMatched: 5,
   totalGroups: 2,
@@ -62,6 +62,24 @@ describe("resultToCsv", () => {
     );
   });
 
+  it("writes multi-column groups with one column per group-by column", () => {
+    const multi: QueryResult = {
+      kind: "groups",
+      groupBy: ["region", "product"],
+      column: "revenue",
+      op: "sum",
+      groups: [
+        { key: "North · Widget A", keys: ["North", "Widget A"], value: 240, count: 2 },
+        { key: "North · Widget, Deluxe", keys: ["North", "Widget, Deluxe"], value: 149.97, count: 1 },
+      ],
+      rowsMatched: 3,
+      totalGroups: 2,
+    };
+    expect(resultToCsv(multi, "total revenue by region and product", "")).toBe(
+      'region,product,revenue,rows\nNorth,Widget A,240,2\nNorth,"Widget, Deluxe",149.97,1',
+    );
+  });
+
   it("writes a scalar as one label/value row", () => {
     expect(resultToCsv(scalarResult, "total revenue", "")).toBe(
       "label,value,rows_matched,values_used\ntotal revenue,1789.6,5,5",
@@ -90,10 +108,10 @@ describe("resultToCsv", () => {
   it("uses count as the value header for count groups", () => {
     const countGroups: QueryResult = {
       kind: "groups",
-      groupBy: "department",
+      groupBy: ["department"],
       column: null,
       op: "count",
-      groups: [{ key: "Engineering", value: 4, count: 4 }],
+      groups: [{ key: "Engineering", keys: ["Engineering"], value: 4, count: 4 }],
       rowsMatched: 4,
       totalGroups: 1,
     };
