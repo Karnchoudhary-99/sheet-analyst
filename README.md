@@ -24,6 +24,7 @@ top-N) directly from the spreadsheet.
 - [x] Data-quality profile (null rates, duplicates, empty rows, constant columns, whitespace, IQR outliers)
 - [x] Query explanation + result export (`sheet explain`, `ask --out` .json/.csv)
 - [x] Correlation + quartiles (Pearson r questions, Q1/Q3 in `describe`)
+- [x] Period comparison (change/growth between two named months, quarters or years)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -83,6 +84,8 @@ answerQuestion("total revenue by month", monthlySales);
 // "Total revenue by month:\n- Jan 2026: 664.91 (4 rows)\n- Feb 2026: 914.81 (4 rows)…"
 answerQuestion("correlation between revenue and units", sales);
 // "The correlation between revenue and units is 0.90 (strong positive) across 7 paired rows."
+answerQuestion("compare revenue Jan 2026 vs Feb 2026", monthlySales);
+// "Total revenue grew from 664.91 in Jan 2026 to 914.81 in Feb 2026 (+249.9, +37.58%)."
 ```
 
 Time grouping (`src/time.ts`) collapses the sheet's date column
@@ -104,13 +107,22 @@ group-by ("total revenue by region", "average salary per department"),
 top-N ("top 3 products by revenue", "highest revenue" = top 1), filters
 ("total revenue where region is North", "average salary where salary >
 90000", "sales in North"), row queries ("show rows where region is
-North"), and correlation ("correlation between revenue and units",
-"how correlated are salary and age"). A correlation is the Pearson
-coefficient over the rows where both columns have a value (a blank in
-either column drops that row from the pairing), reported with a
-strength word (strong ≥ 0.7, moderate ≥ 0.4, weak ≥ 0.1, negligible
-below that); fewer than two pairs, or a constant column, is reported
-as uncomputable rather than as zero. Filters compare numbers
+North"), correlation ("correlation between revenue and units",
+"how correlated are salary and age"), and period comparison
+("compare revenue Jan 2026 vs Feb 2026", "revenue change from
+January to February", "compare rows in Jan vs Feb"). A comparison
+needs two named periods of the same kind — two months, two quarters
+or two years — over the sheet's date column; a bare month name
+("January") resolves to the sheet's only year and refuses to guess
+when the sheet spans several years. The answer states the delta and
+the percent change ("grew from 664.91 in Jan 2026 to 914.81 in Feb
+2026 (+249.9, +37.58%)"); a period with no rows, or a zero baseline,
+is reported honestly instead of a comparison being invented. A
+correlation is the Pearson coefficient over the rows where both
+columns have a value (a blank in either column drops that row from
+the pairing), reported with a strength word (strong ≥ 0.7, moderate
+≥ 0.4, weak ≥ 0.1, negligible below that); fewer than two pairs, or
+a constant column, is reported as uncomputable rather than as zero. Filters compare numbers
 numerically, dates by day, and text case-insensitively. Aggregates skip
 null values and say so when some matching rows had no usable value; a
 column with no usable values at all is reported as such, never rendered
@@ -236,7 +248,8 @@ printing it: `.json` writes the same `{ question, answer, result }`
 object `--json` prints; `.csv` writes the result as a table — groups
 as `<group-by>,<column>,rows`, row results with their headers, a
 scalar as one `label,value,rows_matched,values_used` row (a null value
-stays blank, never `0`). An abstention exports as a single
+stays blank, never `0`), a comparison as one row per period plus
+`change` and `percent_change` rows. An abstention exports as a single
 `question,answer` row, so the file still records what happened.
 
 ```bash
@@ -283,17 +296,20 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 27-question gold set over
+`npm run eval` scores the engine against a 33-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, top-N, filters and row queries, time grouping
 (monthly totals, averages, counts, top months), correlation (units vs
-revenue, id vs salary), plus five questions the honest answer is an
-abstention for (unknown column, unanswerable question, unsupported
-period, correlation with a text column). Expected values are hand-computed from the
-CSVs, never derived from the code under test.
+revenue, id vs salary), period comparison (monthly revenue Jan→Feb
+and Feb→Mar, average salary 2023→2024), plus seven questions the
+honest answer is an abstention for (unknown column, unanswerable
+question, unsupported period, correlation with a text column, a
+comparison naming one period or the same period twice). Expected
+values are hand-computed from the CSVs, never derived from the code
+under test.
 
-Baseline (2026-11-19): answer accuracy 22/22 (100%), abstention
-accuracy 5/5 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-19): answer accuracy 26/26 (100%), abstention
+accuracy 7/7 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row
