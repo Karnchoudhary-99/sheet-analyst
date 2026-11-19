@@ -25,6 +25,7 @@ top-N) directly from the spreadsheet.
 - [x] Query explanation + result export (`sheet explain`, `ask --out` .json/.csv)
 - [x] Correlation + quartiles (Pearson r questions, Q1/Q3 in `describe`)
 - [x] Period comparison (change/growth between two named months, quarters or years)
+- [x] Share / percentage-of-total questions (subset total vs whole-sheet total, row-count share)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -86,6 +87,10 @@ answerQuestion("correlation between revenue and units", sales);
 // "The correlation between revenue and units is 0.90 (strong positive) across 7 paired rows."
 answerQuestion("compare revenue Jan 2026 vs Feb 2026", monthlySales);
 // "Total revenue grew from 664.91 in Jan 2026 to 914.81 in Feb 2026 (+249.9, +37.58%)."
+answerQuestion("what share of revenue is North", sales);
+// "Region is North accounts for 21.79% of total revenue (389.97 of 1,789.6, from 3 of 8 rows)."
+answerQuestion("what percentage of rows are in North", sales);
+// "3 of 8 rows (37.5%) match region is North."
 ```
 
 Time grouping (`src/time.ts`) collapses the sheet's date column
@@ -108,9 +113,18 @@ top-N ("top 3 products by revenue", "highest revenue" = top 1), filters
 ("total revenue where region is North", "average salary where salary >
 90000", "sales in North"), row queries ("show rows where region is
 North"), correlation ("correlation between revenue and units",
-"how correlated are salary and age"), and period comparison
+"how correlated are salary and age"), period comparison
 ("compare revenue Jan 2026 vs Feb 2026", "revenue change from
-January to February", "compare rows in Jan vs Feb"). A comparison
+January to February", "compare rows in Jan vs Feb"), and share
+("what share of revenue is North", "what percentage of total revenue
+comes from North", "what share of rows are in North"). A share compares
+a filtered subset's total against the whole sheet's total — the subset
+is named by a `where` clause, a trailing `in`/`for` value, or a trailing
+`from`/`is` value ("revenue comes from North", "revenue is North") —
+and is always a share of a total, never of an average ("what share of
+average revenue is North" abstains with that reason). A whole-sheet
+total of zero is reported as uncomputable, never as a 0% share. A
+comparison
 needs two named periods of the same kind — two months, two quarters
 or two years — over the sheet's date column; a bare month name
 ("January") resolves to the sheet's only year and refuses to guess
