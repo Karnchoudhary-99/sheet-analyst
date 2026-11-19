@@ -10,8 +10,10 @@
  *   results keep their headers; a scalar becomes one row of
  *   `label,value,rows_matched,values_used`; a correlation becomes
  *   one row of `column_a,column_b,correlation,paired_rows,rows_matched`
- *   (empty correlation when it could not be computed). An abstention (no result)
- *   exports as a single `question,answer` row — the file still says
+ *   (empty correlation when it could not be computed); a comparison
+ *   becomes one row per period plus `change` and `percent_change`
+ *   rows (empty when the comparison could not be computed).
+ *   An abstention (no result) exports as a single `question,answer` row — the file still says
  *   what happened instead of being silently empty.
  */
 
@@ -75,6 +77,27 @@ export function resultToCsv(
           String(result.rowsMatched),
         ]),
       ].join("\n");
+    case "comparison": {
+      const periodRow = (p: { label: string; value: number | null; rows: number; valuesUsed: number }) =>
+        csvRow([
+          p.label,
+          p.value === null ? "" : String(p.value),
+          String(p.rows),
+          String(p.valuesUsed),
+        ]);
+      return [
+        csvRow(["period", "value", "rows", "values_used"]),
+        periodRow(result.periodA),
+        periodRow(result.periodB),
+        csvRow(["change", result.delta === null ? "" : String(result.delta), "", ""]),
+        csvRow([
+          "percent_change",
+          result.pctChange === null ? "" : String(result.pctChange),
+          "",
+          "",
+        ]),
+      ].join("\n");
+    }
   }
 }
 

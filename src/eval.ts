@@ -65,6 +65,12 @@ export const EVAL_GATE = 0.8;
  * 7 paired rows — the blank-units row drops out); employees id vs
  * salary: r = −0.65 (moderate negative, 4 paired rows — the NA
  * salary row drops out). Correlation with a text column abstains.
+ *
+ * comparison — monthly revenue Jan 664.91 → Feb 914.81 is +249.90
+ * (+37.58%); Feb 914.81 → Mar 834.81 is −80.00 (−8.74%); employees
+ * average salary 2023 (Grace, 98,000) → 2024 (Ada 95,000 and
+ * Katherine 91,000, average 93,000) is −5,000 (−5.10%). A
+ * comparison naming one period, or the same period twice, abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -228,6 +234,42 @@ export const GOLD_SET: EvalCase[] = [
     question: "correlation between revenue and region",
     expect: "abstain",
     note: "region is text — correlation needs two numeric columns",
+  },
+  {
+    sheet: "monthly",
+    question: "compare revenue Jan 2026 vs Feb 2026",
+    expect: ["grew from 664.91", "914.81", "+249.9", "+37.58%"],
+    note: "Jan 664.91 → Feb 914.81: +249.90, 249.90/664.91 = 37.58%",
+  },
+  {
+    sheet: "monthly",
+    question: "revenue change from February to March",
+    expect: ["fell from 914.81", "834.81", "-80", "-8.74%"],
+    note: "Feb 914.81 → Mar 834.81: −80.00, 80/914.81 = 8.74%",
+  },
+  {
+    sheet: "employees",
+    question: "compare average salary 2023 vs 2024",
+    expect: ["fell from 98,000", "93,000", "-5,000", "-5.1%"],
+    note: "2023 is Grace alone, 98,000; 2024 averages Ada 95,000 and Katherine 91,000 = 93,000: −5,000, 5000/98000 = 5.10%",
+  },
+  {
+    sheet: "monthly",
+    question: "compare average revenue Jan 2026 vs Feb 2026",
+    expect: ["166.23", "228.7", "+62.4", "+37.58%"],
+    note: "Jan avg 664.91/4 = 166.23, Feb avg 914.81/4 = 228.70: delta 62.475, which prints as 62.47 (the double is just under .475) — the substring only pins the magnitude; same +37.58% ratio as the totals",
+  },
+  {
+    sheet: "monthly",
+    question: "compare revenue Jan 2026",
+    expect: "abstain",
+    note: "one period named — a comparison needs two",
+  },
+  {
+    sheet: "monthly",
+    question: "compare revenue Jan 2026 vs Jan 2026",
+    expect: "abstain",
+    note: "both periods are the same month",
   },
 ];
 

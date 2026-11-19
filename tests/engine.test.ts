@@ -290,3 +290,81 @@ describe("executeQuery correlation", () => {
     }
   });
 });
+
+describe("executeQuery comparison", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,10,200.00\n" +
+      "2026-01-12,South,Widget B,5,124.95\n" +
+      "2026-02-03,North,Widget B,12,299.88\n" +
+      "2026-02-10,South,Widget A,6,120.00\n" +
+      "2026-03-02,North,Widget C,3,134.97\n",
+  );
+
+  it("computes totals, delta and percent change between two months", () => {
+    const r = ask("compare revenue Jan 2026 vs Feb 2026", MONTHLY);
+    expect(r.kind).toBe("comparison");
+    if (r.kind !== "comparison") return;
+    expect(r.periodA).toEqual({ label: "Jan 2026", value: 324.95, rows: 2, valuesUsed: 2 });
+    expect(r.periodB).toEqual({ label: "Feb 2026", value: 419.88, rows: 2, valuesUsed: 2 });
+    expect(r.delta).toBeCloseTo(94.93, 2);
+    expect(r.pctChange).toBeCloseTo(29.21, 2);
+    expect(r.rowsMatched).toBe(4);
+  });
+
+  it("reports a fall with a negative delta and percent", () => {
+    const r = ask("revenue change from February to March", MONTHLY);
+    expect(r.kind).toBe("comparison");
+    if (r.kind !== "comparison") return;
+    expect(r.periodA.value).toBeCloseTo(419.88, 2);
+    expect(r.periodB.value).toBeCloseTo(134.97, 2);
+    expect(r.delta).toBeCloseTo(-284.91, 2);
+    expect(r.pctChange).toBeCloseTo(-67.86, 2);
+  });
+
+  it("compares averages, not just totals", () => {
+    const r = ask("compare average revenue Jan 2026 vs Feb 2026", MONTHLY);
+    if (r.kind !== "comparison") throw new Error("wrong kind");
+    expect(r.periodA.value).toBeCloseTo(162.475, 2);
+    expect(r.periodB.value).toBeCloseTo(209.94, 2);
+  });
+
+  it("compares row counts when no column is named", () => {
+    const sparse = parseCsv(
+      "date,product,revenue\n" +
+        "2026-01-05,Widget A,200\n" +
+        "2026-02-03,Widget B,300\n" +
+        "2026-02-10,Widget A,120\n",
+    );
+    const r = ask("compare rows in Jan vs Feb", sparse);
+    if (r.kind !== "comparison") throw new Error("wrong kind");
+    expect(r.column).toBeNull();
+    expect(r.periodA.value).toBe(1);
+    expect(r.periodB.value).toBe(2);
+    expect(r.delta).toBe(1);
+    expect(r.pctChange).toBe(100);
+  });
+
+  it("leaves delta and percent null when a period has no rows", () => {
+    const r = ask("compare revenue Jan 2026 vs Feb 2026", SALES);
+    if (r.kind !== "comparison") throw new Error("wrong kind");
+    expect(r.periodA.value).toBeCloseTo(1114.84, 2);
+    expect(r.periodB.value).toBeNull();
+    expect(r.periodB.rows).toBe(0);
+    expect(r.delta).toBeNull();
+    expect(r.pctChange).toBeNull();
+  });
+
+  it("leaves percent null when the baseline period totals zero", () => {
+    const zero = parseCsv(
+      "date,product,revenue\n" +
+        "2026-01-05,Widget A,0\n" +
+        "2026-02-03,Widget B,300\n",
+    );
+    const r = ask("compare revenue Jan vs Feb", zero);
+    if (r.kind !== "comparison") throw new Error("wrong kind");
+    expect(r.periodA.value).toBe(0);
+    expect(r.delta).toBe(300);
+    expect(r.pctChange).toBeNull();
+  });
+});

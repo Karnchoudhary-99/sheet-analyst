@@ -13,6 +13,7 @@ import { answerQuestion } from "../src/answer.js";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sales = parseCsv(readFileSync(join(root, "examples", "sales.csv"), "utf8"));
 const staff = parseCsv(readFileSync(join(root, "examples", "employees.csv"), "utf8"));
+const monthly = parseCsv(readFileSync(join(root, "examples", "monthly-sales.csv"), "utf8"));
 
 const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["total revenue", sales],
@@ -24,6 +25,7 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["how many employees in Engineering", staff],
   ["lowest salary", staff],
   ["correlation between revenue and units", sales],
+  ["compare revenue Jan 2026 vs Feb 2026", monthly],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

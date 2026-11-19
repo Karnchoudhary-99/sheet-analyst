@@ -115,6 +115,65 @@ function composeCorrelation(
   );
 }
 
+function composeComparison(
+  result: Extract<QueryResult, { kind: "comparison" }>,
+): string {
+  const opLabel: Record<string, string> = {
+    sum: "total",
+    mean: "average",
+    median: "median",
+    min: "minimum",
+    max: "maximum",
+    count: "count",
+  };
+  const what = result.column
+    ? `${opLabel[result.op] ?? result.op} ${result.column}`
+    : "row count";
+  const label = what.charAt(0).toUpperCase() + what.slice(1);
+  const a = result.periodA;
+  const b = result.periodB;
+  // A period with no usable values cannot be compared — say which
+  // one, and whether it had no rows at all or only unusable values.
+  if (a.value === null || b.value === null) {
+    const missing = a.value === null ? a : b;
+    const cause =
+      missing.rows === 0
+        ? "has no rows"
+        : `has ${missing.rows} ${missing.rows === 1 ? "row" : "rows"} but none with a usable value`;
+    return (
+      `I could not compare the ${what} — ${missing.label} ${cause}, ` +
+      `so there is nothing to compare against.`
+    );
+  }
+  const signed = (n: number): string =>
+    `${n >= 0 ? "+" : ""}${formatNumber(n)}`;
+  // Flag a period where some rows had no usable value, so a mean
+  // over 2 values is never presented as a mean over 3 rows.
+  const coverage = [a, b]
+    .filter((p) => p.valuesUsed < p.rows)
+    .map((p) => `${p.valuesUsed} of ${p.rows} had a value in ${p.label}`)
+    .join("; ");
+  const coverageNote = coverage ? ` (${coverage})` : "";
+  const delta = result.delta!;
+  if (delta === 0) {
+    return `${label} was unchanged at ${formatNumber(a.value)} in both ${a.label} and ${b.label}.${coverageNote}`;
+  }
+  const verb = delta > 0 ? "grew" : "fell";
+  const pct =
+    result.pctChange === null
+      ? ""
+      : `, ${signed(result.pctChange)}%`;
+  const pctNote =
+    result.pctChange === null
+      ? ` No percent change is possible — the ${a.label} baseline was 0.`
+      : "";
+  return (
+    `${label} ${verb} from ${formatNumber(a.value)} in ${a.label} ` +
+    `to ${formatNumber(b.value)} in ${b.label} ` +
+    `(${signed(delta)}${pct}).${pctNote}${coverageNote}`
+  );
+}
+
 function composeRows(
   result: Extract<QueryResult, { kind: "rows" }>,
   parsed?: ParsedCsv,
@@ -157,6 +216,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeRows(result, parsed);
     case "correlation":
       return composeCorrelation(result);
+    case "comparison":
+      return composeComparison(result);
   }
 }
 

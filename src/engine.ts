@@ -58,6 +58,21 @@ export type QueryResult =
       /** Rows where both columns had a usable numeric value. */
       pairs: number;
       rowsMatched: number;
+    }
+  | {
+      kind: "comparison";
+      column: string | null;
+      op: string;
+      dateColumn: string;
+      /** Per-period aggregate: `value` is null when the period has no usable values. */
+      periodA: { label: string; value: number | null; rows: number; valuesUsed: number };
+      periodB: { label: string; value: number | null; rows: number; valuesUsed: number };
+      /** B minus A, or null when either period has no usable value. */
+      delta: number | null;
+      /** Percent change vs A, or null when A is zero or either period has no usable value. */
+      pctChange: number | null;
+      /** Rows that fell in either period (rows outside both periods are not part of the comparison). */
+      rowsMatched: number;
     };
 
 function toNumber(value: string): number | null {
@@ -376,6 +391,51 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         rows: records,
         totalMatched: rows.length,
         limitedTo: rows.length > query.limit ? query.limit : undefined,
+      };
+    }
+
+    case "comparison": {
+      const dIdx = colIndex.get(query.dateColumn)!;
+      const cIdx = query.column ? colIndex.get(query.column)! : -1;
+      const rows = applyFilters(parsed, schema, query.filters);
+      const inPeriod = (row: string[], bucket: TimeBucket, key: string): boolean => {
+        const b = bucketDate(row[dIdx] ?? "", bucket);
+        return b !== null && b.key === key;
+      };
+      const period = (spec: { bucket: TimeBucket; key: string; label: string }) => {
+        const periodRows = rows.filter((r) => inPeriod(r, spec.bucket, spec.key));
+        if (cIdx < 0) {
+          return { label: spec.label, value: periodRows.length, rows: periodRows.length, valuesUsed: periodRows.length };
+        }
+        const values = periodRows
+          .map((r) => r[cIdx] ?? "")
+          .filter((v) => !isNullValue(v))
+          .map(toNumber)
+          .filter((n): n is number => n !== null);
+        return {
+          label: spec.label,
+          value: aggregateValues(query.op, values),
+          rows: periodRows.length,
+          valuesUsed: values.length,
+        };
+      };
+      const a = period(query.periodA);
+      const b = period(query.periodB);
+      const delta = a.value === null || b.value === null ? null : b.value - a.value;
+      const pctChange =
+        delta === null || a.value === null || a.value === 0
+          ? null
+          : (delta / a.value) * 100;
+      return {
+        kind: "comparison",
+        column: query.column,
+        op: query.op,
+        dateColumn: query.dateColumn,
+        periodA: a,
+        periodB: b,
+        delta,
+        pctChange,
+        rowsMatched: a.rows + b.rows,
       };
     }
   }

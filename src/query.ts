@@ -23,13 +23,20 @@
  * - rows: "show rows where region is North", "list employees in Data"
  * - correlation: "correlation between revenue and units",
  *   "how correlated are salary and age" (both columns must be numeric)
+ * - period comparison: "compare revenue Jan 2026 vs Feb 2026",
+ *   "revenue change from January to February" (two named months,
+ *   quarters or years over the sheet's date column)
  */
 
 import type { ParsedCsv } from "./csv.js";
 import { inferSchema, type ColumnInfo } from "./schema.js";
 import {
   BUCKET_WORDS,
+  findPeriodMentions,
+  parseDate,
+  resolvePeriodYear,
   UNSUPPORTED_BUCKET_WORDS,
+  type PeriodSpec,
   type TimeBucket,
 } from "./time.js";
 
@@ -66,7 +73,18 @@ export type Query =
       bucket?: TimeBucket;
     }
   | { kind: "rows"; filters: Filter[]; limit: number }
-  | { kind: "correlation"; columnA: string; columnB: string; filters: Filter[] };
+  | { kind: "correlation"; columnA: string; columnB: string; filters: Filter[] }
+  | {
+      kind: "comparison";
+      /** Null when comparing row counts ("compare rows in Jan vs Feb"). */
+      column: string | null;
+      op: AggregateOp;
+      /** The date column the periods are read from. */
+      dateColumn: string;
+      periodA: PeriodSpec;
+      periodB: PeriodSpec;
+      filters: Filter[];
+    };
 
 export type ParseResult =
   | { ok: true; query: Query }
@@ -427,6 +445,137 @@ function tryParseCorrelation(
   };
 }
 
+/**
+ * Try to read a period-comparison question ("compare revenue Jan
+ * 2026 vs Feb 2026", "revenue change from January to February",
+ * "compare rows in Jan vs Feb"). Returns null when the question
+ * shows no comparison intent; otherwise a comparison query, or an
+ * abstention when the two periods or the target cannot be pinned
+ * down. A bare column name defaults to its total ("compare revenue
+ * Jan vs Feb" compares total revenue); a "rows" question compares
+ * row counts.
+ */
+function tryParseComparison(
+  text: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  const intent =
+    /\bcompare\b/.test(norm) ||
+    (/\b(change|growth|difference|increase|decrease)\b/.test(norm) &&
+      /\bfrom\b/.test(norm));
+  if (!intent) return null;
+
+  const mentions = findPeriodMentions(norm);
+  if (mentions.length !== 2) {
+    return {
+      ok: false,
+      reason:
+        "a comparison needs two periods named — e.g. 'compare revenue Jan 2026 vs Feb 2026'",
+    };
+  }
+  const [first, second] = mentions;
+  if (first.spec.bucket !== second.spec.bucket) {
+    return {
+      ok: false,
+      reason: `compare like with like — two months, two quarters or two years, not ${first.spec.label} and ${second.spec.label}`,
+    };
+  }
+
+  // The date column the periods are read from: the sheet's only one.
+  const dates = columns.filter((c) => c.type === "date");
+  if (dates.length === 0) {
+    return {
+      ok: false,
+      reason: `comparing periods needs a date column — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (dates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which date column to compare by — matches ${dates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const dateColumn = dates[0];
+
+  // Years actually present in the date column, for resolving a
+  // period that did not name one ("January" on a 2026-only sheet).
+  const dateIdx = columns.indexOf(dateColumn);
+  const years: number[] = [];
+  for (const row of parsed.rows) {
+    const d = parseDate(row[dateIdx] ?? "");
+    if (d) years.push(d.year);
+  }
+  const resolvedA = resolvePeriodYear(first.spec, years);
+  if (resolvedA.error) return { ok: false, reason: resolvedA.error };
+  const resolvedB = resolvePeriodYear(second.spec, years);
+  if (resolvedB.error) return { ok: false, reason: resolvedB.error };
+  const periodA = resolvedA.spec;
+  const periodB = resolvedB.spec;
+  if (periodA.key === periodB.key) {
+    return {
+      ok: false,
+      reason: `both periods are ${periodA.label} — compare two different periods`,
+    };
+  }
+
+  // Strip the period mentions and read the rest: an aggregate word
+  // plus one column, or a bare "rows" for a row-count comparison.
+  let rest = norm;
+  for (const m of [...mentions].reverse()) {
+    rest = (rest.slice(0, m.start) + " " + rest.slice(m.end)).replace(/\s+/g, " ").trim();
+  }
+  if (/\brows?\b/.test(rest) && findColumns(rest, columns).length === 0) {
+    return {
+      ok: true,
+      query: {
+        kind: "comparison",
+        column: null,
+        op: "count",
+        dateColumn: dateColumn.name,
+        periodA,
+        periodB,
+        filters,
+      },
+    };
+  }
+  const op = detectAggregateOp(rest) ?? "sum";
+  const candidates = findColumns(rest, columns).filter((c) => c.name !== dateColumn.name);
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to compare — matches ${candidates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = candidates[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `comparing needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: {
+      kind: "comparison",
+      column: column.name,
+      op,
+      dateColumn: dateColumn.name,
+      periodA,
+      periodB,
+      filters,
+    },
+  };
+}
+
 export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult {
   if (!question || question.trim() === "") {
     return { ok: false, reason: "empty question — ask about a column, e.g. 'total revenue'" };
@@ -439,6 +588,13 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   const extracted = extractFilters(question, parsed);
   if (extracted.error) return { ok: false, reason: extracted.error };
   const filters = extracted.filters;
+
+  // Period comparison: two named periods ("compare revenue Jan 2026
+  // vs Feb 2026"). Once the question shows comparison intent it is
+  // parsed here or abstained — falling through would answer the
+  // plain total instead of the comparison asked for.
+  const comparison = tryParseComparison(extracted.rest, columns, parsed, filters);
+  if (comparison) return comparison;
 
   const timeBucket = extractTimeBucket(extracted.rest);
   if (timeBucket.error) return { ok: false, reason: timeBucket.error };
