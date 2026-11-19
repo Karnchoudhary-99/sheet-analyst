@@ -60,6 +60,11 @@ export const EVAL_GATE = 0.8;
  * monthly — revenue by month: Jan 664.91 (4 rows), Feb 914.81
  * (4 rows), Mar 834.81 (4 rows), total 2,414.53; average revenue by
  * month: Jan 166.23, Feb 228.70, Mar 208.70; top month is Feb 914.81.
+ *
+ * correlation — sales units vs revenue: r = 0.90 (strong positive,
+ * 7 paired rows — the blank-units row drops out); employees id vs
+ * salary: r = −0.65 (moderate negative, 4 paired rows — the NA
+ * salary row drops out). Correlation with a text column abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -205,6 +210,24 @@ export const GOLD_SET: EvalCase[] = [
     question: "total revenue by decade",
     expect: "abstain",
     note: "decade is not a supported period — must not silently answer the plain total",
+  },
+  {
+    sheet: "sales",
+    question: "correlation between revenue and units",
+    expect: ["0.90", "strong positive", "7 paired rows"],
+    note: "7 paired rows (blank-units row drops out); Pearson r = 0.9015, hand-computed from the 7 (units, revenue) pairs",
+  },
+  {
+    sheet: "employees",
+    question: "correlation between id and salary",
+    expect: ["-0.65", "moderate negative", "4 paired rows"],
+    note: "4 paired rows (NA salary row drops out); Pearson r = -0.6459, hand-computed from (1, 95000), (2, 98000), (3, 88000), (4, 91000)",
+  },
+  {
+    sheet: "sales",
+    question: "correlation between revenue and region",
+    expect: "abstain",
+    note: "region is text — correlation needs two numeric columns",
   },
 ];
 
