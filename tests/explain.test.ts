@@ -227,3 +227,23 @@ describe("describeQuery share", () => {
     ]);
   });
 });
+
+describe("describeQuery distinct values", () => {
+  it("describes the column, limit and filters", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,12,240.00\n" +
+        "2026-01-06,South,Widget B,8,199.92\n",
+    );
+    const explained = explainQuestion("list unique products in North", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "distinct values of product",
+      "operation: list distinct values",
+      "column: product",
+      "limit: 20",
+      "filters: region = North",
+    ]);
+  });
+});
