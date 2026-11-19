@@ -157,3 +157,47 @@ describe("exportFormat", () => {
     expect(exportFormat("out.csv.bak")).toBeNull();
   });
 });
+
+describe("resultToCsv comparison", () => {
+  it("writes one row per period plus change and percent rows", () => {
+    const result: QueryResult = {
+      kind: "comparison",
+      column: "revenue",
+      op: "sum",
+      dateColumn: "date",
+      periodA: { label: "Jan 2026", value: 324.95, rows: 2, valuesUsed: 2 },
+      periodB: { label: "Feb 2026", value: 419.88, rows: 2, valuesUsed: 2 },
+      delta: 94.93,
+      pctChange: 29.21,
+      rowsMatched: 4,
+    };
+    expect(resultToCsv(result, "compare revenue Jan 2026 vs Feb 2026", "…")).toBe(
+      "period,value,rows,values_used\n" +
+        "Jan 2026,324.95,2,2\n" +
+        "Feb 2026,419.88,2,2\n" +
+        "change,94.93,,\n" +
+        "percent_change,29.21,,",
+    );
+  });
+
+  it("leaves value, change and percent blank when a period has no usable values", () => {
+    const result: QueryResult = {
+      kind: "comparison",
+      column: "revenue",
+      op: "sum",
+      dateColumn: "date",
+      periodA: { label: "Jan 2026", value: 324.95, rows: 2, valuesUsed: 2 },
+      periodB: { label: "Feb 2026", value: null, rows: 0, valuesUsed: 0 },
+      delta: null,
+      pctChange: null,
+      rowsMatched: 2,
+    };
+    expect(resultToCsv(result, "compare revenue Jan 2026 vs Feb 2026", "…")).toBe(
+      "period,value,rows,values_used\n" +
+        "Jan 2026,324.95,2,2\n" +
+        "Feb 2026,,0,0\n" +
+        "change,,,\n" +
+        "percent_change,,,",
+    );
+  });
+});

@@ -170,3 +170,25 @@ describe("formatExplainText", () => {
     expect(text).toContain("Columns available: date, region, product, units, revenue.");
   });
 });
+
+describe("describeQuery comparison", () => {
+  it("describes both periods, the column and the operation", () => {
+    const monthly = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,10,200.00\n" +
+        "2026-02-03,North,Widget B,12,299.88\n",
+    );
+    const explained = explainQuestion("compare revenue Jan 2026 vs Feb 2026", monthly);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "compare total of revenue: Jan 2026 vs Feb 2026",
+      "operation: sum",
+      "column: revenue",
+      "date column: date",
+      "period A: Jan 2026",
+      "period B: Feb 2026",
+      "filters: none",
+    ]);
+  });
+});

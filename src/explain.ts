@@ -98,6 +98,20 @@ export function describeQuery(query: Query): string[] {
         `column B: ${query.columnB}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
+    case "comparison": {
+      const what = query.column
+        ? `${OP_LABEL[query.op] ?? query.op} of ${query.column}`
+        : "row count";
+      return [
+        `compare ${what}: ${query.periodA.label} vs ${query.periodB.label}`,
+        `operation: ${query.op}`,
+        ...(query.column ? [`column: ${query.column}`] : []),
+        `date column: ${query.dateColumn}`,
+        `period A: ${query.periodA.label}`,
+        `period B: ${query.periodB.label}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    }
   }
 }
 
