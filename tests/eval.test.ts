@@ -56,13 +56,14 @@ describe("isAbstention", () => {
 });
 
 describe("runEval", () => {
-  it("loads both bundled sheets and scores the gold set", () => {
+  it("loads all bundled sheets and scores the gold set", () => {
     expect(loadSheet("sales").headers).toEqual(["date", "region", "product", "units", "revenue"]);
     expect(loadSheet("employees").rows).toHaveLength(5);
+    expect(loadSheet("monthly").rows).toHaveLength(12);
     const report = runEval();
     expect(report.cases).toHaveLength(GOLD_SET.length);
-    expect(report.answerable).toBe(16);
-    expect(report.abstentionCases).toBe(3);
+    expect(report.answerable).toBe(GOLD_SET.filter((c) => c.expect !== "abstain").length);
+    expect(report.abstentionCases).toBe(GOLD_SET.filter((c) => c.expect === "abstain").length);
     expect(report.answerRate).toBe(1);
   });
 
