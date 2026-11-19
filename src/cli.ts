@@ -25,6 +25,8 @@ import {
 } from "./answer.js";
 import { CsvParseError, parseCsv, type ParsedCsv } from "./csv.js";
 import { executeQuery, type QueryResult } from "./engine.js";
+import { formatExplainText } from "./explain.js";
+import { abstentionToCsv, exportFormat, resultToCsv } from "./export.js";
 import { VERSION } from "./index.js";
 import { parseQuestion } from "./query.js";
 import { inferSchema, type ColumnInfo } from "./schema.js";
@@ -36,8 +38,8 @@ import {
   sparkline,
 } from "./charts.js";
 import {
-  askWorkbook,
   askWorkbookDetailed,
+  explainWorkbook,
   getSheet,
   listSheets,
   loadWorkbookFromDir,
@@ -72,8 +74,10 @@ Usage:
   sheet columns <file.csv> [--json]    list columns with inferred types
   sheet describe <file.csv> [--json]   per-column descriptive statistics
   sheet profile <file.csv> [--json]    data-quality report (nulls, duplicates, outliers)
-  sheet ask <file.csv> <question> [--json]
+  sheet ask <file.csv> <question> [--json] [--out <path>]
                                         answer a plain-English question
+  sheet explain <file.csv> <question> [--json]
+                                        show how a question was understood
   sheet chart <file.csv> <question> [--svg <path>]
                                         chart a group-by answer
   sheet sheets <directory>             list the sheets in a workbook
@@ -88,6 +92,7 @@ Options:
   --json    machine-readable JSON instead of human-readable text
   --sheet <name>  which sheet of a workbook to use
   --svg <path>  with chart: also write the chart as an SVG file
+  --out <path>  with ask: also write the answer to a .json or .csv file
   --help    show help for sheet, or for a command (sheet ask --help)
 `;
 
@@ -114,7 +119,7 @@ Tukey IQR fence. Warnings name the column and the count; a clean
 sheet says so plainly. With --json the output is the profile object
 (rows, columnCount, duplicateRows, emptyRows, columns, warnings).
 `,
-  ask: `Usage: sheet ask <file.csv> <question> [--json]
+  ask: `Usage: sheet ask <file.csv> <question> [--json] [--out <path>]
 
 Ask a plain-English question about the sheet and print the answer
 computed from the data — or an honest "I can't answer that" when the
@@ -123,8 +128,25 @@ several words; quoting it is optional. With --json the output is
 { question, answer, result } where result is the structured query
 result, or null when the engine abstained.
 
+With --out <path> the answer is also written to a file: .json writes
+the same object --json prints; .csv writes the result as a table
+(groups as <group-by>,<column>,rows; row results keep their headers;
+a scalar as one label/value row; an abstention as question,answer).
+
 The file may be a directory (a workbook): name the sheet in the
 question ("total revenue in sales") or pass --sheet <name>.
+`,
+  explain: `Usage: sheet explain <file.csv> <question> [--json]
+
+Show how a plain-English question was understood — which operation,
+which column, which group-by and time bucket, which filters, and how
+many rows a top-N ranks — without running the query. When the
+question cannot be understood, the reason is shown with the columns
+available, so you can rephrase. With --json the output is
+{ question, sheet, ok, query } or { question, sheet, ok, reason }.
+
+The file may be a directory (a workbook): name the sheet in the
+question or pass --sheet <name>.
 `,
   sheets: `Usage: sheet sheets <directory>
 
@@ -143,7 +165,14 @@ question or pass --sheet <name>.
 `,
 };
 
-export type CommandName = "columns" | "describe" | "ask" | "sheets" | "chart" | "profile";
+export type CommandName =
+  | "columns"
+  | "describe"
+  | "ask"
+  | "sheets"
+  | "chart"
+  | "profile"
+  | "explain";
 
 export interface ParsedArgs {
   command: CommandName | "help" | "version";
@@ -156,10 +185,20 @@ export interface ParsedArgs {
   sheet?: string;
   /** SVG output path, from `--svg <path>` (chart command). */
   svg?: string;
+  /** Result export path, from `--out <path>` (ask command). */
+  out?: string;
   json: boolean;
 }
 
-const COMMANDS = new Set(["columns", "describe", "ask", "sheets", "chart", "profile"]);
+const COMMANDS = new Set([
+  "columns",
+  "describe",
+  "ask",
+  "sheets",
+  "chart",
+  "profile",
+  "explain",
+]);
 
 /**
  * Parse argv (without the node/script entries) into a command.
@@ -194,6 +233,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   let json = false;
   let sheet: string | undefined;
   let svg: string | undefined;
+  let out: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--json") {
@@ -212,6 +252,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       svg = value;
       i += 1;
+    } else if (arg === "--out") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("-")) {
+        throw new CliError(`--out needs a file path.\n${COMMAND_HELP[command]}`, 2);
+      }
+      out = value;
+      i += 1;
     } else if (arg === "--help" || arg === "-h") {
       return { command: "help", helpFor: command, json: false };
     } else if (arg.startsWith("-")) {
@@ -224,6 +271,15 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (svg !== undefined && command !== "chart") {
     throw new CliError(`--svg is only for the chart command.\n${COMMAND_HELP[command]}`, 2);
   }
+  if (out !== undefined && command !== "ask") {
+    throw new CliError(`--out is only for the ask command.\n${COMMAND_HELP[command]}`, 2);
+  }
+  if (out !== undefined && exportFormat(out) === null) {
+    throw new CliError(
+      `--out needs a .json or .csv path, got: ${out}\n${COMMAND_HELP[command]}`,
+      2,
+    );
+  }
   const [file, ...questionWords] = positionals;
   if (file === undefined) {
     throw new CliError(
@@ -231,14 +287,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       2,
     );
   }
-  if (command === "ask" || command === "chart") {
+  if (command === "ask" || command === "chart" || command === "explain") {
     if (questionWords.length === 0) {
       throw new CliError(
         `Missing question.\n${COMMAND_HELP[command]}`,
         2,
       );
     }
-    return { command, file, question: questionWords.join(" "), sheet, svg, json };
+    return { command, file, question: questionWords.join(" "), sheet, svg, out, json };
   }
   if (questionWords.length > 0) {
     throw new CliError(
@@ -246,7 +302,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       2,
     );
   }
-  return { command, file, sheet, svg, json };
+  return { command, file, sheet, svg, out, json };
 }
 
 /** Load a workbook from a path: a directory becomes a multi-sheet workbook, a file a one-sheet workbook. */
@@ -525,11 +581,50 @@ function runProfile(args: ParsedArgs, out: CliOutput): number {
 function runAsk(args: ParsedArgs, out: CliOutput): number {
   const workbook = loadWorkbook(args.file!);
   const question = args.question!;
+  const asked = askWorkbookJson(question, workbook, args.sheet);
   if (args.json) {
-    out.stdout(JSON.stringify(askWorkbookJson(question, workbook, args.sheet), null, 2) + "\n");
+    out.stdout(JSON.stringify(asked, null, 2) + "\n");
+  } else {
+    out.stdout(asked.answer + "\n");
+  }
+  if (args.out !== undefined) {
+    const content =
+      exportFormat(args.out) === "json"
+        ? JSON.stringify(asked, null, 2)
+        : asked.result
+          ? resultToCsv(asked.result, question, asked.answer)
+          : abstentionToCsv(question, asked.answer);
+    try {
+      writeFileSync(args.out, content + "\n", "utf8");
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? "unknown error";
+      throw new CliError(`Cannot write output file: ${args.out} (${code})`);
+    }
+    out.stdout(`Wrote ${args.out}\n`);
+  }
+  return 0;
+}
+
+function runExplain(args: ParsedArgs, out: CliOutput): number {
+  const workbook = loadWorkbook(args.file!);
+  const question = args.question!;
+  const { sheet, parsed, explanation, routingAnswer } = explainWorkbook(
+    question,
+    workbook,
+    args.sheet,
+  );
+  if (routingAnswer !== null) {
+    out.stdout(routingAnswer + "\n");
     return 0;
   }
-  out.stdout(askWorkbook(question, workbook, args.sheet).answer + "\n");
+  if (args.json) {
+    const payload = explanation!.ok
+      ? { question, sheet: sheet ?? undefined, ok: true as const, query: explanation!.query }
+      : { question, sheet: sheet ?? undefined, ok: false as const, reason: explanation!.reason };
+    out.stdout(JSON.stringify(payload, null, 2) + "\n");
+    return 0;
+  }
+  out.stdout(formatExplainText(question, explanation!, parsed!) + "\n");
   return 0;
 }
 
@@ -588,6 +683,8 @@ export async function runCli(
         return runProfile(args, out);
       case "ask":
         return runAsk(args, out);
+      case "explain":
+        return runExplain(args, out);
       case "chart":
         return runChart(args, out);
       case "sheets":
