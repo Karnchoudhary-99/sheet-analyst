@@ -215,6 +215,21 @@ describe("executeQuery top-N", () => {
     }
   });
 
+  it("ranks two-column combinations", () => {
+    const r = ask("top 2 region and product by revenue");
+    expect(r.kind).toBe("groups");
+    if (r.kind === "groups") {
+      expect(r.groupBy).toEqual(["region", "product"]);
+      expect(r.groups.map((g) => [g.key, g.value])).toEqual([
+        ["East · Widget A", 400],
+        ["North · Widget A", 240],
+      ]);
+      expect(r.groups[1].keys).toEqual(["North", "Widget A"]);
+      expect(r.limitedTo).toBe(2);
+      expect(r.totalGroups).toBe(5);
+    }
+  });
+
   it("ranks rows by the column", () => {
     const r = ask("top 2 revenue");
     expect(r.kind).toBe("rows");

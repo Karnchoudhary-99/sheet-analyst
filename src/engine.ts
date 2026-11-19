@@ -339,25 +339,35 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
       if (query.groupBy) {
         // Rank groups by the summed column (the "by revenue" in
         // "top 3 products by revenue"). With a time bucket the
-        // groups are periods ("top 3 months by revenue").
-        const gIdx = colIndex.get(query.groupBy)!;
+        // groups are periods ("top 3 months by revenue"). Several
+        // group columns rank their combinations ("top 3 region and
+        // product by revenue").
+        const gIdxs = query.groupBy.map((name) => colIndex.get(name)!);
         const cIdx = colIndex.get(query.column)!;
-        const buckets = new Map<string, { label: string; sum: number; count: number }>();
+        const buckets = new Map<
+          string,
+          { labels: string[]; sum: number; count: number }
+        >();
         for (const row of rows) {
-          const k = groupKey(row[gIdx] ?? "", query.bucket);
-          const bucket = buckets.get(k.mapKey) ?? { label: k.label, sum: 0, count: 0 };
+          const parts = gIdxs.map((gi) => groupKey(row[gi] ?? "", query.bucket));
+          const mapKey = parts.map((p) => p.mapKey).join("\u0000");
+          const bucket = buckets.get(mapKey) ?? {
+            labels: parts.map((p) => p.label),
+            sum: 0,
+            count: 0,
+          };
           bucket.count += 1;
           const raw = row[cIdx] ?? "";
           if (!isNullValue(raw)) {
             const n = toNumber(raw);
             if (n !== null) bucket.sum += n;
           }
-          buckets.set(k.mapKey, bucket);
+          buckets.set(mapKey, bucket);
         }
         const groups = [...buckets.values()]
           .map((b) => ({
-            key: b.label,
-            keys: [b.label],
+            key: b.labels.join(" · "),
+            keys: b.labels,
             value: b.sum,
             count: b.count,
           }))
@@ -369,7 +379,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         const limited = groups.length > query.limit;
         return {
           kind: "groups",
-          groupBy: [query.groupBy],
+          groupBy: query.groupBy,
           column: query.column,
           op: "sum",
           groups: limited ? groups.slice(0, query.limit) : groups,

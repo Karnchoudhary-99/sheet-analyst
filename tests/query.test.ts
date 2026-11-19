@@ -203,7 +203,7 @@ describe("parseQuestion top-N", () => {
         column: "revenue",
         limit: 3,
         direction: "highest",
-        groupBy: "product",
+        groupBy: ["product"],
         filters: [],
       },
     });
@@ -394,11 +394,41 @@ describe("parseQuestion time grouping", () => {
         column: "revenue",
         limit: 2,
         direction: "highest",
-        groupBy: "date",
+        groupBy: ["date"],
         filters: [],
         bucket: "month",
       },
     });
+  });
+
+  it("ranks two-column groups", () => {
+    const r = parseQuestion("top 3 region and product by revenue", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "top",
+        column: "revenue",
+        limit: 3,
+        direction: "highest",
+        groupBy: ["region", "product"],
+        filters: [],
+      },
+    });
+  });
+
+  it("abstains on a top-N over two groups plus a time bucket", () => {
+    const r = parseQuestion("top 3 region and product by revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one dimension at a time/);
+  });
+
+  it("abstains on ranking more than three columns", () => {
+    const r = parseQuestion(
+      "top 3 date and region and product and units by revenue",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/at most three columns/);
   });
 
   it("leaves plain group-by questions untouched", () => {

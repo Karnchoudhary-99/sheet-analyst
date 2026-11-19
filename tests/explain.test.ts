@@ -60,7 +60,7 @@ describe("explainQuestion", () => {
         expect(result.query.limit).toBe(3);
         expect(result.query.direction).toBe("highest");
         expect(result.query.column).toBe("revenue");
-        expect(result.query.groupBy).toBe("product");
+        expect(result.query.groupBy).toEqual(["product"]);
       }
     }
   });

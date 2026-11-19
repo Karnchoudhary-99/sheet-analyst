@@ -74,12 +74,14 @@ export function describeQuery(query: Query): string[] {
     }
     case "top": {
       const bucket = query.bucket ? `, bucketed by ${query.bucket}` : "";
-      const grouped = query.groupBy ? `, grouped by ${query.groupBy}${bucket}` : "";
+      const grouped = query.groupBy
+        ? `, grouped by ${query.groupBy.join(" and ")}${bucket}`
+        : "";
       return [
         `top ${query.limit} ${query.direction} by ${query.column}${grouped}`,
         `operation: rank by ${query.column}`,
         `limit: ${query.limit} (${query.direction})`,
-        ...(query.groupBy ? [`group by: ${query.groupBy}`] : []),
+        ...(query.groupBy ? [`group by: ${query.groupBy.join(", ")}`] : []),
         ...(query.bucket ? [`time bucket: ${query.bucket}`] : []),
         `filters: ${describeFilters(query.filters)}`,
       ];

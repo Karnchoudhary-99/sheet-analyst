@@ -21,6 +21,8 @@
  *   (groups the sheet's date column into day/week/month/quarter/year
  *   periods; an unsupported period like "by decade" abstains)
  * - top-N: "top 3 products by revenue", "highest revenue"
+ *   (also over several columns: "top 3 region and product by
+ *   revenue")
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
  * - rows: "show rows where region is North", "list employees in Data"
@@ -79,7 +81,8 @@ export type Query =
       column: string;
       limit: number;
       direction: "highest" | "lowest";
-      groupBy?: string;
+      /** One or more columns to rank ("top 3 region and product by revenue"). */
+      groupBy?: string[];
       filters: Filter[];
       bucket?: TimeBucket;
     }
@@ -186,6 +189,46 @@ function isCountQuestion(text: string): boolean {
   );
 }
 
+interface ColumnSpan {
+  col: ColumnInfo;
+  start: number;
+  len: number;
+}
+
+/**
+ * Columns named in a phrase, in the order they appear, with a
+ * column whose name sits inside another matched column's name
+ * dropped ("start date" is one column, not "start date" plus
+ * "date"). Shared by the group-by extractor and the top-N parser.
+ */
+function matchColumnsInOrder(phrase: string, columns: ColumnInfo[]): ColumnSpan[] {
+  const text = normalize(phrase);
+  const hits = findColumns(phrase, columns);
+  const spans = hits
+    .map((col) => {
+      const name = normalize(col.name);
+      const nameSingular = name.split(" ").map(singular).join(" ");
+      const textSingular = text.split(" ").map(singular).join(" ");
+      let start = text.indexOf(name);
+      let len = name.length;
+      if (start === -1) {
+        start = textSingular.indexOf(nameSingular);
+        len = nameSingular.length;
+      }
+      return { col, start, len };
+    })
+    .filter((s) => s.start >= 0)
+    .sort((a, b) => a.start - b.start || b.len - a.len);
+  const kept: ColumnSpan[] = [];
+  for (const s of spans) {
+    const overlaps = kept.some(
+      (k) => s.start < k.start + k.len && k.start < s.start + s.len,
+    );
+    if (!overlaps) kept.push(s);
+  }
+  return kept;
+}
+
 /**
  * Pull a "by <column>" / "per <column>" / "for each <column>" clause
  * out of the question. Several columns may be named ("by region and
@@ -213,33 +256,8 @@ function extractGroupBy(
     if (!m) continue;
     const idx = m.index;
     const tail = norm.slice(idx + m[0].length).trim();
-    const hits = findColumns(tail, columns);
-    if (hits.length === 0) continue;
-    // Order by first appearance in the tail, longest first at the
-    // same position, and drop a column whose name sits inside
-    // another matched column's name.
-    const spans = hits
-      .map((col) => {
-        const name = normalize(col.name);
-        const nameSingular = name.split(" ").map(singular).join(" ");
-        const tailSingular = tail.split(" ").map(singular).join(" ");
-        let start = tail.indexOf(name);
-        let len = name.length;
-        if (start === -1) {
-          start = tailSingular.indexOf(nameSingular);
-          len = nameSingular.length;
-        }
-        return { col, start, len };
-      })
-      .filter((s) => s.start >= 0)
-      .sort((a, b) => a.start - b.start || b.len - a.len);
-    const kept: { col: ColumnInfo; start: number; len: number }[] = [];
-    for (const s of spans) {
-      const overlaps = kept.some(
-        (k) => s.start < k.start + k.len && k.start < s.start + s.len,
-      );
-      if (!overlaps) kept.push(s);
-    }
+    const kept = matchColumnsInOrder(tail, columns);
+    if (kept.length === 0) continue;
     if (kept.length > 3) {
       return {
         groupBy: [],
@@ -967,19 +985,23 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     }
     const rankColumn = rankHits[0];
     const groupHits = groupPhrase
-      ? findColumns(groupPhrase, columns).filter((c) => c.name !== rankColumn.name)
+      ? matchColumnsInOrder(groupPhrase, columns)
+          .map((s) => s.col)
+          .filter((c) => c.name !== rankColumn.name)
       : [];
-    if (groupHits.length > 1) {
+    if (groupHits.length > 3) {
       return {
         ok: false,
-        reason: `could not tell which column to rank — matches ${groupHits.map((c) => c.name).join(", ")}`,
+        reason:
+          "rank at most three columns at a time — e.g. 'top 3 region and product by revenue'",
       };
     }
     // A bare period word ranks the periods ("top 3 months by
     // revenue") — the grouped column is the sheet's date column.
     // A column actually named "months" still wins over the period.
     let topBucket: TimeBucket | undefined;
-    let topGroupBy = groupHits[0]?.name;
+    let topGroupBy: string[] | undefined =
+      groupHits.length > 0 ? groupHits.map((c) => c.name) : undefined;
     if (groupHits.length === 0 && groupPhrase) {
       const periodWord = normalize(groupPhrase);
       const periodBucket =
@@ -994,17 +1016,23 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
         const resolved = resolveBucketColumn(periodBucket, null, columns);
         if (resolved.error) return { ok: false, reason: resolved.error };
         topBucket = periodBucket;
-        topGroupBy = resolved.column!.name;
+        topGroupBy = [resolved.column!.name];
       }
     }
     // A time bucket with a top-N question ranks the periods
     // ("top 3 products by revenue by month" is two-dimensional and
     // abstains — the grouped column must be a date column).
     if (bucket) {
+      if (groupHits.length > 1) {
+        return {
+          ok: false,
+          reason: `group by one dimension at a time — "by ${groupHits.map((c) => c.name).join(" and ")}" can't be combined with by ${bucket}; try one or the other`,
+        };
+      }
       const resolved = resolveBucketColumn(bucket, groupHits[0] ?? null, columns);
       if (resolved.error) return { ok: false, reason: resolved.error };
       topBucket = bucket;
-      topGroupBy = resolved.column!.name;
+      topGroupBy = [resolved.column!.name];
     }
     return {
       ok: true,
