@@ -238,3 +238,60 @@ describe("composeAnswer correlation", () => {
     expect(composeAnswer(result)).toMatch(/one of the columns is constant/);
   });
 });
+
+describe("composeAnswer comparison", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,10,200.00\n" +
+      "2026-01-12,South,Widget B,5,124.95\n" +
+      "2026-02-03,North,Widget B,12,299.88\n" +
+      "2026-02-10,South,Widget A,6,120.00\n" +
+      "2026-03-02,North,Widget C,3,134.97\n",
+  );
+
+  it("states growth with the delta and percent change", () => {
+    expect(answerQuestion("compare revenue Jan 2026 vs Feb 2026", MONTHLY)).toBe(
+      "Total revenue grew from 324.95 in Jan 2026 to 419.88 in Feb 2026 (+94.93, +29.21%).",
+    );
+  });
+
+  it("states a fall with negative figures", () => {
+    expect(answerQuestion("revenue change from February to March", MONTHLY)).toBe(
+      "Total revenue fell from 419.88 in Feb 2026 to 134.97 in Mar 2026 (-284.91, -67.86%).",
+    );
+  });
+
+  it("says so plainly when the totals are equal", () => {
+    const flat = parseCsv(
+      "date,product,revenue\n" +
+        "2026-01-05,Widget A,200\n" +
+        "2026-02-03,Widget B,200\n",
+    );
+    expect(answerQuestion("compare revenue Jan vs Feb", flat)).toBe(
+      "Total revenue was unchanged at 200 in both Jan 2026 and Feb 2026.",
+    );
+  });
+
+  it("compares row counts", () => {
+    expect(answerQuestion("compare rows in Jan vs Mar", MONTHLY)).toBe(
+      "Row count fell from 2 in Jan 2026 to 1 in Mar 2026 (-1, -50%).",
+    );
+  });
+
+  it("explains when a period has no rows instead of inventing a comparison", () => {
+    expect(answerQuestion("compare revenue Feb 2026 vs Apr 2026", MONTHLY)).toBe(
+      "I could not compare the total revenue — Apr 2026 has no rows, so there is nothing to compare against.",
+    );
+  });
+
+  it("reports the delta without a percent when the baseline is zero", () => {
+    const zero = parseCsv(
+      "date,product,revenue\n" +
+        "2026-01-05,Widget A,0\n" +
+        "2026-02-03,Widget B,300\n",
+    );
+    expect(answerQuestion("compare revenue Jan vs Feb", zero)).toBe(
+      "Total revenue grew from 0 in Jan 2026 to 300 in Feb 2026 (+300). No percent change is possible — the Jan 2026 baseline was 0.",
+    );
+  });
+});
