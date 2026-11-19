@@ -30,6 +30,9 @@
  *   total revenue comes from North" (a filtered subset's total as a
  *   share of the whole sheet's total), "what share of rows are in
  *   North" (a filtered row count as a share of all rows)
+ * - distinct values: "list unique regions", "what are the distinct
+ *   products" (every distinct value of a column, with row counts,
+ *   most frequent first)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -100,6 +103,14 @@ export type Query =
       column: string | null;
       /** The subset whose share is asked for (at least one filter). */
       filters: Filter[];
+    }
+  | {
+      kind: "distinct";
+      /** The column whose distinct values are listed. */
+      column: string;
+      filters: Filter[];
+      /** Most values shown (default 20); the result reports the total. */
+      limit: number;
     };
 
 export type ParseResult =
@@ -737,6 +748,58 @@ function tryParseShare(
   return { ok: true, query: { kind: "share", column: column.name, filters: allFilters } };
 }
 
+/**
+ * Try to read a distinct-values question ("list unique regions",
+ * "what are the distinct products", "show distinct departments").
+ * Returns null when the question shows no distinct intent; otherwise
+ * a distinct query, or an abstention when the column cannot be
+ * pinned down. Blank cells are not values — they are never listed.
+ */
+function tryParseDistinct(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\bdistinct\b|\bunique\b/.test(norm)) return null;
+
+  const filler = new Set([
+    "what",
+    "are",
+    "the",
+    "list",
+    "show",
+    "distinct",
+    "unique",
+    "values",
+    "value",
+    "of",
+    "in",
+  ]);
+  const cleaned = norm
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to list — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "distinct", column: distinct[0].name, filters, limit: 20 },
+  };
+}
+
 export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult {
   if (!question || question.trim() === "") {
     return { ok: false, reason: "empty question — ask about a column, e.g. 'total revenue'" };
@@ -774,6 +837,20 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return share;
+  }
+
+  // Distinct values: every distinct value of one column, with row
+  // counts. Checked before the generic "list/show rows" fallback
+  // below, which would otherwise answer with rows instead.
+  const distinct = tryParseDistinct(timeBucket.rest, columns, filters);
+  if (distinct) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "distinct values can't be grouped by a time period — ask about the whole sheet, e.g. 'list unique regions'",
+      };
+    }
+    return distinct;
   }
 
   // Correlation: two numeric columns, no grouping or ranking.

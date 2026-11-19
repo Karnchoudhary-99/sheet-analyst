@@ -241,3 +241,22 @@ describe("resultToCsv share", () => {
     );
   });
 });
+
+describe("resultToCsv distinct values", () => {
+  it("writes one row per distinct value with its row count", () => {
+    const result: QueryResult = {
+      kind: "values",
+      column: "region",
+      values: [
+        { value: "North", count: 3 },
+        { value: "East", count: 1 },
+      ],
+      totalDistinct: 4,
+      limitedTo: 2,
+      rowsMatched: 6,
+    };
+    expect(resultToCsv(result, "list unique regions", "…")).toBe(
+      "value,rows\nNorth,3\nEast,1",
+    );
+  });
+});

@@ -434,3 +434,63 @@ describe("executeQuery share", () => {
     }
   });
 });
+
+describe("executeQuery distinct values", () => {
+  it("lists distinct values most frequent first with row counts", () => {
+    const r = ask("list unique regions");
+    expect(r).toEqual({
+      kind: "values",
+      column: "region",
+      values: [
+        { value: "North", count: 3 },
+        { value: "East", count: 1 },
+        { value: "South", count: 1 },
+        { value: "West", count: 1 },
+      ],
+      totalDistinct: 4,
+      limitedTo: undefined,
+      rowsMatched: 6,
+    });
+  });
+
+  it("respects filters when listing values", () => {
+    const r = ask("list unique products in North");
+    expect(r.kind).toBe("values");
+    if (r.kind === "values") {
+      // North rows are Widget A (twice) and Widget C (once).
+      expect(r.values).toEqual([
+        { value: "Widget A", count: 2 },
+        { value: "Widget C", count: 1 },
+      ]);
+      expect(r.totalDistinct).toBe(2);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("never lists blank cells as values", () => {
+    const r = ask("list unique units");
+    expect(r.kind).toBe("values");
+    if (r.kind === "values") {
+      // The blank-units row contributes no value; 5 distinct numbers remain.
+      expect(r.totalDistinct).toBe(5);
+      expect(r.values.every((v) => v.value !== "")).toBe(true);
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("slices to the limit and reports the total", () => {
+    const r = executeQuery(
+      { kind: "distinct", column: "region", filters: [], limit: 2 },
+      SALES,
+    );
+    expect(r.kind).toBe("values");
+    if (r.kind === "values") {
+      expect(r.values).toEqual([
+        { value: "North", count: 3 },
+        { value: "East", count: 1 },
+      ]);
+      expect(r.totalDistinct).toBe(4);
+      expect(r.limitedTo).toBe(2);
+    }
+  });
+});

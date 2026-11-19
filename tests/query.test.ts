@@ -617,3 +617,52 @@ describe("parseQuestion share", () => {
     if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
   });
 });
+
+describe("parseQuestion distinct values", () => {
+  it("parses 'list unique regions'", () => {
+    const r = parseQuestion("list unique regions", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: { kind: "distinct", column: "region", filters: [], limit: 20 },
+    });
+  });
+
+  it("parses 'what are the distinct products'", () => {
+    const r = parseQuestion("what are the distinct products", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: { kind: "distinct", column: "product", filters: [], limit: 20 },
+    });
+  });
+
+  it("keeps a filter on a distinct-values question", () => {
+    const r = parseQuestion("list unique products in North", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "distinct",
+        column: "product",
+        filters: [{ column: "region", op: "=", value: "North" }],
+        limit: 20,
+      },
+    });
+  });
+
+  it("abstains when no column is named", () => {
+    const r = parseQuestion("list unique values", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains when the named column does not exist", () => {
+    const r = parseQuestion("list unique profits", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a time-grouped distinct question", () => {
+    const r = parseQuestion("list unique regions by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+});

@@ -93,6 +93,23 @@ export type QueryResult =
       valuesUsed: number;
       /** All rows with a usable numeric value (row shares: the total row count). */
       totalValuesUsed: number;
+    }
+  | {
+      kind: "values";
+      /** The column whose distinct values are listed. */
+      column: string;
+      /**
+       * Distinct values with row counts, most frequent first
+       * (alphabetical tie-break), sliced to the query's limit.
+       * Blank cells are not values and never appear here.
+       */
+      values: { value: string; count: number }[];
+      /** Distinct values before slicing, so "showing 20 of 34" is honest. */
+      totalDistinct: number;
+      /** Set when the list was sliced to the limit. */
+      limitedTo?: number;
+      /** Rows the filters matched (the values come from these rows). */
+      rowsMatched: number;
     };
 
 function toNumber(value: string): number | null {
@@ -462,6 +479,33 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         totalRows,
         valuesUsed: subset.used,
         totalValuesUsed: total.used,
+      };
+    }
+
+    case "distinct": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      const cIdx = colIndex.get(query.column)!;
+      // Count raw cell text per value; blank cells are not values.
+      // Matching is case-sensitive here because the values are
+      // displayed, not compared — "North" and "north" are different
+      // spellings a user can see and fix.
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const cell = (row[cIdx] ?? "").trim();
+        if (cell === "") continue;
+        counts.set(cell, (counts.get(cell) ?? 0) + 1);
+      }
+      const values = [...counts.entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+      const limited = values.length > query.limit;
+      return {
+        kind: "values",
+        column: query.column,
+        values: limited ? values.slice(0, query.limit) : values,
+        totalDistinct: values.length,
+        limitedTo: limited ? query.limit : undefined,
+        rowsMatched: rows.length,
       };
     }
 

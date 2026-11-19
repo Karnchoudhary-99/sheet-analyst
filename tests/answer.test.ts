@@ -329,3 +329,21 @@ describe("composeAnswer share", () => {
     );
   });
 });
+
+describe("composeAnswer distinct values", () => {
+  it("lists distinct values most frequent first with row counts", () => {
+    expect(answerQuestion("list unique regions", SALES)).toBe(
+      "Distinct region (4 values):\n" +
+        "- North: 3 rows\n" +
+        "- East: 1 row\n" +
+        "- South: 1 row\n" +
+        "- West: 1 row",
+    );
+  });
+
+  it("says so when no rows match the filter", () => {
+    expect(answerQuestion("list unique products where region is Atlantis", SALES)).toBe(
+      "No rows match.",
+    );
+  });
+});

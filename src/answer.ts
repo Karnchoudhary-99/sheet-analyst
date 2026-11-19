@@ -211,6 +211,18 @@ function composeShare(result: Extract<QueryResult, { kind: "share" }>): string {
   );
 }
 
+function composeValues(result: Extract<QueryResult, { kind: "values" }>): string {
+  if (result.values.length === 0) return "No rows match.";
+  const scope =
+    result.limitedTo !== undefined
+      ? `Distinct ${result.column} (${result.totalDistinct} values, showing ${result.limitedTo})`
+      : `Distinct ${result.column} (${result.totalDistinct} ${plural(result.totalDistinct, "value")})`;
+  const lines = result.values.map(
+    (v) => `- ${v.value}: ${v.count} ${plural(v.count, "row")}`,
+  );
+  return `${scope}:\n${lines.join("\n")}`;
+}
+
 function composeRows(
   result: Extract<QueryResult, { kind: "rows" }>,
   parsed?: ParsedCsv,
@@ -257,6 +269,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeComparison(result);
     case "share":
       return composeShare(result);
+    case "values":
+      return composeValues(result);
   }
 }
 

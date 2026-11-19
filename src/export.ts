@@ -17,6 +17,7 @@
  *   `label,share,subset_value,total_value,subset_rows,total_rows`
  *   where `share` is the fraction (0.35 for 35%, empty when the
  *   total is zero) and `label` is `total <column>` or `rows`.
+ *   Distinct values become one row per value of `value,rows`.
  *   An abstention (no result) exports as a single `question,answer` row — the file still says
  *   what happened instead of being silently empty.
  */
@@ -114,6 +115,13 @@ export function resultToCsv(
           String(result.totalRows),
         ]),
       ].join("\n");
+    case "values": {
+      const lines = [csvRow(["value", "rows"])];
+      for (const v of result.values) {
+        lines.push(csvRow([v.value, String(v.count)]));
+      }
+      return lines.join("\n");
+    }
   }
 }
 
