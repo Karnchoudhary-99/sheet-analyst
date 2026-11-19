@@ -92,6 +92,12 @@ export const EVAL_GATE = 0.8;
  * South · Widget A 420 (120 + 300, 2 rows), East · Widget C
  * 314.93, North · Widget B 299.88. A time bucket plus a second
  * group column, or a group word that is not a column, abstains.
+ *
+ * top-N over multi-column groups — sales top 3 region and product
+ * by revenue: South · Widget C 449.85, East · Widget A 400,
+ * North · Widget A 240 (7 pairs in all); monthly top 2: South ·
+ * Widget A 420, East · Widget C 314.93 (11 pairs in all). A top-N
+ * over two groups plus a time bucket abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -393,6 +399,24 @@ export const GOLD_SET: EvalCase[] = [
     question: "total revenue by region and profit",
     expect: "abstain",
     note: "'profit' is not a column — must not silently answer as 'by region'",
+  },
+  {
+    sheet: "sales",
+    question: "top 3 region and product by revenue",
+    expect: ["Top 3 of 7 groups", "South · Widget C: 449.85", "North · Widget A: 240"],
+    note: "7 region × product pairs; top 3 are South · Widget C 449.85, East · Widget A 400, North · Widget A 240",
+  },
+  {
+    sheet: "monthly",
+    question: "top 2 region and product by revenue",
+    expect: ["Top 2 of 11 groups", "South · Widget A: 420"],
+    note: "11 region × product pairs; top 2 are South · Widget A 420 (2 rows) and East · Widget C 314.93",
+  },
+  {
+    sheet: "sales",
+    question: "top 3 region and product by revenue by month",
+    expect: "abstain",
+    note: "a top-N over two groups plus a time bucket is two dimensions at once",
   },
 ];
 
