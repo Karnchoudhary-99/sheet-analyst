@@ -13,6 +13,7 @@ import { basename, extname, join } from "node:path";
 import { answerQuestion, composeAbstention, composeAnswer } from "./answer.js";
 import { parseCsv, CsvParseError, type ParsedCsv } from "./csv.js";
 import { executeQuery, type QueryResult } from "./engine.js";
+import { explainQuestion, type ExplainResult } from "./explain.js";
 import { normalize, parseQuestion } from "./query.js";
 import { inferSchema } from "./schema.js";
 
@@ -198,6 +199,35 @@ export function askWorkbookDetailed(
   }
   const result = executeQuery(parsedQuestion.query, route.parsed);
   return { sheet: route.sheet, answer: composeAnswer(result, route.parsed), result };
+}
+
+/**
+ * Like {@link askWorkbookDetailed} but for `sheet explain`: route
+ * the question to a sheet, then parse it without executing — the
+ * caller renders the parsed query (or the abstention reason).
+ * Returns the sheet used (null when the question could not be routed)
+ * and the sheet's parsed CSV so the caller can list its columns.
+ */
+export function explainWorkbook(
+  question: string,
+  workbook: Workbook,
+  preferredSheet?: string,
+): {
+  sheet: string | null;
+  parsed: ParsedCsv | null;
+  explanation: ExplainResult | null;
+  routingAnswer: string | null;
+} {
+  const route = routeQuestion(question, workbook, preferredSheet);
+  if (!route.ok) {
+    return { sheet: null, parsed: null, explanation: null, routingAnswer: route.answer };
+  }
+  return {
+    sheet: route.sheet,
+    parsed: route.parsed,
+    explanation: explainQuestion(route.question, route.parsed),
+    routingAnswer: null,
+  };
 }
 function sheetNameOf(workbook: Workbook, name: string): string | undefined {
   const wanted = name.trim().toLowerCase();
