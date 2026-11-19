@@ -26,6 +26,10 @@
  * - period comparison: "compare revenue Jan 2026 vs Feb 2026",
  *   "revenue change from January to February" (two named months,
  *   quarters or years over the sheet's date column)
+ * - share: "what share of revenue is North", "what percentage of
+ *   total revenue comes from North" (a filtered subset's total as a
+ *   share of the whole sheet's total), "what share of rows are in
+ *   North" (a filtered row count as a share of all rows)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -83,6 +87,18 @@ export type Query =
       dateColumn: string;
       periodA: PeriodSpec;
       periodB: PeriodSpec;
+      filters: Filter[];
+    }
+  | {
+      kind: "share";
+      /**
+       * The column being shared out, or null for a row-count share
+       * ("what share of rows are in North"). A value share always
+       * compares totals (sum), never averages — a share of an average
+       * is not a meaningful fraction of anything.
+       */
+      column: string | null;
+      /** The subset whose share is asked for (at least one filter). */
       filters: Filter[];
     };
 
@@ -576,6 +592,139 @@ function tryParseComparison(
   };
 }
 
+/**
+ * Try to read a share question ("what share of revenue is North",
+ * "what percentage of total revenue comes from North", "what share
+ * of rows are in North"). Returns null when the question shows no
+ * share intent; otherwise a share query, or an abstention when the
+ * subset or the column cannot be pinned down.
+ *
+ * The subset comes from the filters `extractFilters` already pulled
+ * out ("where region is North", trailing "in North"), plus a trailing
+ * "from <value>" / "is <value>" resolved against the sheet's known
+ * categorical values ("revenue comes from North", "revenue is
+ * North"). A value that belongs to several columns abstains —
+ * guessing the column would share out the wrong subset.
+ */
+function tryParseShare(
+  text: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\bshare\b|\bpercent(age)?\b|%/.test(norm)) return null;
+
+  // A share compares totals. An explicit average/median/min/max
+  // word asks for a share of a different statistic, which is not a
+  // fraction of anything — refuse rather than answer the total.
+  const op = detectAggregateOp(norm);
+  if (op !== null && op !== "sum") {
+    return {
+      ok: false,
+      reason:
+        "share questions compare totals — try e.g. 'what share of total revenue is North'",
+    };
+  }
+
+  // Strip the share wording and the filler around it, leaving the
+  // column name and (for a value share) the subset's value word.
+  const filler = new Set([
+    "what",
+    "share",
+    "percentage",
+    "percent",
+    "of",
+    "total",
+    "sum",
+    "combined",
+    "comes",
+    "come",
+    "from",
+    "is",
+    "are",
+    "the",
+    "account",
+    "accounts",
+    "for",
+    "in",
+  ]);
+  const cleaned = norm
+    .replace(/%/g, " ")
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+
+  // No column named: a row-count share ("what share of rows are in
+  // North", "what percentage of employees are in Engineering") when
+  // a filter already pins the subset down; otherwise there is
+  // nothing to share out — or the named thing is not a column at all.
+  if (distinct.length === 0) {
+    if (filters.length > 0) {
+      return { ok: true, query: { kind: "share", column: null, filters } };
+    }
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to share out — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = distinct[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `sharing out needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+
+  const allFilters = [...filters];
+  // The subset's value, if one is still named in the question
+  // ("revenue is North" — the column name is removed, "north" is
+  // what's left). A "where …" / "in …" filter already extracted
+  // means there is nothing left to resolve.
+  const colName = normalize(column.name);
+  const colNameSingular = colName.split(" ").map(singular).join(" ");
+  let rest = cleaned;
+  for (const name of [colName, colNameSingular]) {
+    rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
+  }
+  if (rest !== "") {
+    const owners = columns.filter((col, idx) => {
+      if (col.type !== "text" && col.type !== "boolean") return false;
+      return distinctValues(parsed, idx).has(rest);
+    });
+    if (owners.length === 0) {
+      return {
+        ok: false,
+        reason: `could not find "${rest}" in any column — say which rows, e.g. "where ${columns.find((c) => c.type === "text")?.name ?? "region"} is ${rest}"`,
+      };
+    }
+    if (owners.length > 1) {
+      return {
+        ok: false,
+        reason: `"${rest}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0].name} is ${rest}"`,
+      };
+    }
+    allFilters.push({ column: owners[0].name, op: "=", value: rest });
+  }
+  if (allFilters.length === 0) {
+    return {
+      ok: false,
+      reason:
+        "a share needs a group to compare — say which rows, e.g. 'what share of revenue is North'",
+    };
+  }
+  return { ok: true, query: { kind: "share", column: column.name, filters: allFilters } };
+}
+
 export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult {
   if (!question || question.trim() === "") {
     return { ok: false, reason: "empty question — ask about a column, e.g. 'total revenue'" };
@@ -599,6 +748,21 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   const timeBucket = extractTimeBucket(extracted.rest);
   if (timeBucket.error) return { ok: false, reason: timeBucket.error };
   const bucket = timeBucket.bucket;
+
+  // Share: a filtered subset's total as a share of the whole sheet.
+  // Once the question shows share intent it is parsed here or
+  // abstained — falling through would answer the plain total instead
+  // of the share asked for.
+  const share = tryParseShare(timeBucket.rest, columns, parsed, filters);
+  if (share) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a share can't be grouped by a time period — ask about the whole sheet, e.g. 'what share of revenue is North'",
+      };
+    }
+    return share;
+  }
 
   // Correlation: two numeric columns, no grouping or ranking.
   const correlation = tryParseCorrelation(timeBucket.rest, columns, filters);
