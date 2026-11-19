@@ -14,6 +14,9 @@
  *   "highest revenue", "lowest salary"
  * - counts: "how many employees", "how many rows"
  * - group-by: "total revenue by region", "average salary per department"
+ * - time grouping: "total revenue by month", "average salary by year"
+ *   (groups the sheet's date column into day/week/month/quarter/year
+ *   periods; an unsupported period like "by decade" abstains)
  * - top-N: "top 3 products by revenue", "highest revenue"
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
@@ -22,6 +25,11 @@
 
 import type { ParsedCsv } from "./csv.js";
 import { inferSchema, type ColumnInfo } from "./schema.js";
+import {
+  BUCKET_WORDS,
+  UNSUPPORTED_BUCKET_WORDS,
+  type TimeBucket,
+} from "./time.js";
 
 export type AggregateOp = "sum" | "mean" | "median" | "min" | "max" | "count";
 
@@ -37,8 +45,24 @@ export interface Filter {
 export type Query =
   | { kind: "aggregate"; column: string; op: Exclude<AggregateOp, "count">; filters: Filter[] }
   | { kind: "count"; filters: Filter[] }
-  | { kind: "group"; groupBy: string; column: string | null; op: AggregateOp; filters: Filter[] }
-  | { kind: "top"; column: string; limit: number; direction: "highest" | "lowest"; groupBy?: string; filters: Filter[] }
+  | {
+      kind: "group";
+      groupBy: string;
+      column: string | null;
+      op: AggregateOp;
+      filters: Filter[];
+      /** When set, `groupBy` is a date column grouped into periods. */
+      bucket?: TimeBucket;
+    }
+  | {
+      kind: "top";
+      column: string;
+      limit: number;
+      direction: "highest" | "lowest";
+      groupBy?: string;
+      filters: Filter[];
+      bucket?: TimeBucket;
+    }
   | { kind: "rows"; filters: Filter[]; limit: number };
 
 export type ParseResult =
@@ -140,6 +164,87 @@ function extractGroupBy(
     }
   }
   return { groupBy: null, rest: text, ambiguous: [] };
+}
+
+/**
+ * Pull a "by <period>" / "per <period>" time clause out of the
+ * question ("by month", "per year", "by quarterly"). A period word
+ * the engine cannot bucket ("by decade", "by hour") is an error, not
+ * something to silently ignore — answering the plain total would
+ * answer a different question than the one asked. A "by <word>"
+ * clause whose word is neither a period nor a time word (e.g. "by
+ * region") is left alone for the group-by extractor.
+ */
+function extractTimeBucket(text: string): {
+  bucket: TimeBucket | null;
+  rest: string;
+  error?: string;
+} {
+  const re = /\b(?:by|per)\s+([a-z]+)\b/gi;
+  const matches: { index: number; length: number; word: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    matches.push({ index: m.index, length: m[0].length, word: m[1].toLowerCase() });
+  }
+  let bucket: TimeBucket | null = null;
+  let rest = text;
+  // Remove from the end so earlier indices stay valid.
+  for (const match of [...matches].reverse()) {
+    const word = match.word.endsWith("s") ? match.word.slice(0, -1) : match.word;
+    const b = BUCKET_WORDS[match.word] ?? BUCKET_WORDS[word];
+    if (b) {
+      if (bucket) {
+        return {
+          bucket: null,
+          rest: text,
+          error: "group by one period at a time — e.g. 'by month', not 'by month by year'",
+        };
+      }
+      bucket = b;
+      rest = (rest.slice(0, match.index) + rest.slice(match.index + match.length))
+        .replace(/\s+/g, " ")
+        .trim();
+    } else if (UNSUPPORTED_BUCKET_WORDS.has(match.word) || UNSUPPORTED_BUCKET_WORDS.has(word)) {
+      return {
+        bucket: null,
+        rest: text,
+        error: `I can't group by ${match.word} — try day, week, month, quarter or year`,
+      };
+    }
+  }
+  return { bucket, rest };
+}
+
+/**
+ * Decide which date column a time bucket groups: the explicit
+ * group-by column when one was named (it must be a date column), or
+ * the sheet's only date column when none was named.
+ */
+function resolveBucketColumn(
+  bucket: TimeBucket,
+  groupBy: ColumnInfo | null,
+  columns: ColumnInfo[],
+): { column: ColumnInfo | null; error?: string } {
+  if (groupBy) {
+    if (groupBy.type !== "date") {
+      return {
+        column: null,
+        error: `grouping by ${bucket} needs a date column — "${groupBy.name}" is ${groupBy.type}`,
+      };
+    }
+    return { column: groupBy };
+  }
+  const dates = columns.filter((c) => c.type === "date");
+  if (dates.length === 0) {
+    return { column: null, error: `no date column to group by ${bucket}` };
+  }
+  if (dates.length > 1) {
+    return {
+      column: null,
+      error: `could not tell which date column to group by ${bucket} — matches ${dates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  return { column: dates[0] };
 }
 
 /**
@@ -280,10 +385,14 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   if (extracted.error) return { ok: false, reason: extracted.error };
   const filters = extracted.filters;
 
+  const timeBucket = extractTimeBucket(extracted.rest);
+  if (timeBucket.error) return { ok: false, reason: timeBucket.error };
+  const bucket = timeBucket.bucket;
+
   // Top-N: "top 3 products by revenue" ranks groups by the column
   // named after "by"; without "by" it ranks rows by the one column
   // named in the question.
-  const top = extractTop(extracted.rest);
+  const top = extractTop(timeBucket.rest);
   if (top) {
     const byIdx = top.rest.search(/\bby\b/);
     const rankPhrase = byIdx === -1 ? top.rest : top.rest.slice(byIdx + 2).trim();
@@ -311,6 +420,17 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
         reason: `could not tell which column to rank — matches ${groupHits.map((c) => c.name).join(", ")}`,
       };
     }
+    // A time bucket with a top-N question ranks the periods
+    // ("top 3 months by revenue") — the grouped column must be a
+    // date column, or there is nothing to bucket.
+    let topBucket: TimeBucket | undefined;
+    let topGroupBy = groupHits[0]?.name;
+    if (bucket) {
+      const resolved = resolveBucketColumn(bucket, groupHits[0] ?? null, columns);
+      if (resolved.error) return { ok: false, reason: resolved.error };
+      topBucket = bucket;
+      topGroupBy = resolved.column!.name;
+    }
     return {
       ok: true,
       query: {
@@ -318,29 +438,46 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
         column: rankColumn.name,
         limit: top.limit,
         direction: top.direction,
-        groupBy: groupHits[0]?.name,
+        groupBy: topGroupBy,
         filters,
+        bucket: topBucket,
       },
     };
   }
 
-  const { groupBy, rest, ambiguous } = extractGroupBy(extracted.rest, columns);
+  const { groupBy, rest, ambiguous } = extractGroupBy(timeBucket.rest, columns);
   if (ambiguous.length > 0) {
     return {
       ok: false,
       reason: `could not tell which column to group by — matches ${ambiguous.join(", ")}`,
     };
   }
-  const text = rest === "" ? extracted.rest : rest;
+  // A time bucket needs a date column to group: the explicit
+  // group-by column when one was named, else the sheet's only date
+  // column.
+  let resolvedGroupBy = groupBy;
+  if (bucket) {
+    const resolved = resolveBucketColumn(bucket, groupBy, columns);
+    if (resolved.error) return { ok: false, reason: resolved.error };
+    resolvedGroupBy = resolved.column;
+  }
+  const text = rest === "" ? timeBucket.rest : rest;
 
   // Count questions need no target column.
-  if (isCountQuestion(text) && !groupBy) {
+  if (isCountQuestion(text) && !resolvedGroupBy) {
     return { ok: true, query: { kind: "count", filters } };
   }
-  if (isCountQuestion(text) && groupBy) {
+  if (isCountQuestion(text) && resolvedGroupBy) {
     return {
       ok: true,
-      query: { kind: "group", groupBy: groupBy.name, column: null, op: "count", filters },
+      query: {
+        kind: "group",
+        groupBy: resolvedGroupBy.name,
+        column: null,
+        op: "count",
+        filters,
+        bucket: bucket ?? undefined,
+      },
     };
   }
 
@@ -367,7 +504,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // The target column is the one named in the question, excluding the
   // group-by column (already consumed).
   const candidates = findColumns(text, columns).filter(
-    (c) => !groupBy || c.name !== groupBy.name,
+    (c) => !resolvedGroupBy || c.name !== resolvedGroupBy.name,
   );
   if (candidates.length === 0) {
     return {
@@ -383,10 +520,17 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   }
   const column = candidates[0];
 
-  if (groupBy) {
+  if (resolvedGroupBy) {
     return {
       ok: true,
-      query: { kind: "group", groupBy: groupBy.name, column: column.name, op, filters },
+      query: {
+        kind: "group",
+        groupBy: resolvedGroupBy.name,
+        column: column.name,
+        op,
+        filters,
+        bucket: bucket ?? undefined,
+      },
     };
   }
   return { ok: true, query: { kind: "aggregate", column: column.name, op, filters } };
