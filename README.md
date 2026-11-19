@@ -22,6 +22,7 @@ top-N) directly from the spreadsheet.
 - [x] Charts (ASCII + SVG output for distributions and trends)
 - [x] Time-series grouping (by day/week/month/quarter/year + line charts)
 - [x] Data-quality profile (null rates, duplicates, empty rows, constant columns, whitespace, IQR outliers)
+- [x] Query explanation + result export (`sheet explain`, `ask --out` .json/.csv)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -192,6 +193,47 @@ clustering are visible at a glance. The chart helpers
 (`renderBarChart`, `renderLineChart`, `histogram`, `sparkline`,
 `renderBarChartSvg`, `renderLineChartSvg`)
 are exported from the package for programmatic use.
+
+### Explaining a question
+
+When an answer looks wrong, `sheet explain` shows how the question
+was understood — which operation, which column, which group-by and
+time bucket, which filters, and how many rows a top-N ranks — without
+running the query:
+
+```bash
+node dist/cli.js explain examples/sales.csv "total revenue by region"
+```
+
+```
+Question: "total revenue by region"
+Understood as: total of revenue, grouped by region
+  operation: sum
+  column: revenue
+  group by: region
+  filters: none
+```
+
+A question the parser cannot understand explains why, with the
+columns available so it can be rephrased. With `--json` the output is
+`{ question, sheet, ok, query }` or `{ question, sheet, ok, reason }`.
+`explain` is workbook-aware like `ask` (`--sheet` or an
+`in|from|on <sheet>` clause).
+
+### Exporting results
+
+`sheet ask --out <path>` writes the answer to a file as well as
+printing it: `.json` writes the same `{ question, answer, result }`
+object `--json` prints; `.csv` writes the result as a table — groups
+as `<group-by>,<column>,rows`, row results with their headers, a
+scalar as one `label,value,rows_matched,values_used` row (a null value
+stays blank, never `0`). An abstention exports as a single
+`question,answer` row, so the file still records what happened.
+
+```bash
+node dist/cli.js ask examples/sales.csv "total revenue by region" --out revenue-by-region.csv
+node dist/cli.js ask examples/sales.csv "total revenue" --json --out total-revenue.json
+```
 
 ## Data quality
 
