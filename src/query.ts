@@ -14,6 +14,9 @@
  *   "highest revenue", "lowest salary"
  * - counts: "how many employees", "how many rows"
  * - group-by: "total revenue by region", "average salary per department"
+ * - multi-column group-by: "total revenue by region and product",
+ *   "how many employees by department and remote" (up to three
+ *   columns, in the order named; "by region, product" works too)
  * - time grouping: "total revenue by month", "average salary by year"
  *   (groups the sheet's date column into day/week/month/quarter/year
  *   periods; an unsupported period like "by decade" abstains)
@@ -63,7 +66,8 @@ export type Query =
   | { kind: "count"; filters: Filter[] }
   | {
       kind: "group";
-      groupBy: string;
+      /** One or more columns, in the order named in the question. */
+      groupBy: string[];
       column: string | null;
       op: AggregateOp;
       filters: Filter[];
@@ -184,13 +188,24 @@ function isCountQuestion(text: string): boolean {
 
 /**
  * Pull a "by <column>" / "per <column>" / "for each <column>" clause
- * out of the question. Returns the group-by column (if exactly one
- * column is named that way) and the question with the clause removed.
+ * out of the question. Several columns may be named ("by region and
+ * product", "by region, product") — they group in the order named,
+ * up to three at a time. Returns the group-by columns (empty when
+ * none was named) and the question with the clause removed.
+ *
+ * Two honesty guards live here, because a wrong group is worse than
+ * no answer:
+ * - a column named inside another matched column's name does not
+ *   count twice ("by start date" is one column, not "start date"
+ *   plus "date");
+ * - a word left in the clause that is not a matched column name is
+ *   a column the sheet does not have — the question abstains
+ *   ("by region and profit" must not answer as "by region").
  */
 function extractGroupBy(
   text: string,
   columns: ColumnInfo[],
-): { groupBy: ColumnInfo | null; rest: string; ambiguous: string[] } {
+): { groupBy: ColumnInfo[]; rest: string; error?: string } {
   const norm = normalize(text);
   for (const marker of ["grouped by", "group by", "for each", "per", "by"]) {
     const re = new RegExp(`\\b${marker.replace(" ", "\\s+")}\\b`);
@@ -199,19 +214,62 @@ function extractGroupBy(
     const idx = m.index;
     const tail = norm.slice(idx + m[0].length).trim();
     const hits = findColumns(tail, columns);
-    if (hits.length === 1) {
-      const before = norm.slice(0, idx).trim();
-      return { groupBy: hits[0], rest: before, ambiguous: [] };
+    if (hits.length === 0) continue;
+    // Order by first appearance in the tail, longest first at the
+    // same position, and drop a column whose name sits inside
+    // another matched column's name.
+    const spans = hits
+      .map((col) => {
+        const name = normalize(col.name);
+        const nameSingular = name.split(" ").map(singular).join(" ");
+        const tailSingular = tail.split(" ").map(singular).join(" ");
+        let start = tail.indexOf(name);
+        let len = name.length;
+        if (start === -1) {
+          start = tailSingular.indexOf(nameSingular);
+          len = nameSingular.length;
+        }
+        return { col, start, len };
+      })
+      .filter((s) => s.start >= 0)
+      .sort((a, b) => a.start - b.start || b.len - a.len);
+    const kept: { col: ColumnInfo; start: number; len: number }[] = [];
+    for (const s of spans) {
+      const overlaps = kept.some(
+        (k) => s.start < k.start + k.len && k.start < s.start + s.len,
+      );
+      if (!overlaps) kept.push(s);
     }
-    if (hits.length > 1) {
+    if (kept.length > 3) {
       return {
-        groupBy: null,
+        groupBy: [],
         rest: text,
-        ambiguous: hits.map((c) => c.name),
+        error:
+          "group by at most three columns at a time — e.g. 'by region and product'",
       };
     }
+    // Any word left in the tail that is not a matched column name
+    // and not the "and"/"per"/"by" joiner is a column the sheet
+    // does not have — refuse rather than silently dropping it.
+    let leftover = tail;
+    for (const k of [...kept].sort((a, b) => b.start - a.start)) {
+      leftover = (leftover.slice(0, k.start) + " " + leftover.slice(k.start + k.len))
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    const filler = new Set(["and", "per", "by", "grouped", "group", "each", "for"]);
+    const stray = leftover.split(" ").filter((w) => w !== "" && !filler.has(w));
+    if (stray.length > 0) {
+      return {
+        groupBy: [],
+        rest: text,
+        error: `could not find a column named "${stray.join(" ")}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+      };
+    }
+    const before = norm.slice(0, idx).trim();
+    return { groupBy: kept.map((k) => k.col), rest: before };
   }
-  return { groupBy: null, rest: text, ambiguous: [] };
+  return { groupBy: [], rest: text };
 }
 
 /**
@@ -823,6 +881,27 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   const timeBucket = extractTimeBucket(extracted.rest);
   if (timeBucket.error) return { ok: false, reason: timeBucket.error };
   const bucket = timeBucket.bucket;
+  if (bucket) {
+    // "total revenue by month and region" — the bucket extractor
+    // removed "by month" and left "and region" behind; answering
+    // the monthly grouping would silently drop the second group.
+    // Only a column named right after the period clause counts:
+    // "correlation between revenue and units by month" ends in
+    // "and units" too, but that "and" belongs to the correlation.
+    const periodWords = Object.keys(BUCKET_WORDS).join("|");
+    const combined = new RegExp(
+      `\\b(?:by|per)\\s+(?:${periodWords})s?\\s+and\\s+([a-z][a-z ]*?)(?:\\s+by\\b|\\s*$)`,
+    ).exec(normalize(extracted.rest));
+    if (combined) {
+      const extra = findColumns(combined[1], columns);
+      if (extra.length > 0) {
+        return {
+          ok: false,
+          reason: `group by one dimension at a time — "by ${bucket}" and "by ${extra[0]!.name}" can't combine; try one or the other`,
+        };
+      }
+    }
+  }
 
   // Share: a filtered subset's total as a share of the whole sheet.
   // Once the question shows share intent it is parsed here or
@@ -941,34 +1020,37 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     };
   }
 
-  const { groupBy, rest, ambiguous } = extractGroupBy(timeBucket.rest, columns);
-  if (ambiguous.length > 0) {
-    return {
-      ok: false,
-      reason: `could not tell which column to group by — matches ${ambiguous.join(", ")}`,
-    };
-  }
+  const { groupBy, rest, error } = extractGroupBy(timeBucket.rest, columns);
+  if (error) return { ok: false, reason: error };
   // A time bucket needs a date column to group: the explicit
   // group-by column when one was named, else the sheet's only date
-  // column.
+  // column. A bucket plus a second group column is two dimensions
+  // at once — out of scope, and answering only the bucket would
+  // silently drop the other group.
   let resolvedGroupBy = groupBy;
   if (bucket) {
-    const resolved = resolveBucketColumn(bucket, groupBy, columns);
+    if (groupBy.length > 1) {
+      return {
+        ok: false,
+        reason: `group by one dimension at a time — "by ${groupBy.map((c) => c.name).join(" and ")}" can't be combined with by ${bucket}; try one or the other`,
+      };
+    }
+    const resolved = resolveBucketColumn(bucket, groupBy[0] ?? null, columns);
     if (resolved.error) return { ok: false, reason: resolved.error };
-    resolvedGroupBy = resolved.column;
+    resolvedGroupBy = resolved.column ? [resolved.column] : [];
   }
   const text = rest === "" ? timeBucket.rest : rest;
 
   // Count questions need no target column.
-  if (isCountQuestion(text) && !resolvedGroupBy) {
+  if (isCountQuestion(text) && resolvedGroupBy.length === 0) {
     return { ok: true, query: { kind: "count", filters } };
   }
-  if (isCountQuestion(text) && resolvedGroupBy) {
+  if (isCountQuestion(text) && resolvedGroupBy.length > 0) {
     return {
       ok: true,
       query: {
         kind: "group",
-        groupBy: resolvedGroupBy.name,
+        groupBy: resolvedGroupBy.map((c) => c.name),
         column: null,
         op: "count",
         filters,
@@ -997,10 +1079,10 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     };
   }
 
-  // The target column is the one named in the question, excluding the
-  // group-by column (already consumed).
+  // The target column is the one named in the question, excluding
+  // the group-by columns (already consumed).
   const candidates = findColumns(text, columns).filter(
-    (c) => !resolvedGroupBy || c.name !== resolvedGroupBy.name,
+    (c) => !resolvedGroupBy.some((g) => g.name === c.name),
   );
   if (candidates.length === 0) {
     return {
@@ -1016,12 +1098,12 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   }
   const column = candidates[0];
 
-  if (resolvedGroupBy) {
+  if (resolvedGroupBy.length > 0) {
     return {
       ok: true,
       query: {
         kind: "group",
-        groupBy: resolvedGroupBy.name,
+        groupBy: resolvedGroupBy.map((c) => c.name),
         column: column.name,
         op,
         filters,
