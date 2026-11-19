@@ -556,7 +556,7 @@ describe("runCli explain", () => {
       column: "revenue",
       limit: 2,
       direction: "highest",
-      groupBy: "product",
+      groupBy: ["product"],
       filters: [],
       bucket: undefined,
     });
