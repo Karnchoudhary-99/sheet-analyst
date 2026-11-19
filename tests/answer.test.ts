@@ -295,3 +295,37 @@ describe("composeAnswer comparison", () => {
     );
   });
 });
+
+describe("composeAnswer share", () => {
+  it("states a value share with the subset and the whole-sheet total", () => {
+    const answer = answerQuestion("what share of revenue is North", SALES);
+    // North 389.97 of 1,114.84 = 34.98%.
+    expect(answer).toBe(
+      "Region is North accounts for 34.98% of total revenue " +
+        "(389.97 of 1,114.84, from 3 of 6 rows).",
+    );
+  });
+
+  it("states a row-count share", () => {
+    const answer = answerQuestion("what share of rows are in North", SALES);
+    expect(answer).toBe("3 of 6 rows (50%) match region is North.");
+  });
+
+  it("says so when the whole-sheet total is zero", () => {
+    const zeros = parseCsv("a,b\n1,0\n2,0\n");
+    const answer = answerQuestion("what share of b where a is 1", zeros);
+    expect(answer).toBe(
+      "I could not compute the share of total b — the total is 0, " +
+        "so there is nothing to share out.",
+    );
+  });
+
+  it("flags a subset where some rows had no usable value", () => {
+    const answer = answerQuestion("what share of units is North", SALES);
+    // North units 15 of 48 = 31.25%; only 2 of the 3 North rows had a units value.
+    expect(answer).toBe(
+      "Region is North accounts for 31.25% of total units " +
+        "(15 of 48, from 3 of 6 rows, 2 of 3 had a value).",
+    );
+  });
+});
