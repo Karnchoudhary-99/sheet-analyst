@@ -99,6 +99,17 @@ export const EVAL_GATE = 0.8;
  * Widget A 420, East · Widget C 314.93 (11 pairs in all). A top-N
  * over two groups plus a time bucket abstains.
  *
+ * bottom-N — the low end of the same ranking ("bottom 3 products
+ * by revenue", "bottom 2 months by revenue", "bottom revenue"):
+ * sales products ascending are Widget, Deluxe 149.97, Widget C
+ * 449.85, Widget B 549.78, Widget A 640; regions ascending are
+ * West 124.95, North 389.97, East 624.91, South 649.77; months
+ * ascending are Jan 664.91, Mar 834.81, Feb 914.81; monthly
+ * region × product pairs ascending start South · Widget B 124.95,
+ * North · Widget C 134.97, West · Widget B 149.94. Answers are
+ * headed "Bottom N of M", never "Top N". A bottom-N over a group
+ * plus a time bucket abstains, same as top-N.
+ *
  * mode and distinct count — sales regions: North 3, South 2, East 2,
  * West 1, so the mode is North (3 of 8 rows, 4 distinct values);
  * sales products tie at 3 each (Widget A, Widget B) so the
@@ -155,6 +166,24 @@ export const GOLD_SET: EvalCase[] = [
     question: "top 3 products by revenue",
     expect: ["Top 3 of 4 groups", "Widget A: 640"],
     note: "Widget A 240 + 400 + 0 = 640; Widget B 549.78; Widget C 449.85",
+  },
+  {
+    sheet: "sales",
+    question: "bottom 3 products by revenue",
+    expect: ["Bottom 3 of 4 groups", "Widget, Deluxe: 149.97"],
+    note: "ascending: Widget, Deluxe 149.97, Widget C 449.85, Widget B 549.78; Widget A 640 is cut",
+  },
+  {
+    sheet: "sales",
+    question: "bottom 2 regions by revenue",
+    expect: ["Bottom 2 of 4 groups", "West: 124.95"],
+    note: "ascending: West 124.95, North 389.97; East 624.91 and South 649.77 are cut",
+  },
+  {
+    sheet: "sales",
+    question: "lowest revenue",
+    expect: ["Showing 1 of 8 matching rows", "2026-01-10", "Widget A"],
+    note: "the lowest single revenue row is the zero-revenue Widget A row in North on 2026-01-10",
   },
   {
     sheet: "sales",
@@ -263,6 +292,12 @@ export const GOLD_SET: EvalCase[] = [
     question: "top 2 months by revenue",
     expect: ["Top 2 of 3 months", "Feb 2026: 914.81", "Mar 2026: 834.81"],
     note: "Feb 914.81 is the top month, Mar 834.81 second; Jan 664.91 is cut",
+  },
+  {
+    sheet: "monthly",
+    question: "bottom 2 months by revenue",
+    expect: ["Bottom 2 of 3 months", "Jan 2026: 664.91", "Mar 2026: 834.81"],
+    note: "Jan 664.91 is the lowest month, Mar 834.81 second; Feb 914.81 is cut",
   },
   {
     sheet: "monthly",
@@ -439,10 +474,22 @@ export const GOLD_SET: EvalCase[] = [
     note: "11 region × product pairs; top 2 are South · Widget A 420 (2 rows) and East · Widget C 314.93",
   },
   {
+    sheet: "monthly",
+    question: "bottom 3 region and product by revenue",
+    expect: ["Bottom 3 of 11 groups", "South · Widget B: 124.95", "North · Widget C: 134.97"],
+    note: "11 region × product pairs; bottom 3 are South · Widget B 124.95, North · Widget C 134.97, West · Widget B 149.94",
+  },
+  {
     sheet: "sales",
     question: "top 3 region and product by revenue by month",
     expect: "abstain",
     note: "a top-N over two groups plus a time bucket is two dimensions at once",
+  },
+  {
+    sheet: "sales",
+    question: "bottom 3 products by revenue by month",
+    expect: "abstain",
+    note: "a bottom-N over a group plus a time bucket is two dimensions at once, same as top-N",
   },
   {
     sheet: "sales",
