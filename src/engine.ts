@@ -20,7 +20,7 @@
 import type { ParsedCsv } from "./csv.js";
 import type { Filter, Query } from "./query.js";
 import { inferSchema, isNullValue, type ColumnInfo } from "./schema.js";
-import { numericStats, ordinal, pearsonCorrelation, percentile } from "./stats.js";
+import { leastSquaresSlope, numericStats, ordinal, pearsonCorrelation, percentile } from "./stats.js";
 import { bucketDate, parseDate, type TimeBucket } from "./time.js";
 
 export type QueryResult =
@@ -141,6 +141,35 @@ export type QueryResult =
       rowsMatched: number;
       /** Rows with a non-blank value. */
       valuesUsed: number;
+    }
+  | {
+      kind: "trend";
+      column: string;
+      op: string;
+      dateColumn: string;
+      bucket: TimeBucket;
+      /**
+       * Per-period aggregate in chronological order. `value` is
+       * null when the period has rows but none with a usable value.
+       */
+      periods: {
+        label: string;
+        value: number | null;
+        rows: number;
+        valuesUsed: number;
+      }[];
+      /**
+       * Least-squares slope per period, or null with fewer than two
+       * periods carrying a usable value.
+       */
+      slope: number | null;
+      /**
+       * "flat" when |slope| is under 1% of the typical period value
+       * (noise, not a trend); null when the slope is.
+       */
+      direction: "up" | "down" | "flat" | null;
+      /** Rows the filters matched, including rows with no usable date. */
+      rowsMatched: number;
     };
 
 function toNumber(value: string): number | null {
@@ -661,6 +690,72 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         delta,
         pctChange,
         rowsMatched: a.rows + b.rows,
+      };
+    }
+
+    case "trend": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      const dIdx = colIndex.get(query.dateColumn)!;
+      const cIdx = colIndex.get(query.column)!;
+      // Bucket the filtered rows by period. Rows with no usable date
+      // are not on the timeline, so they take no part in the fit —
+      // they still count in rowsMatched.
+      const buckets = new Map<
+        string,
+        { label: string; values: number[]; count: number }
+      >();
+      for (const row of rows) {
+        const b = bucketDate(row[dIdx] ?? "", query.bucket);
+        if (!b) continue;
+        const bucket = buckets.get(b.key) ?? { label: b.label, values: [], count: 0 };
+        bucket.count += 1;
+        const raw = row[cIdx] ?? "";
+        if (!isNullValue(raw)) {
+          const n = toNumber(raw);
+          if (n !== null) bucket.values.push(n);
+        }
+        buckets.set(b.key, bucket);
+      }
+      const periods = [...buckets.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([, b]) => ({
+          label: b.label,
+          value: aggregateValues(query.op, b.values),
+          rows: b.count,
+          valuesUsed: b.values.length,
+        }));
+      // The fit uses only periods with a usable value, at their
+      // position in the full period list, so a gap period keeps the
+      // slope honest instead of compressing the timeline.
+      const fitted = periods
+        .map((p, i) => ({ x: i, value: p.value }))
+        .filter((p): p is { x: number; value: number } => p.value !== null);
+      const slope =
+        fitted.length >= 2
+          ? leastSquaresSlope(
+              fitted.map((p) => p.x),
+              fitted.map((p) => p.value),
+            )
+          : null;
+      let direction: "up" | "down" | "flat" | null = null;
+      if (slope !== null) {
+        // "Flat" is relative: a slope under 1% of the typical period
+        // value is noise, not a trend.
+        const meanAbs =
+          fitted.reduce((acc, p) => acc + Math.abs(p.value), 0) / fitted.length;
+        direction =
+          Math.abs(slope) <= 0.01 * meanAbs ? "flat" : slope > 0 ? "up" : "down";
+      }
+      return {
+        kind: "trend",
+        column: query.column,
+        op: query.op,
+        dateColumn: query.dateColumn,
+        bucket: query.bucket,
+        periods,
+        slope,
+        direction,
+        rowsMatched: rows.length,
       };
     }
   }
