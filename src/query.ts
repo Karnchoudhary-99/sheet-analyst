@@ -57,6 +57,11 @@
  * - trend: "revenue trend by month", "average salary trend by year"
  *   (least-squares slope of the per-period aggregate over time; a
  *   trend needs a period and one numeric column)
+ * - above/below average: "rows with revenue above average",
+ *   "which employees have salary below the median" (rows whose
+ *   value is strictly above or below the sheet's mean or median
+ *   for that column; a column with no usable value has no baseline
+ *   and the answer says so)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -177,6 +182,16 @@ export type Query =
       dateColumn: string;
       /** The period the aggregates are bucketed into. */
       bucket: TimeBucket;
+      filters: Filter[];
+    }
+  | {
+      kind: "aboveBelow";
+      /** The numeric column compared against its own baseline. */
+      column: string;
+      /** Strictly above, or strictly below, the baseline. */
+      direction: "above" | "below";
+      /** Mean or median of the column over the matched rows. */
+      baseline: "average" | "median";
       filters: Filter[];
     };
 
