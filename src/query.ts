@@ -62,6 +62,10 @@
  *   value is strictly above or below the sheet's mean or median
  *   for that column; a column with no usable value has no baseline
  *   and the answer says so)
+ * - missing values: "how many rows are missing salary", "which
+ *   columns have missing values" (a count per column, or a
+ *   whole-sheet report over every column), "show rows missing
+ *   revenue" (the rows themselves, first 10)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -193,6 +197,22 @@ export type Query =
       /** Mean or median of the column over the matched rows. */
       baseline: "average" | "median";
       filters: Filter[];
+    }
+  | {
+      kind: "missing";
+      /**
+       * The column to check, or null for a whole-sheet report over
+       * every column ("which columns have missing values").
+       * A "missing value" is what the schema calls null: empty, or
+       * a marker like NA or N/A.
+       */
+      column: string | null;
+      filters: Filter[];
+      /**
+       * True for "show rows missing <column>": list the rows
+       * themselves instead of counting them.
+       */
+      listRows: boolean;
     };
 
 export type ParseResult =
@@ -1259,6 +1279,128 @@ function tryParseAboveBelow(
   return {
     ok: true,
     query: { kind: "aboveBelow", column: column.name, direction, baseline, filters },
+  };
+}
+
+/**
+ * Try to read a missing-values question ("how many rows are missing
+ * salary", "which columns have missing values", "show rows missing
+ * revenue"). Returns null when the question shows no missing-values
+ * intent; otherwise a missing query, or an abstention when the
+ * column cannot be pinned down.
+ *
+ * Three shapes:
+ * - one column, counted ("how many rows are missing salary") —
+ *   "how many"/"count" wins over the row noun, so this counts
+ *   instead of listing;
+ * - one column, listed ("show rows missing revenue", "which rows
+ *   are missing salary") — the rows themselves, first 10;
+ * - no column ("which columns have missing values") — a report
+ *   over every column. Listing with no column abstains: there is
+ *   no one column to list. A grouped question ("missing salary
+ *   by department") abstains, like mode and percentile — it is a
+ *   per-group question the engine does not answer.
+ */
+function tryParseMissing(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\b(missing|blank|null|empty)\b/.test(norm)) return null;
+  if (/\bby\b|\bper\b|\bgroup\b/.test(norm)) {
+    return {
+      ok: false,
+      reason:
+        "a missing-values question asks about one column — try e.g. 'how many rows are missing salary'",
+    };
+  }
+
+  const filler = new Set([
+    "what",
+    "how",
+    "many",
+    "count",
+    "rows",
+    "row",
+    "are",
+    "is",
+    "the",
+    "of",
+    "in",
+    "with",
+    "values",
+    "value",
+    "cells",
+    "cell",
+    "show",
+    "list",
+    "which",
+    "columns",
+    "column",
+    "have",
+    "has",
+    "there",
+    "any",
+    "missing",
+    "blank",
+    "null",
+    "empty",
+    "for",
+  ]);
+  const cleaned = norm
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to check — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = distinct[0] ?? null;
+  if (column) {
+    // Anything left after removing the column name is a word the
+    // sheet does not explain — refuse rather than dropping it.
+    const colName = normalize(column.name);
+    const colNameSingular = colName.split(" ").map(singular).join(" ");
+    let rest = cleaned;
+    for (const name of [colName, colNameSingular]) {
+      rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
+    }
+    if (rest !== "") {
+      return {
+        ok: false,
+        reason: `could not understand "${rest}" in the question — try e.g. 'how many rows are missing ${column.name}'`,
+      };
+    }
+  } else if (cleaned !== "") {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+
+  // "how many"/"count" counts, even when the question also says
+  // "rows" ("how many rows are missing salary"). Otherwise a
+  // show/list/which-rows phrasing lists the rows.
+  const wantsCount = /\bhow many\b|\bcount\b/.test(norm);
+  const listRows =
+    !wantsCount &&
+    (/^\s*(show|list)\b/.test(norm) ||
+      (/\bwhich\b/.test(norm) && /\brows?\b/.test(norm) && column !== null));
+  if (listRows && column === null) {
+    return {
+      ok: false,
+      reason:
+        "listing missing rows needs one column — try e.g. 'show rows missing salary'",
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "missing", column: column?.name ?? null, filters, listRows },
   };
 }
 
