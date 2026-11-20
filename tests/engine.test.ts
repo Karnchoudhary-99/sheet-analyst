@@ -1053,3 +1053,82 @@ describe("executeQuery trend", () => {
     }
   });
 });
+
+describe("executeQuery missing values", () => {
+  it("counts the missing rows of one column", () => {
+    const r = ask("how many rows are missing units");
+    expect(r).toEqual({
+      kind: "missing",
+      column: "units",
+      entries: [{ column: "units", missing: 1, total: 6 }],
+      headers: ["date", "region", "product", "units", "revenue"],
+      rows: [],
+      totalMatched: 0,
+      limitedTo: undefined,
+      listRows: false,
+      rowsMatched: 6,
+    });
+  });
+
+  it("reports a whole-sheet report with the worst column first", () => {
+    const r = ask("which columns have missing values");
+    expect(r.kind).toBe("missing");
+    if (r.kind === "missing") {
+      expect(r.column).toBeNull();
+      expect(r.entries).toEqual([
+        { column: "units", missing: 1, total: 6 },
+        { column: "date", missing: 0, total: 6 },
+        { column: "product", missing: 0, total: 6 },
+        { column: "region", missing: 0, total: 6 },
+        { column: "revenue", missing: 0, total: 6 },
+      ]);
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("lists the rows missing a column, in sheet order", () => {
+    const r = ask("show rows missing units");
+    expect(r.kind).toBe("missing");
+    if (r.kind === "missing") {
+      expect(r.listRows).toBe(true);
+      expect(r.totalMatched).toBe(1);
+      expect(r.rows).toEqual([
+        { date: "2026-01-10", region: "North", product: "Widget A", units: "", revenue: "0.00" },
+      ]);
+    }
+  });
+
+  it("does not count a zero as missing", () => {
+    const r = ask("how many rows are missing revenue");
+    expect(r.kind).toBe("missing");
+    if (r.kind === "missing") {
+      expect(r.entries).toEqual([{ column: "revenue", missing: 0, total: 6 }]);
+    }
+  });
+
+  it("counts over the filtered rows only", () => {
+    const r = ask("how many rows are missing units in North");
+    expect(r.kind).toBe("missing");
+    if (r.kind === "missing") {
+      // North has 3 rows; only the 2026-01-10 row is missing units.
+      expect(r.entries).toEqual([{ column: "units", missing: 1, total: 3 }]);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("counts an NA marker as missing, like a blank", () => {
+    const staff = parseCsv(
+      "id,name,department,salary\n" +
+        "1,Ada,Engineering,95000\n" +
+        "2,Grace,Engineering,NA\n" +
+        "3,Alan,Data,88000\n",
+    );
+    const parsed = parseQuestion("how many rows are missing salary", staff);
+    if (!parsed.ok) throw new Error(`abstained: ${parsed.reason}`);
+    const r = executeQuery(parsed.query, staff);
+    expect(r.kind).toBe("missing");
+    if (r.kind === "missing") {
+      expect(r.entries).toEqual([{ column: "salary", missing: 1, total: 3 }]);
+    }
+  });
+});
