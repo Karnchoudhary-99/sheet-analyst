@@ -310,3 +310,47 @@ describe("resultToCsv mode", () => {
     );
   });
 });
+
+describe("resultToCsv trend", () => {
+  it("writes one row per period plus a slope row", () => {
+    const result: QueryResult = {
+      kind: "trend",
+      column: "revenue",
+      op: "sum",
+      dateColumn: "date",
+      bucket: "month",
+      periods: [
+        { label: "Jan 2026", value: 664.91, rows: 4, valuesUsed: 4 },
+        { label: "Feb 2026", value: 914.81, rows: 4, valuesUsed: 4 },
+        { label: "Mar 2026", value: 834.81, rows: 4, valuesUsed: 4 },
+      ],
+      slope: 84.95,
+      direction: "up",
+      rowsMatched: 12,
+    };
+    expect(resultToCsv(result, "revenue trend by month", "…")).toBe(
+      "period,value,rows,values_used\n" +
+        "Jan 2026,664.91,4,4\n" +
+        "Feb 2026,914.81,4,4\n" +
+        "Mar 2026,834.81,4,4\n" +
+        "slope per month,84.95,,",
+    );
+  });
+
+  it("leaves the period value and the slope blank when uncomputable", () => {
+    const result: QueryResult = {
+      kind: "trend",
+      column: "revenue",
+      op: "sum",
+      dateColumn: "date",
+      bucket: "month",
+      periods: [{ label: "Jan 2026", value: null, rows: 1, valuesUsed: 0 }],
+      slope: null,
+      direction: null,
+      rowsMatched: 1,
+    };
+    expect(resultToCsv(result, "revenue trend by month", "…")).toBe(
+      "period,value,rows,values_used\nJan 2026,,1,0\nslope per month,,,",
+    );
+  });
+});

@@ -157,6 +157,17 @@ export function describeQuery(query: Query): string[] {
         `percentile: ${query.p}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
+    case "trend": {
+      const what = `${OP_LABEL[query.op] ?? query.op} ${query.column}`;
+      return [
+        `trend of ${what} by ${query.bucket}`,
+        "operation: trend",
+        `column: ${query.column}`,
+        `date column: ${query.dateColumn}`,
+        `time bucket: ${query.bucket}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    }
   }
 }
 

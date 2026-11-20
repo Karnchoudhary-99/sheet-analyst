@@ -319,3 +319,37 @@ describe("describeQuery percentile", () => {
     expect(describeQuery(explained.query)[0]).toBe("25th percentile of revenue");
   });
 });
+
+describe("describeQuery trend", () => {
+  it("describes the column, date column, bucket and filters", () => {
+    const monthly = parseCsv(
+      "date,region,revenue\n2026-01-05,North,240.00\n2026-02-03,South,400.00\n",
+    );
+    const explained = explainQuestion(
+      "revenue trend by month where region is North",
+      monthly,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "trend of total revenue by month",
+      "operation: trend",
+      "column: revenue",
+      "date column: date",
+      "time bucket: month",
+      "filters: region = North",
+    ]);
+  });
+
+  it("names the average for an average trend", () => {
+    const monthly = parseCsv(
+      "date,revenue\n2026-01-05,240.00\n2026-02-03,400.00\n",
+    );
+    const explained = explainQuestion("average revenue trend by month", monthly);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)[0]).toBe(
+      "trend of average revenue by month",
+    );
+  });
+});

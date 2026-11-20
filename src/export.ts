@@ -22,6 +22,9 @@
  *   rows_matched` (empty value when the column has no usable values).
  *   An abstention (no result) exports as a single `question,answer` row — the file still says
  *   what happened instead of being silently empty.
+ *   A trend becomes one row per period of `period,value,rows,values_used`
+ *   plus a `slope per <bucket>` row (empty slope when the trend could
+ *   not be computed, empty value for a period with no usable values).
  */
 
 import type { QueryResult } from "./engine.js";
@@ -137,6 +140,28 @@ export function resultToCsv(
           String(result.rowsMatched),
         ]),
       ].join("\n");
+    case "trend": {
+      const lines = [csvRow(["period", "value", "rows", "values_used"])];
+      for (const p of result.periods) {
+        lines.push(
+          csvRow([
+            p.label,
+            p.value === null ? "" : String(p.value),
+            String(p.rows),
+            String(p.valuesUsed),
+          ]),
+        );
+      }
+      lines.push(
+        csvRow([
+          `slope per ${result.bucket}`,
+          result.slope === null ? "" : String(result.slope),
+          "",
+          "",
+        ]),
+      );
+      return lines.join("\n");
+    }
   }
 }
 
