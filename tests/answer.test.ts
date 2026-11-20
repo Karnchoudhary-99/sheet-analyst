@@ -153,6 +153,63 @@ describe("composeAnswer groups and rows", () => {
     expect(secondRow).toBeGreaterThan(-1);
     expect(firstRow).toBeLessThan(secondRow);
   });
+
+  it("states the baseline in an above-average answer", () => {
+    const r: QueryResult = {
+      kind: "aboveBelow",
+      column: "revenue",
+      direction: "above",
+      baseline: "average",
+      threshold: 185.81,
+      headers: ["region", "revenue"],
+      rows: [{ region: "East", revenue: "400.00" }],
+      totalMatched: 3,
+      rowsMatched: 6,
+    };
+    const out = composeAnswer(r, SALES);
+    expect(out).toContain("3 rows have revenue above the average of 185.81:");
+    expect(out).toContain("| East | 400 |");
+  });
+
+  it("says plainly when no row is on the asked side", () => {
+    const r: QueryResult = {
+      kind: "aboveBelow",
+      column: "revenue",
+      direction: "above",
+      baseline: "average",
+      threshold: 185.81,
+      headers: ["region", "revenue"],
+      rows: [],
+      totalMatched: 0,
+      rowsMatched: 6,
+    };
+    expect(composeAnswer(r, SALES)).toBe(
+      "No rows have revenue above the average of 185.81.",
+    );
+  });
+
+  it("says plainly when the column has no usable value", () => {
+    const r: QueryResult = {
+      kind: "aboveBelow",
+      column: "score",
+      direction: "above",
+      baseline: "average",
+      threshold: null,
+      headers: ["name", "score"],
+      rows: [],
+      totalMatched: 0,
+      rowsMatched: 2,
+    };
+    expect(composeAnswer(r)).toBe(
+      "I could not compare score to its average — none of the 2 matching rows has a usable value.",
+    );
+  });
+
+  it("answers an above-average question end to end", () => {
+    const out = answerQuestion("rows with revenue above average", SALES);
+    expect(out).toContain("3 rows have revenue above the average of 185.81:");
+    expect(out).toContain("| 2026-01-08 | East | Widget A | 20 | 400 |");
+  });
 });
 
 describe("composeAbstention", () => {
