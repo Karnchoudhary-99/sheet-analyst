@@ -311,25 +311,38 @@ function matchColumnsInOrder(phrase: string, columns: ColumnInfo[]): ColumnSpan[
  * employees sorted by salary"). Returns the sort spec plus the
  * question with the clause removed, or an error when the sort column
  * cannot be pinned down. No sort phrase returns the text untouched.
- * The direction defaults to ascending. This runs before the
- * group-by extractor: "sorted by revenue" would otherwise be read
- * as a group-by on revenue, and the direction word ("descending")
- * would be reported as an unknown column.
+ * The direction defaults to ascending.
+ *
+ * This runs on the raw question BEFORE the filter extractor: a
+ * "where" value would otherwise swallow the sort phrase ("where
+ * region is North sorted by revenue" reads the value as "North
+ * sorted by revenue descending"). It also runs before the group-by
+ * extractor, which would read "sorted by revenue" as a group-by on
+ * revenue and report the direction word ("descending") as an
+ * unknown column. The match is case-insensitive and works on the
+ * raw text (not the normalized form) so the remaining question
+ * keeps its original casing for the filter extractor — filter
+ * values keep their spelling ("North", not "north").
+ *
+ * The sort phrase may sit before a "where" clause ("sorted by
+ * revenue where region is North"): the lookahead stops the match
+ * at "where" and the clause is kept in the returned text.
  */
 function extractSort(
   text: string,
   columns: ColumnInfo[],
 ): { sort: SortSpec | null; rest: string; error?: string } {
-  const norm = normalize(text);
-  const m = /\b(?:sorted|sort|ordered|order)\s+by\s+(.+)$/.exec(norm);
+  const m =
+    /\b(?:sorted|sort|ordered|order)\s+by\s+([a-z0-9_ ]+?)(?:\s+(ascending|descending|asc|desc))?(?=\s+where\b|\s*$)/i.exec(
+      text,
+    );
   if (!m) return { sort: null, rest: text };
-  const phrase = m[1]!.trim();
-  const dirMatch = /\b(ascending|descending|asc|desc)\s*$/.exec(phrase);
+  const columnPhrase = m[1]!.trim();
   const direction: "asc" | "desc" =
-    dirMatch && (dirMatch[1] === "descending" || dirMatch[1] === "desc")
+    m[2] !== undefined &&
+    (m[2].toLowerCase() === "descending" || m[2].toLowerCase() === "desc")
       ? "desc"
       : "asc";
-  const columnPhrase = (dirMatch ? phrase.slice(0, dirMatch.index) : phrase).trim();
   const hits = findColumns(columnPhrase, columns);
   const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
   if (distinct.length === 0) {
@@ -346,10 +359,10 @@ function extractSort(
       error: `could not tell which column to sort by — matches ${distinct.map((c) => c.name).join(", ")}`,
     };
   }
-  return {
-    sort: { column: distinct[0]!.name, direction },
-    rest: norm.slice(0, m.index).trim(),
-  };
+  const rest = (text.slice(0, m.index) + " " + text.slice(m.index + m[0].length))
+    .replace(/\s+/g, " ")
+    .trim();
+  return { sort: { column: distinct[0]!.name, direction }, rest };
 }
 
 function extractGroupBy(
@@ -1355,7 +1368,13 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     return { ok: false, reason: "the sheet has no columns to ask about" };
   }
 
-  const extracted = extractFilters(question, parsed);
+  // Sorted rows: pull the sort clause out first (see extractSort) —
+  // the filter extractor would otherwise swallow it into a "where"
+  // value, and the group-by extractor would read it as a grouping.
+  const sort = extractSort(question, columns);
+  if (sort.error) return { ok: false, reason: sort.error };
+
+  const extracted = extractFilters(sort.rest, parsed);
   if (extracted.error) return { ok: false, reason: extracted.error };
   const filters = extracted.filters;
 
@@ -1569,11 +1588,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     };
   }
 
-  // Sorted rows: pull the sort clause out before the group-by
-  // extractor sees it (see extractSort).
-  const sort = extractSort(timeBucket.rest, columns);
-  if (sort.error) return { ok: false, reason: sort.error };
-  const { groupBy, rest, error } = extractGroupBy(sort.rest, columns);
+  const { groupBy, rest, error } = extractGroupBy(timeBucket.rest, columns);
   if (error) return { ok: false, reason: error };
   // A time bucket needs a date column to group: the explicit
   // group-by column when one was named, else the sheet's only date
