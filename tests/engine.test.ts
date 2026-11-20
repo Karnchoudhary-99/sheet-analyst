@@ -213,6 +213,89 @@ describe("executeQuery sorted rows", () => {
   });
 });
 
+describe("executeQuery above/below average", () => {
+  it("returns the rows strictly above the mean, in sheet order", () => {
+    // Revenues total 1,114.84 over 6 rows, mean 185.81.
+    const r = ask("rows with revenue above average");
+    expect(r.kind).toBe("aboveBelow");
+    if (r.kind === "aboveBelow") {
+      expect(r.threshold).toBeCloseTo(185.81, 2);
+      expect(r.baseline).toBe("average");
+      expect(r.direction).toBe("above");
+      expect(r.totalMatched).toBe(3);
+      expect(r.rowsMatched).toBe(6);
+      expect(r.rows.map((row) => row.revenue)).toEqual(["240.00", "199.92", "400.00"]);
+    }
+  });
+
+  it("returns the rows strictly below the mean", () => {
+    const r = ask("rows with revenue below average");
+    expect(r.kind).toBe("aboveBelow");
+    if (r.kind === "aboveBelow") {
+      expect(r.totalMatched).toBe(3);
+      expect(r.rows.map((row) => row.revenue)).toEqual(["149.97", "124.95", "0.00"]);
+    }
+  });
+
+  it("compares against the median when asked", () => {
+    // Revenues sorted: 0, 124.95, 149.97, 199.92, 240, 400 —
+    // median (149.97 + 199.92) / 2 = 174.945. Rows come back in
+    // sheet order, not sorted: 240 precedes 199.92 in the sheet.
+    const r = ask("rows with revenue above the median");
+    expect(r.kind).toBe("aboveBelow");
+    if (r.kind === "aboveBelow") {
+      expect(r.threshold).toBeCloseTo(174.95, 2);
+      expect(r.baseline).toBe("median");
+      expect(r.rows.map((row) => row.revenue)).toEqual(["240.00", "199.92", "400.00"]);
+    }
+  });
+
+  it("skips blank values when computing the baseline", () => {
+    // Units: 12, 8, 3, 20, 5 and one blank — mean 9.6 over 5 values.
+    const r = ask("rows with units above average");
+    expect(r.kind).toBe("aboveBelow");
+    if (r.kind === "aboveBelow") {
+      expect(r.threshold).toBeCloseTo(9.6, 2);
+      expect(r.rows.map((row) => row.units)).toEqual(["12", "20"]);
+    }
+  });
+
+  it("excludes rows exactly at the baseline", () => {
+    const sheet = parseCsv("x\n10\n20\n30\n");
+    const r = executeQuery(
+      { kind: "aboveBelow", column: "x", direction: "above", baseline: "average", filters: [] },
+      sheet,
+    );
+    expect(r.kind).toBe("aboveBelow");
+    if (r.kind === "aboveBelow") {
+      expect(r.threshold).toBe(20);
+      expect(r.totalMatched).toBe(1);
+      expect(r.rows.map((row) => row.x)).toEqual(["30"]);
+    }
+    const below = executeQuery(
+      { kind: "aboveBelow", column: "x", direction: "below", baseline: "average", filters: [] },
+      sheet,
+    );
+    if (below.kind === "aboveBelow") {
+      expect(below.rows.map((row) => row.x)).toEqual(["10"]);
+    }
+  });
+
+  it("reports a null threshold when no row has a usable value", () => {
+    const sheet = parseCsv("name,score\nA,\nB,\n");
+    const r = executeQuery(
+      { kind: "aboveBelow", column: "score", direction: "above", baseline: "average", filters: [] },
+      sheet,
+    );
+    expect(r.kind).toBe("aboveBelow");
+    if (r.kind === "aboveBelow") {
+      expect(r.threshold).toBeNull();
+      expect(r.totalMatched).toBe(0);
+      expect(r.rows).toEqual([]);
+    }
+  });
+});
+
 describe("executeQuery groups", () => {
   it("groups a total by region, largest first", () => {
     const r = ask("total revenue by region");
