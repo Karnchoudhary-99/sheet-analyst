@@ -188,6 +188,20 @@ export function describeQuery(query: Query): string[] {
         `baseline: ${query.baseline}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
+    case "missing": {
+      const what = query.listRows
+        ? `rows missing ${query.column}`
+        : query.column
+          ? `missing values in ${query.column}`
+          : "missing values by column";
+      return [
+        what,
+        "operation: missing values",
+        ...(query.column ? [`column: ${query.column}`] : []),
+        ...(query.listRows ? ["list rows: true"] : []),
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    }
   }
 }
 
