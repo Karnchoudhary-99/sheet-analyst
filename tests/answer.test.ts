@@ -74,6 +74,27 @@ describe("composeAnswer groups and rows", () => {
     expect(out).toContain("- North: 389.97 (3 rows)");
   });
 
+  it("says Bottom for a lowest-direction ranking", () => {
+    const r: QueryResult = {
+      kind: "groups",
+      groupBy: ["product"],
+      column: "revenue",
+      op: "sum",
+      groups: [
+        { key: "Widget C", keys: ["Widget C"], value: 149.97, count: 1 },
+        { key: "Widget B", keys: ["Widget B"], value: 324.87, count: 2 },
+      ],
+      rowsMatched: 6,
+      totalGroups: 3,
+      limitedTo: 2,
+      direction: "lowest",
+    };
+    const out = composeAnswer(r);
+    expect(out).toContain("Bottom 2 of 3 groups:");
+    expect(out).not.toContain("Top 2");
+    expect(out).toContain("- Widget C: 149.97 (1 row)");
+  });
+
   it("names every group column in a multi-column answer", () => {
     const r: QueryResult = {
       kind: "groups",
@@ -207,6 +228,15 @@ describe("composeAnswer time groups", () => {
     const answer = answerQuestion("top 2 months by revenue", MONTHLY);
     expect(answer).toMatch(/^Top 2 of 3 months:/);
     expect(answer).toContain("- Mar 2026: 674.76 (2 rows)");
+  });
+
+  it("says Bottom for a bottom-N question end to end", () => {
+    const answer = answerQuestion("bottom 2 months by revenue", MONTHLY);
+    expect(answer).toMatch(/^Bottom 2 of 3 months:/);
+    // Jan 439.92 is the lowest month, Feb 524.95 second; Mar is cut.
+    expect(answer).toContain("- Jan 2026: 439.92 (2 rows)");
+    expect(answer).toContain("- Feb 2026: 524.95 (2 rows)");
+    expect(answer).not.toContain("Mar 2026");
   });
 
   it("keeps plain group answers unchanged", () => {

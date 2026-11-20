@@ -73,7 +73,7 @@ function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string
     : `by ${result.groupBy.join(" and ")}`;
   const scope =
     result.limitedTo !== undefined && result.totalGroups !== undefined
-      ? `Top ${result.limitedTo} of ${result.totalGroups} ${result.bucket ? BUCKET_PLURAL[result.bucket] : "groups"}`
+      ? `${result.direction === "lowest" ? "Bottom" : "Top"} ${result.limitedTo} of ${result.totalGroups} ${result.bucket ? BUCKET_PLURAL[result.bucket] : "groups"}`
       : `${what.charAt(0).toUpperCase() + what.slice(1)} ${by}`;
   const lines = result.groups.map(
     (g) => `- ${g.key}: ${formatNumber(g.value)} (${g.count} ${plural(g.count, "row")})`,

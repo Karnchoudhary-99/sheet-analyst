@@ -264,6 +264,39 @@ describe("executeQuery top-N", () => {
       expect(r.rows[0].name).toBe("Alan");
     }
   });
+
+  it("ranks groups ascending for bottom-N", () => {
+    const r = ask("bottom 2 products by revenue");
+    expect(r.kind).toBe("groups");
+    if (r.kind === "groups") {
+      // SALES fixture: Widget A 640, Widget B 324.87, Widget C 149.97.
+      expect(r.groups).toEqual([
+        { key: "Widget C", keys: ["Widget C"], value: 149.97, count: 1 },
+        { key: "Widget B", keys: ["Widget B"], value: 324.87, count: 2 },
+      ]);
+      expect(r.limitedTo).toBe(2);
+      expect(r.totalGroups).toBe(3);
+      expect(r.direction).toBe("lowest");
+    }
+  });
+
+  it("marks a highest-direction ranking as highest", () => {
+    const r = ask("top 2 products by revenue");
+    if (r.kind === "groups") {
+      expect(r.direction).toBe("highest");
+    }
+  });
+
+  it("finds the bottom row for a bare 'bottom'", () => {
+    const r = ask("bottom revenue");
+    expect(r.kind).toBe("rows");
+    if (r.kind === "rows") {
+      expect(r.rows).toHaveLength(1);
+      // The zero-revenue row is the lowest single row.
+      expect(r.rows[0].revenue).toBe("0.00");
+      expect(r.rows[0].product).toBe("Widget A");
+    }
+  });
 });
 
 describe("executeQuery time bucketing", () => {

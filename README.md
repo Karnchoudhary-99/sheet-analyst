@@ -31,6 +31,7 @@ top-N) directly from the spreadsheet.
 - [x] Mode + distinct-count questions ("most common product", "how many distinct regions", blanks excluded, alphabetical tie-break)
 - [x] Percentile questions + `between` range filters ("90th percentile of salary", "p90 revenue", "where revenue between 100 and 200", inclusive, smaller value first)
 - [x] Trend questions ("revenue trend by month" — least-squares slope per period, up/down/roughly-flat wording, line chart, periods with no usable value named, not zero-filled)
+- [x] Bottom-N questions ("bottom 3 products by revenue", "bottom 2 months by revenue" — the low end of the top-N ranking, smallest first, headed "Bottom N of M" instead of "Top N")
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -84,6 +85,8 @@ answerQuestion("total revenue by region", sales);
 // "Total revenue by region:\n- South: 649.77 (2 rows)\n- East: 624.91 (2 rows)…"
 answerQuestion("top 3 products by revenue", sales);
 // "Top 3 of 4 groups:\n- Widget A: 640 (3 rows)…"
+answerQuestion("bottom 3 products by revenue", sales);
+// "Bottom 3 of 4 groups:\n- Widget, Deluxe: 149.97 (1 row)…"
 answerQuestion("total profit", sales);
 // "I can't answer that from this data: no column named in the question…"
 answerQuestion("total revenue by month", monthlySales);
@@ -120,7 +123,9 @@ multi-column group-by ("total revenue by region and product",
 "how many employees by department and remote" — up to three columns,
 in the order named, comma-separated too), top-N ("top 3 products by
 revenue", "top 3 region and product by revenue", "highest revenue" =
-top 1), filters
+top 1) and bottom-N ("bottom 3 products by revenue", "bottom 2 months
+by revenue", "bottom revenue" = the single lowest row — the same
+ranking, smallest first, headed "Bottom N of M" instead of "Top N"), filters
 ("total revenue where region is North", "average salary where salary >
 90000", "sales in North"), row queries ("show rows where region is
 North"), correlation ("correlation between revenue and units",
@@ -365,10 +370,12 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against an 83-question gold set over
+`npm run eval` scores the engine against an 89-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, multi-column group-bys (region × product,
-department × remote) and top-N over them, top-N, filters and row
+department × remote) and top-N over them, top-N, bottom-N (lowest
+products, regions, months and region × product pairs, headed
+"Bottom N of M"), filters and row
 queries, time grouping
 (monthly totals, averages, counts, top months), correlation (units vs
 revenue, id vs salary), period comparison (monthly revenue Jan→Feb
@@ -376,12 +383,13 @@ and Feb→Mar, average salary 2023→2024), share, distinct-values,
 mode and distinct-count questions, percentile questions (p90/p50/p25
 salary, p75/p90 revenue) and `between` range filters, trend
 questions (monthly revenue +84.95/month, average revenue
-+21.24/month, units +3.5/month, average salary −5,000/year), plus twenty-five questions the
++21.24/month, units +3.5/month, average salary −5,000/year), plus twenty-six questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
 comparison naming one period or the same period twice, a time bucket
 combined with a second group column, a group word that is not a
-column, a top-N over two groups plus a time bucket, a mode or
+column, a top-N over two groups plus a time bucket, a bottom-N over
+a group plus a time bucket, a mode or
 distinct count naming no column, a percentile outside 1–99, over a
 text column or grouped by another column, a reversed `between`
 range, a trend with no period, over a text column, plus a second
@@ -389,8 +397,8 @@ group column, or by an unsupported period). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-20): answer accuracy 58/58 (100%), abstention
-accuracy 25/25 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-20): answer accuracy 63/63 (100%), abstention
+accuracy 26/26 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row

@@ -78,8 +78,11 @@ export function describeQuery(query: Query): string[] {
       const grouped = query.groupBy
         ? `, grouped by ${query.groupBy.join(" and ")}${bucket}`
         : "";
+      // "top 3 lowest by revenue" reads as a contradiction; the
+      // low end of a ranking is a bottom-N.
+      const rankWord = query.direction === "lowest" ? "bottom" : "top";
       return [
-        `top ${query.limit} ${query.direction} by ${query.column}${grouped}`,
+        `${rankWord} ${query.limit} by ${query.column}${grouped}`,
         `operation: rank by ${query.column}`,
         `limit: ${query.limit} (${query.direction})`,
         ...(query.groupBy ? [`group by: ${query.groupBy.join(", ")}`] : []),
