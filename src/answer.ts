@@ -240,6 +240,67 @@ function composeMode(result: Extract<QueryResult, { kind: "mode" }>): string {
   );
 }
 
+function composeTrend(result: Extract<QueryResult, { kind: "trend" }>): string {
+  const opLabel: Record<string, string> = {
+    sum: "total",
+    mean: "average",
+    median: "median",
+    min: "minimum",
+    max: "maximum",
+    count: "count",
+  };
+  const what = `${opLabel[result.op] ?? result.op} ${result.column}`;
+  const label = what.charAt(0).toUpperCase() + what.slice(1);
+  const fitted = result.periods.filter(
+    (
+      p,
+    ): p is { label: string; value: number; rows: number; valuesUsed: number } =>
+      p.value !== null,
+  );
+  if (result.periods.length === 0) {
+    return (
+      `I could not compute the trend of ${what} by ${result.bucket} — ` +
+      `none of the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")} ` +
+      `has a usable date.`
+    );
+  }
+  if (fitted.length < 2) {
+    const only = fitted[0];
+    const cause =
+      only === undefined
+        ? "no period has a usable value"
+        : `only ${only.label} has a usable value`;
+    return (
+      `I could not compute the trend of ${what} by ${result.bucket} — ${cause}, ` +
+      `so there is no line to fit.`
+    );
+  }
+  const first = fitted[0];
+  const last = fitted[fitted.length - 1];
+  const slope = result.slope!;
+  const per = `per ${result.bucket}`;
+  const span = `${fitted.length} ${BUCKET_PLURAL[result.bucket]}`;
+  const range = `from ${formatNumber(first.value)} in ${first.label} to ${formatNumber(last.value)} in ${last.label}`;
+  // Periods with no usable value are named, so a gap in the line is
+  // visible instead of silently skipped.
+  const gaps = result.periods.filter((p) => p.value === null);
+  const gapNote =
+    gaps.length === 0
+      ? ""
+      : ` ${gaps.map((p) => p.label).join(", ")} ${gaps.length === 1 ? "has" : "have"} no usable values and ${gaps.length === 1 ? "is" : "are"} not in the trend.`;
+  if (result.direction === "flat") {
+    return (
+      `${label} was roughly flat by ${result.bucket} (about ${formatNumber(Math.abs(slope))} ${per}) ` +
+      `across ${span}, ${range}.${gapNote}`
+    );
+  }
+  const verb = result.direction === "up" ? "trended up" : "trended down";
+  return (
+    `${label} ${verb} by about ${formatNumber(Math.abs(slope))} ${per} ` +
+    `over ${span} (${range}).${gapNote}`
+  );
+}
+
 function composeRows(
   result: Extract<QueryResult, { kind: "rows" }>,
   parsed?: ParsedCsv,
@@ -290,6 +351,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeValues(result);
     case "mode":
       return composeMode(result);
+    case "trend":
+      return composeTrend(result);
   }
 }
 

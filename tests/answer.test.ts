@@ -405,3 +405,81 @@ describe("composeAnswer mode", () => {
     );
   });
 });
+
+describe("composeAnswer trend", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,10,200.00\n" +
+      "2026-01-12,South,Widget B,5,124.95\n" +
+      "2026-01-20,East,Widget A,8,160.00\n" +
+      "2026-01-28,West,Widget C,4,179.96\n" +
+      "2026-02-03,North,Widget B,12,299.88\n" +
+      "2026-02-10,South,Widget A,6,120.00\n" +
+      "2026-02-15,East,Widget C,7,314.93\n" +
+      "2026-02-22,West,Widget A,9,180.00\n" +
+      "2026-03-02,North,Widget C,3,134.97\n" +
+      "2026-03-09,South,Widget A,15,300.00\n" +
+      "2026-03-16,East,Widget B,10,249.90\n" +
+      "2026-03-25,West,Widget B,6,149.94\n",
+  );
+
+  it("states the slope, the span and the first/last values", () => {
+    expect(answerQuestion("revenue trend by month", MONTHLY)).toBe(
+      "Total revenue trended up by about 84.95 per month over 3 months " +
+        "(from 664.91 in Jan 2026 to 834.81 in Mar 2026).",
+    );
+  });
+
+  it("trends an average and names a period with no usable values", () => {
+    const staff = parseCsv(
+      "id,name,department,salary,start_date,remote\n" +
+        "1,Ada,Engineering,95000,2024-03-01,true\n" +
+        "2,Grace,Engineering,98000,2023-07-15,true\n" +
+        "3,Alan,Data,88000,2025-01-20,false\n" +
+        "4,Katherine,Data,91000,2024-11-04,true\n" +
+        "5,Edsger,Engineering,NA,2022-05-30,false\n",
+    );
+    expect(answerQuestion("average salary trend by year", staff)).toBe(
+      "Average salary trended down by about 5,000 per year over 3 years " +
+        "(from 98,000 in 2023 to 88,000 in 2025). " +
+        "2022 has no usable values and is not in the trend.",
+    );
+  });
+
+  it("calls a near-zero slope roughly flat", () => {
+    const flat = parseCsv(
+      "date,revenue\n2026-01-05,100\n2026-02-03,101\n2026-03-02,100\n",
+    );
+    expect(answerQuestion("revenue trend by month", flat)).toBe(
+      "Total revenue was roughly flat by month (about 0 per month) " +
+        "across 3 months, from 100 in Jan 2026 to 100 in Mar 2026.",
+    );
+  });
+
+  it("says so plainly when one period cannot make a line", () => {
+    const one = parseCsv("date,revenue\n2026-01-05,100\n2026-01-20,200\n");
+    expect(answerQuestion("revenue trend by month", one)).toBe(
+      "I could not compute the trend of total revenue by month — " +
+        "only Jan 2026 has a usable value, so there is no line to fit.",
+    );
+  });
+
+  it("says so plainly when no matching row has a usable date", () => {
+    // A column of all-blank dates infers as "empty", not "date", so
+    // the parser abstains there — the engine branch is reached when
+    // the date column exists but the filter keeps only dateless rows.
+    const mixed = parseCsv(
+      "date,region,revenue\n" +
+        ",North,100\n" +
+        ",North,200\n" +
+        "2026-01-05,South,300\n" +
+        "2026-02-03,South,500\n",
+    );
+    expect(
+      answerQuestion("revenue trend by month where region is North", mixed),
+    ).toBe(
+      "I could not compute the trend of total revenue by month — " +
+        "none of the 2 matching rows has a usable date.",
+    );
+  });
+});
