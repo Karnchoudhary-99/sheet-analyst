@@ -173,6 +173,19 @@ describe("describeQuery", () => {
     expect(lines).toContain("sorted by: revenue (descending)");
   });
 
+  it("describes an above/below-average question", () => {
+    const lines = describeQuery({
+      kind: "aboveBelow",
+      column: "revenue",
+      direction: "above",
+      baseline: "average",
+      filters: [],
+    });
+    expect(lines[0]).toBe("rows with revenue above the average");
+    expect(lines).toContain("operation: above average");
+    expect(lines).toContain("baseline: average");
+  });
+
   it("names both columns of a correlation", () => {
     expect(
       describeQuery({

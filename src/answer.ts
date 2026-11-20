@@ -301,23 +301,18 @@ function composeTrend(result: Extract<QueryResult, { kind: "trend" }>): string {
   );
 }
 
-function composeRows(
-  result: Extract<QueryResult, { kind: "rows" }>,
+/**
+ * Render a row table (header + divider + one line per row). Shared by
+ * the row listing and the above/below-average answer, which both
+ * show matching rows — only their scope lines differ.
+ */
+function renderRowTable(
+  headers: string[],
+  rows: Record<string, string>[],
   parsed?: ParsedCsv,
 ): string {
-  if (result.totalMatched === 0) return "No rows match.";
-  // A sorted listing says so, so the reader knows the table is not
-  // in sheet order (and which end they are looking at).
-  const sorted =
-    result.sortedBy !== undefined
-      ? `, sorted by ${result.sortedBy.column} (${result.sortedBy.direction === "desc" ? "descending" : "ascending"})`
-      : "";
-  const scope =
-    result.limitedTo !== undefined
-      ? `Showing ${result.rows.length} of ${result.totalMatched} matching rows${sorted}`
-      : `${result.totalMatched} matching ${plural(result.totalMatched, "row")}${sorted}`;
-  const header = `| ${result.headers.join(" | ")} |`;
-  const divider = `| ${result.headers.map(() => "---").join(" | ")} |`;
+  const header = `| ${headers.join(" | ")} |`;
+  const divider = `| ${headers.map(() => "---").join(" | ")} |`;
   // Row cells are raw CSV text; format numeric columns the same way
   // scalar answers are formatted, so "98000" reads as "98,000".
   // Without the sheet we cannot know the column types, so the cells
@@ -333,10 +328,49 @@ function composeRows(
     const n = Number(raw.replace(/,/g, ""));
     return Number.isFinite(n) ? formatNumber(n) : raw;
   };
-  const body = result.rows.map(
-    (row) => `| ${result.headers.map((h) => cell(h, row[h] ?? "")).join(" | ")} |`,
+  const body = rows.map(
+    (row) => `| ${headers.map((h) => cell(h, row[h] ?? "")).join(" | ")} |`,
   );
-  return `${scope}:\n${header}\n${divider}\n${body.join("\n")}`;
+  return `${header}\n${divider}\n${body.join("\n")}`;
+}
+
+function composeRows(
+  result: Extract<QueryResult, { kind: "rows" }>,
+  parsed?: ParsedCsv,
+): string {
+  if (result.totalMatched === 0) return "No rows match.";
+  // A sorted listing says so, so the reader knows the table is not
+  // in sheet order (and which end they are looking at).
+  const sorted =
+    result.sortedBy !== undefined
+      ? `, sorted by ${result.sortedBy.column} (${result.sortedBy.direction === "desc" ? "descending" : "ascending"})`
+      : "";
+  const scope =
+    result.limitedTo !== undefined
+      ? `Showing ${result.rows.length} of ${result.totalMatched} matching rows${sorted}`
+      : `${result.totalMatched} matching ${plural(result.totalMatched, "row")}${sorted}`;
+  return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
+}
+
+function composeAboveBelow(
+  result: Extract<QueryResult, { kind: "aboveBelow" }>,
+  parsed?: ParsedCsv,
+): string {
+  if (result.threshold === null) {
+    return (
+      `I could not compare ${result.column} to its ${result.baseline} — ` +
+      `none of the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")} ` +
+      `has a usable value.`
+    );
+  }
+  if (result.totalMatched === 0) {
+    return `No rows have ${result.column} ${result.direction} the ${result.baseline} of ${formatNumber(result.threshold)}.`;
+  }
+  const scope =
+    result.limitedTo !== undefined
+      ? `Showing ${result.rows.length} of ${result.totalMatched} rows with ${result.column} ${result.direction} the ${result.baseline} of ${formatNumber(result.threshold)}`
+      : `${result.totalMatched} ${plural(result.totalMatched, "row")} have ${result.column} ${result.direction} the ${result.baseline} of ${formatNumber(result.threshold)}`;
+  return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
 }
 
 export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
@@ -347,6 +381,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeGroups(result);
     case "rows":
       return composeRows(result, parsed);
+    case "aboveBelow":
+      return composeAboveBelow(result, parsed);
     case "correlation":
       return composeCorrelation(result);
     case "comparison":

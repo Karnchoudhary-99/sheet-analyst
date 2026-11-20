@@ -180,6 +180,14 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters)}`,
       ];
     }
+    case "aboveBelow":
+      return [
+        `rows with ${query.column} ${query.direction} the ${query.baseline}`,
+        `operation: ${query.direction} ${query.baseline}`,
+        `column: ${query.column}`,
+        `baseline: ${query.baseline}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
   }
 }
 

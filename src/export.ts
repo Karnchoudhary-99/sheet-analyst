@@ -25,6 +25,8 @@
  *   A trend becomes one row per period of `period,value,rows,values_used`
  *   plus a `slope per <bucket>` row (empty slope when the trend could
  *   not be computed, empty value for a period with no usable values).
+ *   An above/below-average result exports as its row table, like a
+ *   row listing — the threshold is in the answer text, not the CSV.
  */
 
 import type { QueryResult } from "./engine.js";
@@ -71,7 +73,8 @@ export function resultToCsv(
       }
       return lines.join("\n");
     }
-    case "rows": {
+    case "rows":
+    case "aboveBelow": {
       const lines = [csvRow(result.headers)];
       for (const row of result.rows) {
         lines.push(csvRow(result.headers.map((h) => row[h] ?? "")));

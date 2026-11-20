@@ -354,3 +354,22 @@ describe("resultToCsv trend", () => {
     );
   });
 });
+
+describe("resultToCsv above/below average", () => {
+  it("writes the matching rows as a table", () => {
+    const result: QueryResult = {
+      kind: "aboveBelow",
+      column: "revenue",
+      direction: "above",
+      baseline: "average",
+      threshold: 185.81,
+      headers: ["product", "revenue"],
+      rows: [{ product: "Widget A", revenue: "400.00" }],
+      totalMatched: 1,
+      rowsMatched: 6,
+    };
+    expect(resultToCsv(result, "rows with revenue above average", "…")).toBe(
+      "product,revenue\nWidget A,400.00",
+    );
+  });
+});

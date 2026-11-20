@@ -33,6 +33,7 @@ top-N) directly from the spreadsheet.
 - [x] Trend questions ("revenue trend by month" — least-squares slope per period, up/down/roughly-flat wording, line chart, periods with no usable value named, not zero-filled)
 - [x] Bottom-N questions ("bottom 3 products by revenue", "bottom 2 months by revenue" — the low end of the top-N ranking, smallest first, headed "Bottom N of M" instead of "Top N")
 - [x] Sorted row listings ("show rows sorted by revenue descending", "list employees sorted by salary ascending" — numbers numerically, dates by day, text alphabetically; blank cells always last; the sort runs before the limit, so the first N of a sorted listing are the sorted top N)
+- [x] Above/below-average questions ("rows with revenue above average", "which employees have salary below the median" — rows strictly on one side of the column's mean or median; equal-to-baseline rows are neither; a column with no usable value has no baseline and the answer says so)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -92,6 +93,8 @@ answerQuestion("show rows sorted by revenue descending", sales);
 // "8 matching rows, sorted by revenue (descending):\n| date | region | product | units | revenue |…"
 // (numbers sort numerically, dates by day, text alphabetically;
 // blank cells always sort last; no direction means ascending)
+answerQuestion("rows with revenue above average", sales);
+// "4 rows have revenue above the average of 223.7:\n| date | region | product | units | revenue |…"
 answerQuestion("total profit", sales);
 // "I can't answer that from this data: no column named in the question…"
 answerQuestion("total revenue by month", monthlySales);
@@ -136,6 +139,9 @@ ranking, smallest first, headed "Bottom N of M" instead of "Top N"), filters
 North"), sorted row listings ("show rows sorted by revenue
 descending", "list employees sorted by salary ascending" — the sort
 runs before the limit, so the first N rows are the sorted top N),
+above/below-average questions ("rows with revenue above average",
+"which employees have salary below the median" — strictly on one
+side of the column's mean or median),
 correlation ("correlation between revenue and units",
 "how correlated are salary and age"), period comparison
 ("compare revenue Jan 2026 vs Feb 2026", "revenue change from
@@ -378,7 +384,7 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 94-question gold set over
+`npm run eval` scores the engine against a 100-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, multi-column group-bys (region × product,
 department × remote) and top-N over them, top-N, bottom-N (lowest
@@ -386,14 +392,16 @@ products, regions, months and region × product pairs, headed
 "Bottom N of M"), filters and row
 queries, sorted row listings (revenue descending/ascending, region
 alphabetical — order asserted by substrings spanning adjacent table
-rows), time grouping
+rows), above/below-average questions (revenue above/below its 223.7
+average, salary above its 93,000 median and below its 93,000
+average), time grouping
 (monthly totals, averages, counts, top months), correlation (units vs
 revenue, id vs salary), period comparison (monthly revenue Jan→Feb
 and Feb→Mar, average salary 2023→2024), share, distinct-values,
 mode and distinct-count questions, percentile questions (p90/p50/p25
 salary, p75/p90 revenue) and `between` range filters, trend
 questions (monthly revenue +84.95/month, average revenue
-+21.24/month, units +3.5/month, average salary −5,000/year), plus twenty-eight questions the
++21.24/month, units +3.5/month, average salary −5,000/year), plus thirty questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
 comparison naming one period or the same period twice, a time bucket
@@ -404,12 +412,13 @@ distinct count naming no column, a percentile outside 1–99, over a
 text column or grouped by another column, a reversed `between`
 range, a trend with no period, over a text column, plus a second
 group column, or by an unsupported period, a sort on an unknown
-column, or a sort phrase on an aggregate). Expected
+column, or a sort phrase on an aggregate, an above/below-average
+question naming an unknown or non-numeric column). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-20): answer accuracy 66/66 (100%), abstention
-accuracy 28/28 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-20): answer accuracy 70/70 (100%), abstention
+accuracy 30/30 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row

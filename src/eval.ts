@@ -121,6 +121,15 @@ export const EVAL_GATE = 0.8;
  * unknown column, or putting a sort phrase on an aggregate,
  * abstains.
  *
+ * above/below average — sales revenue averages 223.7 over 8 rows,
+ * so 4 rows sit above it (224.91, 240, 400, 449.85) and 4 below
+ * (0, 124.95, 149.97, 199.92); employees salaries average and
+ * median 93,000 (the NA row skipped), so 2 sit above it (95,000,
+ * 98,000) and 2 below (88,000, 91,000). The comparison is strict —
+ * a row exactly at the baseline is neither above nor below it.
+ * An unknown column, a non-numeric column, or a grouped comparison
+ * abstains.
+ *
  * mode and distinct count — sales regions: North 3, South 2, East 2,
  * West 1, so the mode is North (3 of 8 rows, 4 distinct values);
  * sales products tie at 3 each (Widget A, Widget B) so the
@@ -242,6 +251,42 @@ export const GOLD_SET: EvalCase[] = [
     question: "total revenue sorted by region",
     expect: "abstain",
     note: "a sort phrase on an aggregate is refused instead of answering the plain total",
+  },
+  {
+    sheet: "sales",
+    question: "rows with revenue above average",
+    expect: ["4 rows have revenue above the average of 223.7", "449.85"],
+    note: "revenue averages 1,789.6 / 8 = 223.7; above it are 224.91, 240, 400, 449.85",
+  },
+  {
+    sheet: "sales",
+    question: "rows with revenue below average",
+    expect: ["4 rows have revenue below the average of 223.7", "124.95"],
+    note: "below 223.7 are 0, 124.95, 149.97, 199.92",
+  },
+  {
+    sheet: "employees",
+    question: "which employees have salary above the median",
+    expect: ["2 rows have salary above the median of 93,000", "98,000"],
+    note: "salaries sorted 88,000 / 91,000 / 95,000 / 98,000 (NA skipped) — median 93,000; above it are 95,000 and 98,000",
+  },
+  {
+    sheet: "employees",
+    question: "salary below average",
+    expect: ["2 rows have salary below the average of 93,000", "88,000"],
+    note: "average salary is also 93,000; below it are 88,000 and 91,000",
+  },
+  {
+    sheet: "sales",
+    question: "above average profit",
+    expect: "abstain",
+    note: "no profit column",
+  },
+  {
+    sheet: "sales",
+    question: "above average region",
+    expect: "abstain",
+    note: "region is text — comparing to its average makes no sense",
   },
   {
     sheet: "sales",
