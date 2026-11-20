@@ -163,6 +163,25 @@ describe("answerQuestion end to end", () => {
       "There are 3 matching rows.",
     );
   });
+
+  it("answers a percentile question with the ordinal label", () => {
+    expect(answerQuestion("90th percentile of revenue", SALES)).toBe(
+      "90th percentile of revenue is 320 (across 6 rows).",
+    );
+  });
+
+  it("says plainly when a percentile has no usable values", () => {
+    const sparse = parseCsv("a,b\n1,10\n2,NA\n3,30\n");
+    expect(answerQuestion("90th percentile of b where a is 2", sparse)).toBe(
+      "I could not compute the 90th percentile of b — the column has no usable values in the 1 matching row.",
+    );
+  });
+
+  it("answers a between-range total", () => {
+    expect(answerQuestion("total revenue where revenue between 100 and 200", SALES)).toBe(
+      "Total revenue is 474.84 (across 3 rows).",
+    );
+  });
 });
 
 describe("composeAnswer time groups", () => {
