@@ -243,6 +243,54 @@ describe("parseQuestion top-N", () => {
       expect(r.query.column).toBe("salary");
     }
   });
+
+  it("treats 'bottom N' as the lowest direction", () => {
+    const r = parseQuestion("bottom 3 products by revenue", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "top",
+        column: "revenue",
+        limit: 3,
+        direction: "lowest",
+        groupBy: ["product"],
+        filters: [],
+        bucket: undefined,
+      },
+    });
+  });
+
+  it("treats a bare 'bottom' as bottom 1", () => {
+    const r = parseQuestion("bottom revenue", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "top") {
+      expect(r.query.limit).toBe(1);
+      expect(r.query.direction).toBe("lowest");
+      expect(r.query.column).toBe("revenue");
+    }
+  });
+
+  it("ranks periods ascending for 'bottom N months'", () => {
+    const r = parseQuestion("bottom 2 months by revenue", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "top") {
+      expect(r.query.limit).toBe(2);
+      expect(r.query.direction).toBe("lowest");
+      expect(r.query.groupBy).toEqual(["date"]);
+      expect(r.query.bucket).toBe("month");
+    }
+  });
+
+  it("keeps 'least' as the minimum aggregate, not a ranking", () => {
+    // "least revenue" is the minimum scalar — the word "least" is
+    // an aggregate word, not a ranking word, so it must not become
+    // a top-N rows result.
+    const r = parseQuestion("least revenue", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: { kind: "aggregate", column: "revenue", op: "min", filters: [] },
+    });
+  });
 });
 
 describe("parseQuestion filters", () => {
