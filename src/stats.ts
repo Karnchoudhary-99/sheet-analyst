@@ -110,6 +110,30 @@ export function pearsonCorrelation(xs: number[], ys: number[]): number | null {
   return cov / Math.sqrt(varX * varY);
 }
 
+/**
+ * Slope of the least-squares line through (xs, ys) — the per-step
+ * change of the best-fit straight line — or null when it cannot be
+ * computed: fewer than two points, or all xs equal (no spread in x
+ * makes the slope undefined, not zero). A trend question fits the
+ * period index against the per-period aggregate, so the slope reads
+ * as "change per month" (or per week, quarter, year).
+ */
+export function leastSquaresSlope(xs: number[], ys: number[]): number | null {
+  if (xs.length !== ys.length || xs.length < 2) return null;
+  const n = xs.length;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  let cov = 0;
+  let varX = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - meanX;
+    cov += dx * (ys[i] - meanY);
+    varX += dx * dx;
+  }
+  if (varX === 0) return null;
+  return cov / varX;
+}
+
 function toNumber(value: string): number | null {
   const cleaned = value.trim().replace(/,/g, "");
   if (cleaned === "") return null;
