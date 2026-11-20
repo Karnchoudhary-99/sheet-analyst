@@ -366,3 +366,23 @@ describe("composeAnswer distinct values", () => {
     );
   });
 });
+
+describe("composeAnswer mode", () => {
+  it("names the most common value, its count and the distinct total", () => {
+    expect(answerQuestion("most common region", SALES)).toBe(
+      "The most common region is North (3 of 6 rows, out of 4 distinct values).",
+    );
+  });
+
+  it("says so when the column has no usable values", () => {
+    expect(answerQuestion("most common units where units > 100", SALES)).toBe(
+      "I could not find the most common units — the column has no usable values in the 0 matching rows.",
+    );
+  });
+
+  it("renders a distinct count as a scalar answer", () => {
+    expect(answerQuestion("how many distinct regions", SALES)).toBe(
+      "Distinct region values is 4 (across 6 rows).",
+    );
+  });
+});

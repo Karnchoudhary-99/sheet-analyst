@@ -801,3 +801,83 @@ describe("parseQuestion distinct values", () => {
     if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
   });
 });
+
+describe("parseQuestion mode", () => {
+  it("parses 'most common region'", () => {
+    expect(parseQuestion("most common region", SALES)).toEqual({
+      ok: true,
+      query: { kind: "mode", column: "region", filters: [] },
+    });
+  });
+
+  it("parses 'what is the mode of product'", () => {
+    expect(parseQuestion("what is the mode of product", SALES)).toEqual({
+      ok: true,
+      query: { kind: "mode", column: "product", filters: [] },
+    });
+  });
+
+  it("keeps a filter on a mode question", () => {
+    expect(parseQuestion("most common product in North", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "mode",
+        column: "product",
+        filters: [{ column: "region", op: "=", value: "North" }],
+      },
+    });
+  });
+
+  it("abstains when no column is named", () => {
+    const r = parseQuestion("most common value", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a grouped mode instead of answering the whole-sheet mode", () => {
+    const r = parseQuestion("most common product by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one column/);
+  });
+
+  it("abstains on a time-grouped mode question", () => {
+    const r = parseQuestion("most common region by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+});
+
+describe("parseQuestion distinct count", () => {
+  it("parses 'how many distinct regions'", () => {
+    expect(parseQuestion("how many distinct regions", SALES)).toEqual({
+      ok: true,
+      query: { kind: "distinctCount", column: "region", filters: [] },
+    });
+  });
+
+  it("parses 'count distinct products'", () => {
+    expect(parseQuestion("count distinct products", SALES)).toEqual({
+      ok: true,
+      query: { kind: "distinctCount", column: "product", filters: [] },
+    });
+  });
+
+  it("abstains when no column is named", () => {
+    const r = parseQuestion("how many distinct values", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a time-grouped distinct count", () => {
+    const r = parseQuestion("how many distinct regions by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+
+  it("still lists values for a bare 'list unique regions'", () => {
+    expect(parseQuestion("list unique regions", SALES)).toEqual({
+      ok: true,
+      query: { kind: "distinct", column: "region", filters: [], limit: 20 },
+    });
+  });
+});
