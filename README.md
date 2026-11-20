@@ -30,6 +30,7 @@ top-N) directly from the spreadsheet.
 - [x] Multi-column group-by ("by region and product", up to three columns, composite keys, CSV export splits them)
 - [x] Mode + distinct-count questions ("most common product", "how many distinct regions", blanks excluded, alphabetical tie-break)
 - [x] Percentile questions + `between` range filters ("90th percentile of salary", "p90 revenue", "where revenue between 100 and 200", inclusive, smaller value first)
+- [x] Trend questions ("revenue trend by month" — least-squares slope per period, up/down/roughly-flat wording, line chart, periods with no usable value named, not zero-filled)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -134,7 +135,11 @@ distinct count ("how many distinct regions", "count distinct
 products"), percentile ("90th percentile of salary", "p90 revenue")
 and range filters ("total revenue where revenue between 100 and
 200" — inclusive on both ends, the smaller value first; a reversed
-range abstains instead of answering "no rows").
+range abstains instead of answering "no rows"), and trend
+("revenue trend by month", "average salary trend by year" — the
+least-squares slope of the per-period aggregate, so "trended up by
+about 84.95 per month"; a trend needs a period and one numeric
+column).
 A distinct-values answer lists every distinct value of the column
 with its row count, most frequent first (alphabetical tie-break),
 showing the first 20 when there are more; blank cells are never
@@ -174,7 +179,16 @@ correlation is the Pearson coefficient over the rows where both
 columns have a value (a blank in either column drops that row from
 the pairing), reported with a strength word (strong ≥ 0.7, moderate
 ≥ 0.4, weak ≥ 0.1, negligible below that); fewer than two pairs, or
-a constant column, is reported as uncomputable rather than as zero. Filters compare numbers
+a constant column, is reported as uncomputable rather than as zero. A
+trend fits a least-squares line through the per-period aggregates
+and reports the slope per period ("Total revenue trended up by about
+84.95 per month over 3 months (from 664.91 in Jan 2026 to 834.81 in
+Mar 2026)"); a slope under 1% of the typical period value is
+reported as "roughly flat" rather than as a tiny rise or fall, and
+periods with no usable value are named in the answer and left out of
+the fit at their true position, so a gap period cannot compress the
+timeline. With fewer than two periods carrying a usable value there
+is no line to fit, and that is said plainly. Filters compare numbers
 numerically, dates by day, and text case-insensitively. Aggregates skip
 null values and say so when some matching rows had no usable value; a
 column with no usable values at all is reported as such, never rendered
@@ -246,7 +260,9 @@ flag).
 answer as an ASCII bar chart — but only group-by answers chart
 (e.g. `"total revenue by region"`). Time-grouped answers chart as a
 line chart instead (e.g. `"total revenue by month"`), so the shape
-over time is visible at a glance. A scalar or row answer prints the
+over time is visible at a glance, and so do trend answers (e.g.
+`"revenue trend by month"` — periods with no usable value are left
+out of the line, never plotted as zero). A scalar or row answer prints the
 answer with a note that there is nothing to chart, and an abstention
 prints the abstention: the chart never invents a picture for an
 answer that has none. Bars are proportional to the largest value and
@@ -349,7 +365,7 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 75-question gold set over
+`npm run eval` scores the engine against an 83-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, multi-column group-bys (region × product,
 department × remote) and top-N over them, top-N, filters and row
@@ -358,7 +374,9 @@ queries, time grouping
 revenue, id vs salary), period comparison (monthly revenue Jan→Feb
 and Feb→Mar, average salary 2023→2024), share, distinct-values,
 mode and distinct-count questions, percentile questions (p90/p50/p25
-salary, p75/p90 revenue) and `between` range filters, plus twenty-one questions the
+salary, p75/p90 revenue) and `between` range filters, trend
+questions (monthly revenue +84.95/month, average revenue
++21.24/month, units +3.5/month, average salary −5,000/year), plus twenty-five questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
 comparison naming one period or the same period twice, a time bucket
@@ -366,12 +384,13 @@ combined with a second group column, a group word that is not a
 column, a top-N over two groups plus a time bucket, a mode or
 distinct count naming no column, a percentile outside 1–99, over a
 text column or grouped by another column, a reversed `between`
-range). Expected
+range, a trend with no period, over a text column, plus a second
+group column, or by an unsupported period). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-20): answer accuracy 54/54 (100%), abstention
-accuracy 21/21 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-20): answer accuracy 58/58 (100%), abstention
+accuracy 25/25 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row

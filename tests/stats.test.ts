@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseCsv } from "../src/csv.js";
 import {
   describe as describeSheet,
+  leastSquaresSlope,
   numericStats,
   ordinal,
   pearsonCorrelation,
@@ -74,6 +75,39 @@ describe("pearsonCorrelation", () => {
 
   it("returns null on mismatched lengths", () => {
     expect(pearsonCorrelation([1, 2], [1])).toBeNull();
+  });
+});
+
+describe("leastSquaresSlope", () => {
+  it("recovers the slope of a perfect line, positive and negative", () => {
+    expect(leastSquaresSlope([0, 1, 2], [10, 20, 30])).toBeCloseTo(10, 10);
+    expect(leastSquaresSlope([0, 1, 2], [30, 20, 10])).toBeCloseTo(-10, 10);
+  });
+
+  it("is 0 for a flat series", () => {
+    expect(leastSquaresSlope([0, 1, 2, 3], [5, 5, 5, 5])).toBeCloseTo(0, 10);
+  });
+
+  it("fits the monthly revenue slope from the sample data", () => {
+    // Jan 664.91, Feb 914.81, Mar 834.81: mean 804.84…, the
+    // covariance numerator is 169.9 over an x-variance of 2.
+    expect(leastSquaresSlope([0, 1, 2], [664.91, 914.81, 834.81])).toBeCloseTo(
+      84.95,
+      10,
+    );
+  });
+
+  it("returns null with fewer than two points", () => {
+    expect(leastSquaresSlope([0], [7])).toBeNull();
+    expect(leastSquaresSlope([], [])).toBeNull();
+  });
+
+  it("returns null when all xs are equal, not a misleading zero", () => {
+    expect(leastSquaresSlope([2, 2, 2], [1, 2, 3])).toBeNull();
+  });
+
+  it("returns null on mismatched lengths", () => {
+    expect(leastSquaresSlope([0, 1], [1])).toBeNull();
   });
 });
 

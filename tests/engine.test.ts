@@ -742,3 +742,105 @@ describe("executeQuery percentile", () => {
     });
   });
 });
+
+describe("executeQuery trend", () => {
+  const TREND = parseCsv(
+    "date,region,revenue\n" +
+      "2026-01-05,North,100\n" +
+      "2026-01-20,South,200\n" +
+      "2026-02-03,East,400\n" +
+      "2026-02-10,West,100\n" +
+      "2026-03-02,North,300\n" +
+      "2026-03-15,East,300\n",
+  );
+
+  it("fits the least-squares slope over monthly totals", () => {
+    const r = ask("revenue trend by month", TREND);
+    expect(r.kind).toBe("trend");
+    if (r.kind === "trend") {
+      // Monthly totals 300, 500, 600: the slope is 150 per month.
+      expect(r.periods.map((p) => p.label)).toEqual([
+        "Jan 2026",
+        "Feb 2026",
+        "Mar 2026",
+      ]);
+      expect(r.periods.map((p) => p.value)).toEqual([300, 500, 600]);
+      expect(r.slope).toBeCloseTo(150, 10);
+      expect(r.direction).toBe("up");
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("reports a flat series as flat, not as a tiny slope", () => {
+    const flat = parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,100\n" +
+        "2026-02-03,101\n" +
+        "2026-03-02,100\n",
+    );
+    const r = ask("revenue trend by month", flat);
+    expect(r.kind).toBe("trend");
+    if (r.kind === "trend") {
+      expect(r.slope).toBeCloseTo(0, 10);
+      expect(r.direction).toBe("flat");
+    }
+  });
+
+  it("returns a null slope with a single period", () => {
+    const one = parseCsv("date,revenue\n2026-01-05,100\n2026-01-20,200\n");
+    const r = ask("revenue trend by month", one);
+    expect(r.kind).toBe("trend");
+    if (r.kind === "trend") {
+      expect(r.periods).toHaveLength(1);
+      expect(r.slope).toBeNull();
+      expect(r.direction).toBeNull();
+    }
+  });
+
+  it("skips a period with no usable values in the fit but still lists it", () => {
+    const sparse = parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,NA\n" +
+        "2026-02-03,500\n" +
+        "2026-03-02,600\n",
+    );
+    const r = ask("revenue trend by month", sparse);
+    expect(r.kind).toBe("trend");
+    if (r.kind === "trend") {
+      expect(r.periods[0].value).toBeNull();
+      expect(r.periods[0].rows).toBe(1);
+      // The fit runs over Feb (x=1) and Mar (x=2): 600 - 500 = 100.
+      expect(r.slope).toBeCloseTo(100, 10);
+      expect(r.direction).toBe("up");
+    }
+  });
+
+  it("ignores rows with no usable date", () => {
+    const dateless = parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,300\n" +
+        "2026-02-03,500\n" +
+        "2026-03-02,600\n" +
+        ",999\n",
+    );
+    const r = ask("revenue trend by month", dateless);
+    expect(r.kind).toBe("trend");
+    if (r.kind === "trend") {
+      expect(r.periods).toHaveLength(3);
+      expect(r.slope).toBeCloseTo(150, 10);
+      // The dateless row counts in rowsMatched but not in any period.
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+
+  it("trends an average as well as a total", () => {
+    const r = ask("average revenue trend by month", TREND);
+    expect(r.kind).toBe("trend");
+    if (r.kind === "trend") {
+      // Monthly averages 150, 250, 300: slope 75 per month.
+      expect(r.periods.map((p) => p.value)).toEqual([150, 250, 300]);
+      expect(r.slope).toBeCloseTo(75, 10);
+      expect(r.direction).toBe("up");
+    }
+  });
+});

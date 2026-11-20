@@ -977,3 +977,101 @@ describe("parseQuestion percentile", () => {
     if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
   });
 });
+
+describe("parseQuestion trend", () => {
+  const NODATES = parseCsv(
+    "region,product,revenue\n" +
+      "North,Widget A,240.00\n" +
+      "South,Widget B,199.92\n",
+  );
+
+  it("parses a total trend over months", () => {
+    const r = parseQuestion("revenue trend by month", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "trend",
+        column: "revenue",
+        op: "sum",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+    });
+  });
+
+  it("parses an average trend over years on the staff sheet", () => {
+    const r = parseQuestion("average salary trend by year", STAFF);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "trend",
+        column: "salary",
+        op: "mean",
+        dateColumn: "start_date",
+        bucket: "year",
+        filters: [],
+      },
+    });
+  });
+
+  it("reads 'trending up' as trend intent", () => {
+    const r = parseQuestion("is revenue trending up by month", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "trend",
+        column: "revenue",
+        op: "sum",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+    });
+  });
+
+  it("carries a where filter into the trend", () => {
+    const r = parseQuestion("revenue trend by month where region is North", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.query.kind).toBe("trend");
+      expect(r.query.filters).toEqual([{ column: "region", op: "=", value: "North" }]);
+    }
+  });
+
+  it("abstains when no period is named", () => {
+    const r = parseQuestion("revenue trend", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a period/);
+  });
+
+  it("abstains on a non-numeric column", () => {
+    const r = parseQuestion("region trend by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains when the sheet has no date column", () => {
+    const r = parseQuestion("revenue trend by month", NODATES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/date column/);
+  });
+
+  it("abstains when the sheet has two date columns", () => {
+    const r = parseQuestion("revenue trend by month", DATES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/which date column/);
+  });
+
+  it("abstains on a trend plus a second group column", () => {
+    const r = parseQuestion("revenue trend by month and region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one dimension/);
+  });
+
+  it("abstains on an unsupported period", () => {
+    const r = parseQuestion("revenue trend by decade", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't group by decade/);
+  });
+});

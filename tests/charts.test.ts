@@ -305,3 +305,66 @@ describe("renderResultChart time routing", () => {
     expect(bar).not.toContain("●");
   });
 });
+
+describe("renderResultChart trend", () => {
+  const trend: QueryResult = {
+    kind: "trend",
+    column: "revenue",
+    op: "sum",
+    dateColumn: "date",
+    bucket: "month",
+    periods: [
+      { label: "Jan 2026", value: 664.91, rows: 4, valuesUsed: 4 },
+      { label: "Feb 2026", value: 914.81, rows: 4, valuesUsed: 4 },
+      { label: "Mar 2026", value: 834.81, rows: 4, valuesUsed: 4 },
+    ],
+    slope: 84.95,
+    direction: "up",
+    rowsMatched: 12,
+  };
+
+  it("draws a trend as a line chart over its periods", () => {
+    const chart = renderResultChart(trend);
+    // The line chart labels the first and last periods on the axis
+    // and the min/max values on the side — the middle period is a
+    // point on the line, not an axis label.
+    expect(chart).toContain("Jan 2026");
+    expect(chart).toContain("Mar 2026");
+    expect(chart).toContain("914.81");
+    expect(chart).toContain("664.91");
+  });
+
+  it("draws the SVG line chart too", () => {
+    const svg = renderResultChartSvg(trend, { title: "Revenue trend" });
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("Revenue trend");
+  });
+
+  it("leaves a period with no usable value out of the line, never as zero", () => {
+    const gapped: QueryResult = {
+      ...trend,
+      periods: [
+        { label: "Jan 2026", value: null, rows: 1, valuesUsed: 0 },
+        { label: "Feb 2026", value: 914.81, rows: 4, valuesUsed: 4 },
+        { label: "Mar 2026", value: 834.81, rows: 4, valuesUsed: 4 },
+      ],
+      slope: -80,
+      direction: "down",
+    };
+    const chart = renderResultChart(gapped);
+    expect(chart).not.toContain("Jan 2026");
+    expect(chart).toContain("Feb 2026");
+  });
+
+  it("returns null when no period has a usable value", () => {
+    const empty: QueryResult = {
+      ...trend,
+      periods: [{ label: "Jan 2026", value: null, rows: 1, valuesUsed: 0 }],
+      slope: null,
+      direction: null,
+      rowsMatched: 1,
+    };
+    expect(renderResultChart(empty)).toBeNull();
+    expect(renderResultChartSvg(empty)).toBeNull();
+  });
+});

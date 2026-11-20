@@ -116,6 +116,14 @@ export const EVAL_GATE = 0.8;
  * and 96,000 is 93,000. A percentile outside 1–99, over a text
  * column, grouped by another column, or a reversed between-range
  * abstains.
+ *
+ * trend — monthly revenue 664.91 / 914.81 / 834.81 fits a
+ * least-squares slope of 84.95 per month; average revenue
+ * 166.23 / 228.70 / 208.70 fits 21.24 per month; units 27 / 34 / 34
+ * fit 3.5 per month; average salary by year falls 5,000 per year
+ * (2023 98,000 → 2025 88,000, and 2022 has no usable value). A
+ * trend with no period, over a text column, plus a second group
+ * column, or by an unsupported period abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -567,6 +575,54 @@ export const GOLD_SET: EvalCase[] = [
     question: "total revenue where revenue between 200 and 100",
     expect: "abstain",
     note: "a reversed range matches nothing by construction — the smaller value must come first",
+  },
+  {
+    sheet: "monthly",
+    question: "revenue trend by month",
+    expect: ["trended up", "84.95", "from 664.91 in Jan 2026", "to 834.81 in Mar 2026", "3 months"],
+    note: "monthly totals 664.91 / 914.81 / 834.81: least-squares slope 169.9 / 2 = 84.95 per month",
+  },
+  {
+    sheet: "monthly",
+    question: "average revenue trend by month",
+    expect: ["trended up", "21.24", "166.23", "208.7"],
+    note: "monthly averages 166.2275 / 228.7025 / 208.7025: slope 42.475 / 2 = 21.2375 per month, formatted to 2dp",
+  },
+  {
+    sheet: "monthly",
+    question: "units trend by month",
+    expect: ["trended up", "3.5 per month", "from 27 in Jan 2026", "to 34 in Mar 2026"],
+    note: "monthly units 27 / 34 / 34: slope 7 / 2 = 3.5 per month",
+  },
+  {
+    sheet: "employees",
+    question: "average salary trend by year",
+    expect: ["trended down", "5,000 per year", "from 98,000 in 2023", "to 88,000 in 2025", "2022 has no usable values"],
+    note: "yearly averages 2022 NA (no usable value), 2023 98,000, 2024 93,000, 2025 88,000: slope over x = 1, 2, 3 is −5,000 per year",
+  },
+  {
+    sheet: "monthly",
+    question: "revenue trend",
+    expect: "abstain",
+    note: "no period named — a trend needs one, e.g. 'by month'",
+  },
+  {
+    sheet: "monthly",
+    question: "region trend by month",
+    expect: "abstain",
+    note: "region is text — a trend needs a numeric column",
+  },
+  {
+    sheet: "monthly",
+    question: "revenue trend by month and region",
+    expect: "abstain",
+    note: "a time bucket plus a second group column is two dimensions at once",
+  },
+  {
+    sheet: "monthly",
+    question: "revenue trend by decade",
+    expect: "abstain",
+    note: "decade is not a supported period — must not silently answer the plain total",
   },
 ];
 

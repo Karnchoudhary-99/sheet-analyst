@@ -46,6 +46,9 @@
  *   interpolation, the same method as the quartiles in describe)
  * - range filter: "where revenue between 100 and 200" (inclusive on
  *   both ends; the smaller value must come first)
+ * - trend: "revenue trend by month", "average salary trend by year"
+ *   (least-squares slope of the per-period aggregate over time; a
+ *   trend needs a period and one numeric column)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -145,6 +148,18 @@ export type Query =
       column: string;
       /** 1–99: "90th percentile" is p = 90. */
       p: number;
+      filters: Filter[];
+    }
+  | {
+      kind: "trend";
+      /** The column being trended. */
+      column: string;
+      /** Default sum ("revenue trend" trends the total revenue). */
+      op: Exclude<AggregateOp, "count">;
+      /** The date column the periods are read from. */
+      dateColumn: string;
+      /** The period the aggregates are bucketed into. */
+      bucket: TimeBucket;
       filters: Filter[];
     };
 
@@ -1147,6 +1162,118 @@ function tryParsePercentile(
   };
 }
 
+/**
+ * Try to read a trend question ("revenue trend by month", "average
+ * salary trend by year", "is revenue trending up"). Returns null
+ * when the question shows no trend intent; otherwise a trend query,
+ * or an abstention when the period, the date column or the target
+ * column cannot be pinned down. A trend is one column over one
+ * period — "revenue trend by month and region" is two dimensions
+ * at once and is refused by the combined-period guard in
+ * `parseQuestion` before this runs.
+ */
+function tryParseTrend(
+  text: string,
+  columns: ColumnInfo[],
+  bucket: TimeBucket | null,
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\btrend\w*\b/.test(norm)) return null;
+  if (!bucket) {
+    return {
+      ok: false,
+      reason: "a trend needs a period — try e.g. 'revenue trend by month'",
+    };
+  }
+  const dates = columns.filter((c) => c.type === "date");
+  if (dates.length === 0) {
+    return {
+      ok: false,
+      reason: `trending over time needs a date column — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (dates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which date column to trend by — matches ${dates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const dateColumn = dates[0];
+  const op = detectAggregateOp(norm) ?? "sum";
+
+  // Strip the trend wording, the period word and filler, leaving
+  // the column name ("average salary trend by year" -> "average
+  // salary"). Bucket aliases ("monthly") are stripped too.
+  const filler = new Set([
+    "trend",
+    "trending",
+    "trends",
+    "trended",
+    "is",
+    "the",
+    "of",
+    "by",
+    "per",
+    "over",
+    "time",
+    "up",
+    "down",
+    "going",
+    "goes",
+    "went",
+    "what",
+    "how",
+    "does",
+    "do",
+    "a",
+    "an",
+  ]);
+  const periodWords = new Set(Object.keys(BUCKET_WORDS));
+  const cleaned = norm
+    .split(" ")
+    .filter(
+      (w) =>
+        !filler.has(w) &&
+        !periodWords.has(w) &&
+        !periodWords.has(w.endsWith("s") ? w.slice(0, -1) : w),
+    )
+    .join(" ");
+  const candidates = findColumns(cleaned, columns).filter(
+    (c) => c.name !== dateColumn.name,
+  );
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to trend — matches ${candidates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = candidates[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a trend needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: {
+      kind: "trend",
+      column: column.name,
+      op,
+      dateColumn: dateColumn.name,
+      bucket,
+      filters,
+    },
+  };
+}
+
 export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult {
   if (!question || question.trim() === "") {
     return { ok: false, reason: "empty question — ask about a column, e.g. 'total revenue'" };
@@ -1191,6 +1318,13 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       }
     }
   }
+
+  // Trend: a column's aggregate fitted over a time period
+  // ("revenue trend by month"). Once the question shows trend intent
+  // it is parsed here or abstained — falling through would answer
+  // the plain monthly grouping instead of the trend asked for.
+  const trend = tryParseTrend(timeBucket.rest, columns, bucket, filters);
+  if (trend) return trend;
 
   // Share: a filtered subset's total as a share of the whole sheet.
   // Once the question shows share intent it is parsed here or
