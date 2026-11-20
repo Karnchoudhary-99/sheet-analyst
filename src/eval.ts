@@ -107,6 +107,15 @@ export const EVAL_GATE = 0.8;
  * departments are Engineering 3, Data 2, so the mode is Engineering
  * (3 of 5 rows, 2 distinct values). A mode or distinct count naming
  * no column abstains.
+ *
+ * percentile and between — employees salaries sorted 88,000 /
+ * 91,000 / 95,000 / 98,000 (NA skipped): p90 is 97,100, p50 is
+ * 93,000, p25 is 90,250; sales revenue p75 is 280 and p90 is
+ * 414.96; the North-filtered p90 is 221.99. Revenue between 100
+ * and 200 totals 474.84 over 3 rows; average salary between 90,000
+ * and 96,000 is 93,000. A percentile outside 1–99, over a text
+ * column, grouped by another column, or a reversed between-range
+ * abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -480,6 +489,84 @@ export const GOLD_SET: EvalCase[] = [
     question: "how many distinct profits",
     expect: "abstain",
     note: "'profit' is not a column",
+  },
+  {
+    sheet: "employees",
+    question: "90th percentile of salary",
+    expect: ["97,100"],
+    note: "salaries sorted 88,000 / 91,000 / 95,000 / 98,000 — rank 0.9 * 3 = 2.7: 95,000 + 0.7 * 3,000 = 97,100 (NA row skipped)",
+  },
+  {
+    sheet: "employees",
+    question: "50th percentile of salary",
+    expect: ["93,000"],
+    note: "rank 0.5 * 3 = 1.5: (91,000 + 95,000) / 2 = 93,000 — the median by another name",
+  },
+  {
+    sheet: "employees",
+    question: "25th percentile of salary",
+    expect: ["90,250"],
+    note: "rank 0.25 * 3 = 0.75: 88,000 + 0.75 * 3,000 = 90,250",
+  },
+  {
+    sheet: "sales",
+    question: "75th percentile of revenue",
+    expect: ["280"],
+    note: "revenue sorted 0 / 124.95 / 149.97 / 199.92 / 224.91 / 240 / 400 / 449.85 — rank 0.75 * 7 = 5.25: 240 + 0.25 * 160 = 280",
+  },
+  {
+    sheet: "sales",
+    question: "p90 revenue",
+    expect: ["414.96"],
+    note: "rank 0.9 * 7 = 6.3: 400 + 0.3 * 49.85 = 414.955, formatted to 2dp",
+  },
+  {
+    sheet: "sales",
+    question: "90th percentile of revenue in North",
+    expect: ["221.99"],
+    note: "North revenue sorted 0 / 149.97 / 240 — rank 0.9 * 2 = 1.8: 149.97 + 0.8 * 90.03 = 221.994, formatted to 2dp",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where revenue between 100 and 200",
+    expect: ["474.84"],
+    note: "199.92 + 149.97 + 124.95 = 474.84 over the 3 rows in [100, 200]; the 240 and 400 rows are outside",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows where revenue between 100 and 200",
+    expect: ["3 matching rows"],
+    note: "3 of the 8 sales rows have revenue in [100, 200]",
+  },
+  {
+    sheet: "employees",
+    question: "average salary where salary between 90000 and 96000",
+    expect: ["93,000"],
+    note: "(91,000 + 95,000) / 2 = 93,000; the 88,000 and 98,000 rows are outside the range",
+  },
+  {
+    sheet: "employees",
+    question: "150th percentile of salary",
+    expect: "abstain",
+    note: "a percentile must be between 1 and 99",
+  },
+  {
+    sheet: "sales",
+    question: "90th percentile of region",
+    expect: "abstain",
+    note: "region is text — a percentile needs a numeric column",
+  },
+  {
+    sheet: "employees",
+    question: "90th percentile of salary by department",
+    expect: "abstain",
+    note: "a percentile is one column, ungrouped — must not answer the whole-sheet percentile",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where revenue between 200 and 100",
+    expect: "abstain",
+    note: "a reversed range matches nothing by construction — the smaller value must come first",
   },
 ];
 
