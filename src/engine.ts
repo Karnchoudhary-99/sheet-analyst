@@ -177,6 +177,26 @@ export type QueryResult =
       direction: "up" | "down" | "flat" | null;
       /** Rows the filters matched, including rows with no usable date. */
       rowsMatched: number;
+    }
+  | {
+      kind: "aboveBelow";
+      column: string;
+      direction: "above" | "below";
+      baseline: "average" | "median";
+      /**
+       * Mean or median of the column over the matched rows, or null
+       * when none of them has a usable value — then there is no
+       * baseline to compare against and `rows` is empty.
+       */
+      threshold: number | null;
+      headers: string[];
+      /** Matching rows, in sheet order, sliced to the query's limit. */
+      rows: Record<string, string>[];
+      /** Rows on the asked side of the baseline. */
+      totalMatched: number;
+      limitedTo?: number;
+      /** Rows the filters matched (the baseline is computed over these). */
+      rowsMatched: number;
     };
 
 function toNumber(value: string): number | null {
@@ -813,6 +833,55 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         periods,
         slope,
         direction,
+        rowsMatched: rows.length,
+      };
+    }
+
+    case "aboveBelow": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      const cIdx = colIndex.get(query.column)!;
+      // The baseline is computed over the matched rows only, skipping
+      // rows with no usable value — a blank is not a zero.
+      const values: number[] = [];
+      for (const row of rows) {
+        const raw = row[cIdx] ?? "";
+        if (isNullValue(raw)) continue;
+        const n = toNumber(raw);
+        if (n !== null) values.push(n);
+      }
+      const stats = values.length > 0 ? numericStats(values) : null;
+      const threshold =
+        stats === null ? null : query.baseline === "median" ? stats.median : stats.mean;
+      // Strictly on one side: a row equal to the baseline is neither
+      // above nor below it.
+      const matching =
+        threshold === null
+          ? []
+          : rows.filter((row) => {
+              const n = toNumber(row[cIdx] ?? "");
+              return (
+                n !== null &&
+                (query.direction === "above" ? n > threshold : n < threshold)
+              );
+            });
+      const shown = matching.slice(0, 10);
+      const records = shown.map((row) => {
+        const rec: Record<string, string> = {};
+        parsed.headers.forEach((h, i) => {
+          rec[h] = row[i] ?? "";
+        });
+        return rec;
+      });
+      return {
+        kind: "aboveBelow",
+        column: query.column,
+        direction: query.direction,
+        baseline: query.baseline,
+        threshold,
+        headers: parsed.headers,
+        rows: records,
+        totalMatched: matching.length,
+        limitedTo: matching.length > 10 ? 10 : undefined,
         rowsMatched: rows.length,
       };
     }
