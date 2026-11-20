@@ -291,3 +291,31 @@ describe("describeQuery mode and distinct count", () => {
     ]);
   });
 });
+
+describe("describeQuery percentile", () => {
+  it("describes the percentile, column and filters", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n2026-01-05,North,Widget A,12,240.00\n",
+    );
+    const explained = explainQuestion("90th percentile of revenue in North", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "90th percentile of revenue",
+      "operation: percentile",
+      "column: revenue",
+      "percentile: 90",
+      "filters: region = North",
+    ]);
+  });
+
+  it("uses the ordinal label for the 25th percentile", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n2026-01-05,North,Widget A,12,240.00\n",
+    );
+    const explained = explainQuestion("25th percentile of revenue", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)[0]).toBe("25th percentile of revenue");
+  });
+});

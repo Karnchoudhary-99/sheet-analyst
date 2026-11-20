@@ -13,6 +13,7 @@
 import type { ParsedCsv } from "./csv.js";
 import { parseQuestion, type Filter, type ParseResult, type Query } from "./query.js";
 import { inferSchema } from "./schema.js";
+import { ordinal } from "./stats.js";
 
 export type ExplainResult = ParseResult;
 
@@ -146,6 +147,14 @@ export function describeQuery(query: Query): string[] {
         `distinct count of ${query.column}`,
         "operation: count distinct values",
         `column: ${query.column}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    case "percentile":
+      return [
+        `${ordinal(query.p)} percentile of ${query.column}`,
+        "operation: percentile",
+        `column: ${query.column}`,
+        `percentile: ${query.p}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
   }
