@@ -23,6 +23,10 @@
  * - top-N: "top 3 products by revenue", "highest revenue"
  *   (also over several columns: "top 3 region and product by
  *   revenue")
+ * - bottom-N: "bottom 3 products by revenue", "bottom 2 months by
+ *   revenue", "bottom revenue" (the same ranking, smallest first;
+ *   "lowest" already meant this — "bottom" is the word people
+ *   actually say)
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
  * - rows: "show rows where region is North", "list employees in Data"
@@ -415,9 +419,13 @@ function resolveBucketColumn(
 }
 
 /**
- * Pull a "top N" / "largest N" / bare "highest|lowest" ranking out of
- * the question. A bare superlative means top 1. Returns the question
- * with the ranking words removed (normalized).
+ * Pull a "top N" / "bottom N" / "largest N" / bare "highest|lowest"
+ * ranking out of the question. A bare superlative means top 1.
+ * "bottom" is the low end of the same ranking ("bottom 3 products
+ * by revenue" ranks ascending); "least" stays an aggregate word
+ * ("least revenue" is the minimum, a scalar — see detectAggregateOp),
+ * not a ranking, so it is deliberately not matched here. Returns the
+ * question with the ranking words removed (normalized).
  */
 function extractTop(text: string): {
   limit: number;
@@ -425,14 +433,18 @@ function extractTop(text: string): {
   rest: string;
 } | null {
   const norm = normalize(text);
-  const numbered = /\b(top|largest|biggest|highest|smallest|lowest)\s+(\d+)\b/.exec(norm);
+  const numbered = /\b(top|largest|biggest|highest|smallest|lowest|bottom)\s+(\d+)\b/.exec(norm);
   if (numbered) {
-    const direction = numbered[1] === "smallest" || numbered[1] === "lowest" ? "lowest" : "highest";
+    const direction =
+      numbered[1] === "smallest" || numbered[1] === "lowest" || numbered[1] === "bottom"
+        ? "lowest"
+        : "highest";
     return { limit: Number(numbered[2]), direction, rest: norm.replace(numbered[0], "").trim() };
   }
-  const bare = /\b(highest|largest|biggest|smallest|lowest)\b/.exec(norm);
+  const bare = /\b(highest|largest|biggest|smallest|lowest|bottom)\b/.exec(norm);
   if (bare) {
-    const direction = bare[1] === "smallest" || bare[1] === "lowest" ? "lowest" : "highest";
+    const direction =
+      bare[1] === "smallest" || bare[1] === "lowest" || bare[1] === "bottom" ? "lowest" : "highest";
     return { limit: 1, direction, rest: norm.replace(bare[0], "").trim() };
   }
   return null;
