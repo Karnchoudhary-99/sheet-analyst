@@ -1197,6 +1197,71 @@ function tryParseDistinctCount(
  * accepted: p = 0 and p = 100 are just the minimum and maximum,
  * which the aggregate words already answer.
  */
+/**
+ * Try to read an above/below-average question ("rows with revenue
+ * above average", "which employees have salary below the median",
+ * "above average revenue"). Returns null when the question shows no
+ * above/below-average intent; otherwise an aboveBelow query, or an
+ * abstention when the column cannot be pinned down or is not
+ * numeric. The column may sit on either side of the marker: "above
+ * average revenue" names it after, "rows with revenue above
+ * average" names it before — the after-side wins when both name
+ * one. A grouped question ("above average revenue by region")
+ * names two columns and abstains rather than answering the
+ * whole-sheet comparison.
+ */
+function tryParseAboveBelow(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  const marker = /\b(above|below|higher than|lower than)\s+(?:the\s+)?(average|median)\b/.exec(norm);
+  if (!marker) return null;
+  const direction: "above" | "below" =
+    marker[1] === "above" || marker[1] === "higher than" ? "above" : "below";
+  const baseline: "average" | "median" =
+    marker[2] === "median" ? "median" : "average";
+  const after = norm.slice(marker.index + marker[0].length).trim();
+  const before = norm.slice(0, marker.index).trim();
+  // The column is usually after the marker ("above average
+  // revenue"); "rows with revenue above average" names it before.
+  // Prefer the after-side, so "which products are above average
+  // revenue" reads revenue, not the row noun "products".
+  const filler = new Set(["what", "which", "is", "the", "of", "for", "rows", "row"]);
+  const clean = (phrase: string): string =>
+    phrase
+      .split(" ")
+      .filter((w) => !filler.has(w))
+      .join(" ");
+  const afterHits = [...new Map(findColumns(clean(after), columns).map((c) => [c.name, c])).values()];
+  const beforeHits = [...new Map(findColumns(clean(before), columns).map((c) => [c.name, c])).values()];
+  const hits = afterHits.length > 0 ? afterHits : beforeHits;
+  if (hits.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (hits.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to compare to its ${baseline} — matches ${hits.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = hits[0]!;
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `comparing to the ${baseline} needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "aboveBelow", column: column.name, direction, baseline, filters },
+  };
+}
+
 function tryParsePercentile(
   text: string,
   columns: ColumnInfo[],
@@ -1489,6 +1554,21 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return percentile;
+  }
+
+  // Above/below average: rows on one side of a column's own mean or
+  // median ("rows with revenue above average"). Checked before the
+  // generic aggregate fallback, which would otherwise read "average"
+  // as a plain mean and answer the average itself.
+  const aboveBelow = tryParseAboveBelow(timeBucket.rest, columns, filters);
+  if (aboveBelow) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "comparing to the average can't be grouped by a time period — ask about the whole sheet, e.g. 'rows with revenue above average'",
+      };
+    }
+    return aboveBelow;
   }
 
   // Distinct values: every distinct value of one column, with row
