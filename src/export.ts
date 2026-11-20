@@ -27,6 +27,10 @@
  *   not be computed, empty value for a period with no usable values).
  *   An above/below-average result exports as its row table, like a
  *   row listing — the threshold is in the answer text, not the CSV.
+ *   Missing values become one row per column of
+ *   `column,missing_rows,total_rows,percent_missing` (the fraction,
+ *   0.125 for 12.5%); a single-column question exports just that
+ *   column's row.
  */
 
 import type { QueryResult } from "./engine.js";
@@ -163,6 +167,20 @@ export function resultToCsv(
           "",
         ]),
       );
+      return lines.join("\n");
+    }
+    case "missing": {
+      const lines = [csvRow(["column", "missing_rows", "total_rows", "percent_missing"])];
+      for (const e of result.entries) {
+        lines.push(
+          csvRow([
+            e.column,
+            String(e.missing),
+            String(e.total),
+            e.total === 0 ? "" : String(e.missing / e.total),
+          ]),
+        );
+      }
       return lines.join("\n");
     }
   }

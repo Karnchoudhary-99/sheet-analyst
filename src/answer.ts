@@ -352,6 +352,49 @@ function composeRows(
   return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
 }
 
+function composeMissing(
+  result: Extract<QueryResult, { kind: "missing" }>,
+  parsed?: ParsedCsv,
+): string {
+  const pct = (missing: number, total: number): string =>
+    total === 0 ? "0%" : `${formatNumber((missing / total) * 100)}%`;
+  // The whole-sheet report lists every column, most missing first,
+  // so a clean column reads as "0 of N rows missing" instead of
+  // being silently absent from the report.
+  if (result.column === null) {
+    if (result.rowsMatched === 0) return "No rows match.";
+    const lines = result.entries.map(
+      (e) => `- ${e.column}: ${e.missing} of ${e.total} rows missing (${pct(e.missing, e.total)})`,
+    );
+    if (result.entries.every((e) => e.missing === 0)) {
+      return (
+        `No missing values — every column has a value in all ` +
+        `${result.rowsMatched} ${plural(result.rowsMatched, "row")}.`
+      );
+    }
+    return `Missing values (${result.rowsMatched} ${plural(result.rowsMatched, "row")}):\n${lines.join("\n")}`;
+  }
+  const entry = result.entries[0]!;
+  if (result.listRows) {
+    if (result.totalMatched === 0) {
+      return `No rows are missing ${result.column}.`;
+    }
+    const scope =
+      result.limitedTo !== undefined
+        ? `Showing ${result.rows.length} of ${result.totalMatched} rows missing ${result.column}`
+        : `${result.totalMatched} ${plural(result.totalMatched, "row")} missing ${result.column}`;
+    return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
+  }
+  if (entry.missing === 0) {
+    return `No rows are missing ${result.column} (0 of ${entry.total} rows).`;
+  }
+  const verb = entry.missing === 1 ? "is" : "are";
+  return (
+    `${entry.missing} of ${entry.total} ${plural(entry.total, "row")} ${verb} ` +
+    `missing ${result.column} (${pct(entry.missing, entry.total)}).`
+  );
+}
+
 function composeAboveBelow(
   result: Extract<QueryResult, { kind: "aboveBelow" }>,
   parsed?: ParsedCsv,
@@ -395,6 +438,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeMode(result);
     case "trend":
       return composeTrend(result);
+    case "missing":
+      return composeMissing(result, parsed);
   }
 }
 

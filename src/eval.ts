@@ -155,6 +155,15 @@ export const EVAL_GATE = 0.8;
  * (2023 98,000 → 2025 88,000, and 2022 has no usable value). A
  * trend with no period, over a text column, plus a second group
  * column, or by an unsupported period abstains.
+ *
+ * missing values — sales units is blank on the 2026-01-10 row
+ * only (1 of 8, 12.5%); every other sales column is complete.
+ * Employees salary is NA for Edsger Dijkstra only (1 of 5, 20%);
+ * the 3 Engineering rows include his, so the Engineering-filtered
+ * count is 1 of 3 (33.33%). A whole-sheet report lists every
+ * column, worst first. "show rows missing salary" lists his row.
+ * A missing question naming no column, or grouped by another
+ * column, abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -767,6 +776,60 @@ export const GOLD_SET: EvalCase[] = [
     question: "revenue trend by decade",
     expect: "abstain",
     note: "decade is not a supported period — must not silently answer the plain total",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows are missing units",
+    expect: ["1 of 8 rows is missing units", "12.5%"],
+    note: "units is blank on the 2026-01-10 row only",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows are missing revenue",
+    expect: ["No rows are missing revenue", "0 of 8"],
+    note: "revenue is complete — a zero is a value, not a missing one",
+  },
+  {
+    sheet: "sales",
+    question: "which columns have missing values",
+    expect: ["units: 1 of 8 rows missing (12.5%)", "revenue: 0 of 8 rows missing (0%)"],
+    note: "only units has a blank; the report lists every column, worst first",
+  },
+  {
+    sheet: "employees",
+    question: "how many rows are missing salary",
+    expect: ["1 of 5 rows is missing salary", "20%"],
+    note: "Edsger Dijkstra's salary is NA",
+  },
+  {
+    sheet: "employees",
+    question: "show rows missing salary",
+    expect: ["1 row missing salary", "Edsger Dijkstra"],
+    note: "his is the only row with an NA salary",
+  },
+  {
+    sheet: "employees",
+    question: "how many rows are missing salary in Engineering",
+    expect: ["1 of 3 rows is missing salary", "33.33%"],
+    note: "3 Engineering rows (Ada, Grace, Edsger); only Edsger's salary is NA",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows are missing profit",
+    expect: "abstain",
+    note: "no profit column — the parser refuses instead of counting a column that does not exist",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows are missing revenue by region",
+    expect: "abstain",
+    note: "a missing-values question is one column, ungrouped — must not answer the whole-sheet count",
+  },
+  {
+    sheet: "sales",
+    question: "show rows missing values",
+    expect: "abstain",
+    note: "listing missing rows needs one column named",
   },
 ];
 

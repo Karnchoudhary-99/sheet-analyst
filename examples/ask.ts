@@ -38,6 +38,9 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["revenue trend by month", monthly],
   ["show rows sorted by revenue descending", sales],
   ["rows with revenue above average", sales],
+  ["how many rows are missing units", sales],
+  ["which columns have missing values", sales],
+  ["show rows missing salary", staff],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

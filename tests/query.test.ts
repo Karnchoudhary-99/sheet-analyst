@@ -1257,3 +1257,89 @@ describe("parseQuestion trend", () => {
     if (!r.ok) expect(r.reason).toMatch(/can't group by decade/);
   });
 });
+
+describe("parseQuestion missing values", () => {
+  it("parses 'how many rows are missing units' as a count", () => {
+    expect(parseQuestion("how many rows are missing units", SALES)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "units", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'count missing salary' as a count", () => {
+    expect(parseQuestion("count missing salary", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "salary", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'which columns have missing values' as a whole-sheet report", () => {
+    expect(parseQuestion("which columns have missing values", SALES)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: null, filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'how many blank cells are there in units'", () => {
+    expect(parseQuestion("how many blank cells are there in units", SALES)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "units", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'show rows missing salary' as a row listing", () => {
+    expect(parseQuestion("show rows missing salary", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "salary", filters: [], listRows: true },
+    });
+  });
+
+  it("parses 'which rows are missing revenue' as a row listing", () => {
+    expect(parseQuestion("which rows are missing revenue", SALES)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "revenue", filters: [], listRows: true },
+    });
+  });
+
+  it("keeps a filter on a missing-values question", () => {
+    expect(parseQuestion("how many rows are missing salary in Engineering", STAFF)).toEqual({
+      ok: true,
+      query: {
+        kind: "missing",
+        column: "salary",
+        filters: [{ column: "department", op: "=", value: "Engineering" }],
+        listRows: false,
+      },
+    });
+  });
+
+  it("abstains when the column does not exist", () => {
+    const r = parseQuestion("how many rows are missing profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a grouped missing question instead of answering the whole-sheet count", () => {
+    const r = parseQuestion("how many rows are missing revenue by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one column/);
+  });
+
+  it("abstains on a time-grouped missing question", () => {
+    const r = parseQuestion("how many rows are missing revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+
+  it("abstains when listing rows with no column named", () => {
+    const r = parseQuestion("show rows missing values", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs one column/);
+  });
+
+  it("abstains on an ambiguous column", () => {
+    const r = parseQuestion("how many rows are missing units revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell which column/);
+  });
+});

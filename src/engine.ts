@@ -197,6 +197,32 @@ export type QueryResult =
       limitedTo?: number;
       /** Rows the filters matched (the baseline is computed over these). */
       rowsMatched: number;
+    }
+  | {
+      kind: "missing";
+      /** The column checked, or null for a whole-sheet report. */
+      column: string | null;
+      /**
+       * Missing counts per column, most missing first (alphabetical
+       * tie-break). A single-column question lists just that column;
+       * a whole-sheet report lists every column, including the
+       * complete ones, so "no missing values" is visible, not
+       * implied by absence.
+       */
+      entries: { column: string; missing: number; total: number }[];
+      headers: string[];
+      /**
+       * Rows missing the column, in sheet order, sliced to 10 —
+       * only when the question asked to list them; empty otherwise.
+       */
+      rows: Record<string, string>[];
+      /** Rows missing the column (0 unless the question listed them). */
+      totalMatched: number;
+      limitedTo?: number;
+      /** True when the question asked to list the rows. */
+      listRows: boolean;
+      /** Rows the filters matched (the counts are over these). */
+      rowsMatched: number;
     };
 
 function toNumber(value: string): number | null {
@@ -833,6 +859,58 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         periods,
         slope,
         direction,
+        rowsMatched: rows.length,
+      };
+    }
+
+    case "missing": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      // A "missing value" is what the schema calls null: empty, or
+      // a marker like NA or N/A — never a zero, which is a value.
+      const countMissing = (cIdx: number): number => {
+        let n = 0;
+        for (const row of rows) {
+          if (isNullValue(row[cIdx] ?? "")) n += 1;
+        }
+        return n;
+      };
+      const names =
+        query.column !== null ? [query.column] : schema.map((c) => c.name);
+      const entries = names
+        .map((name) => ({
+          column: name,
+          missing: countMissing(colIndex.get(name)!),
+          total: rows.length,
+        }))
+        // Most missing first, so the problem columns lead the report;
+        // alphabetical tie-break keeps the order stable.
+        .sort((a, b) => b.missing - a.missing || a.column.localeCompare(b.column));
+      let records: Record<string, string>[] = [];
+      let totalMatched = 0;
+      let limitedTo: number | undefined;
+      if (query.listRows && query.column !== null) {
+        const cIdx = colIndex.get(query.column)!;
+        const matching = rows.filter((row) => isNullValue(row[cIdx] ?? ""));
+        totalMatched = matching.length;
+        const shown = matching.slice(0, 10);
+        records = shown.map((row) => {
+          const rec: Record<string, string> = {};
+          parsed.headers.forEach((h, i) => {
+            rec[h] = row[i] ?? "";
+          });
+          return rec;
+        });
+        limitedTo = matching.length > 10 ? 10 : undefined;
+      }
+      return {
+        kind: "missing",
+        column: query.column,
+        entries,
+        headers: parsed.headers,
+        rows: records,
+        totalMatched,
+        limitedTo,
+        listRows: query.listRows,
         rowsMatched: rows.length,
       };
     }
