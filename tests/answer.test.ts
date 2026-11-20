@@ -596,3 +596,56 @@ describe("composeAnswer trend", () => {
     );
   });
 });
+
+describe("composeAnswer missing values", () => {
+  it("counts one column's missing rows with a percentage", () => {
+    expect(answerQuestion("how many rows are missing units", SALES)).toBe(
+      "1 of 6 rows is missing units (16.67%).",
+    );
+  });
+
+  it("says so when a column has no missing rows", () => {
+    expect(answerQuestion("how many rows are missing revenue", SALES)).toBe(
+      "No rows are missing revenue (0 of 6 rows).",
+    );
+  });
+
+  it("reports every column, worst first", () => {
+    expect(answerQuestion("which columns have missing values", SALES)).toBe(
+      "Missing values (6 rows):\n" +
+        "- units: 1 of 6 rows missing (16.67%)\n" +
+        "- date: 0 of 6 rows missing (0%)\n" +
+        "- product: 0 of 6 rows missing (0%)\n" +
+        "- region: 0 of 6 rows missing (0%)\n" +
+        "- revenue: 0 of 6 rows missing (0%)",
+    );
+  });
+
+  it("says so plainly when a sheet has no missing values at all", () => {
+    const clean = parseCsv("a,b\n1,x\n2,y\n");
+    expect(answerQuestion("which columns have missing values", clean)).toBe(
+      "No missing values — every column has a value in all 2 rows.",
+    );
+  });
+
+  it("lists the rows missing a column as a table", () => {
+    expect(answerQuestion("show rows missing units", SALES)).toBe(
+      "1 row missing units:\n" +
+        "| date | region | product | units | revenue |\n" +
+        "| --- | --- | --- | --- | --- |\n" +
+        "| 2026-01-10 | North | Widget A |  | 0 |",
+    );
+  });
+
+  it("says so when no rows are missing the listed column", () => {
+    expect(answerQuestion("show rows missing revenue", SALES)).toBe(
+      "No rows are missing revenue.",
+    );
+  });
+
+  it("counts over the filtered rows only", () => {
+    expect(answerQuestion("how many rows are missing units in North", SALES)).toBe(
+      "1 of 3 rows is missing units (33.33%).",
+    );
+  });
+});
