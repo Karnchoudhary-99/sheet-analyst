@@ -1713,6 +1713,23 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     return aboveBelow;
   }
 
+  // Missing values: a count per column, a whole-sheet report, or
+  // the rows themselves ("show rows missing revenue"). Checked
+  // before the distinct-values listing and the generic aggregate
+  // fallback, which would otherwise read "missing" as nothing and
+  // answer a count of rows or abstain with a less useful reason.
+  const missing = tryParseMissing(timeBucket.rest, columns, filters);
+  if (missing) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason:
+          "missing values can't be grouped by a time period — ask about the whole sheet, e.g. 'how many rows are missing salary'",
+      };
+    }
+    return missing;
+  }
+
   // Distinct values: every distinct value of one column, with row
   // counts. Checked before the generic "list/show rows" fallback
   // below, which would otherwise answer with rows instead.
