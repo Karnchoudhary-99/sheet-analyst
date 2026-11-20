@@ -32,6 +32,8 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["list unique regions", sales],
   ["most common product", sales],
   ["how many distinct regions", sales],
+  ["90th percentile of salary", staff],
+  ["total revenue where revenue between 100 and 200", sales],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

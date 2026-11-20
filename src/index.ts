@@ -3,7 +3,7 @@ export const VERSION = "0.1.0";
 
 export { parseCsv, toRecords, CsvParseError, type ParsedCsv } from "./csv.js";
 export { inferSchema, isNullValue, type ColumnInfo, type ColumnType } from "./schema.js";
-export { describe, describeColumn, numericStats, pearsonCorrelation, percentile, type ColumnStats } from "./stats.js";
+export { describe, describeColumn, numericStats, ordinal, pearsonCorrelation, percentile, type ColumnStats } from "./stats.js";
 export {
   parseQuestion,
   normalize,

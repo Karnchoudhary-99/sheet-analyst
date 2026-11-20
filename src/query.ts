@@ -42,6 +42,10 @@
  *   value that appears most often; ties break alphabetically)
  * - distinct count: "how many distinct regions", "count distinct
  *   products" (how many different values a column has, blanks excluded)
+ * - percentile: "90th percentile of salary", "p90 revenue" (linear
+ *   interpolation, the same method as the quartiles in describe)
+ * - range filter: "where revenue between 100 and 200" (inclusive on
+ *   both ends; the smaller value must come first)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -133,6 +137,14 @@ export type Query =
       kind: "distinctCount";
       /** The column whose number of distinct values is asked for. */
       column: string;
+      filters: Filter[];
+    }
+  | {
+      kind: "percentile";
+      /** The column the percentile is read from. */
+      column: string;
+      /** 1–99: "90th percentile" is p = 90. */
+      p: number;
       filters: Filter[];
     };
 
@@ -443,6 +455,51 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const where = /\bwhere\b/i.exec(rest);
   if (where) {
     const clause = rest.slice(where.index + where[0].length).trim();
+    // "between A and B" is two filters, not one: an inclusive
+    // range on both ends. It is checked before the single-operator
+    // patterns, which would otherwise read "between" as noise.
+    const between = /^(.+?)\s+between\s+(.+?)\s+and\s+(.+)$/i.exec(clause);
+    if (between) {
+      const hits = findColumns(between[1], columns);
+      if (hits.length === 0) {
+        return {
+          filters,
+          rest,
+          error: `could not find a column in "where ${clause}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        };
+      }
+      if (hits.length > 1) {
+        return {
+          filters,
+          rest,
+          error: `could not tell which column "where ${clause}" means — matches ${hits.map((c) => c.name).join(", ")}`,
+        };
+      }
+      const lo = between[2].trim().replace(/^["']|["']$/g, "");
+      const hi = between[3].trim().replace(/^["']|["']$/g, "");
+      // A reversed range ("between 200 and 100") matches nothing
+      // by construction — refuse it instead of answering "no rows".
+      const loNum = Number(lo.replace(/,/g, ""));
+      const hiNum = Number(hi.replace(/,/g, ""));
+      const loDate = parseDate(lo);
+      const hiDate = parseDate(hi);
+      const reversed =
+        (Number.isFinite(loNum) && Number.isFinite(hiNum) && loNum > hiNum) ||
+        (loDate !== null &&
+          hiDate !== null &&
+          Date.UTC(loDate.year, loDate.month - 1, loDate.day) >
+            Date.UTC(hiDate.year, hiDate.month - 1, hiDate.day));
+      if (reversed) {
+        return {
+          filters,
+          rest,
+          error: `"between" needs the smaller value first — try e.g. "where ${hits[0].name} between ${hi} and ${lo}"`,
+        };
+      }
+      filters.push({ column: hits[0].name, op: ">=", value: lo });
+      filters.push({ column: hits[0].name, op: "<=", value: hi });
+      rest = rest.slice(0, where.index).trim();
+    } else {
     const opPatterns: { op: FilterOp; re: RegExp }[] = [
       { op: "!=", re: /^(.*?)\s+(?:is not|isn't|!=|not)\s+(.+)$/i },
       { op: ">=", re: /^(.*?)\s+(?:at least|>=)\s+(.+)$/i },
@@ -484,6 +541,7 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
       };
     }
     rest = rest.slice(0, where.index).trim();
+    }
   }
 
   // Trailing "in <value>" / "for <value>" with a known categorical value.
@@ -1012,6 +1070,83 @@ function tryParseDistinctCount(
   };
 }
 
+/**
+ * Try to read a percentile question ("90th percentile of salary",
+ * "p90 revenue", "what is the 25th percentile of age"). Returns null
+ * when the question shows no percentile intent; otherwise a
+ * percentile query, or an abstention when the percentile or the
+ * column cannot be pinned down. A percentile is one column,
+ * ungrouped — "90th percentile of salary by department" is a
+ * per-group question the engine does not answer, so it abstains
+ * rather than answering the whole-sheet percentile. Only 1–99 are
+ * accepted: p = 0 and p = 100 are just the minimum and maximum,
+ * which the aggregate words already answer.
+ */
+function tryParsePercentile(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  const ordinal = /(\d{1,3})(?:st|nd|rd|th)?\s*percentile\b/.exec(norm);
+  const short = /\bp(\d{1,3})\b/.exec(norm);
+  const match = ordinal ?? short;
+  if (!match) return null;
+  const p = Number(match[1]);
+  if (p < 1 || p > 99) {
+    return {
+      ok: false,
+      reason: `a percentile must be between 1 and 99 — "${p}" is outside that range (try e.g. '90th percentile of salary')`,
+    };
+  }
+  if (/\bby\b|\bper\b|\bgroup\b/.test(norm)) {
+    return {
+      ok: false,
+      reason:
+        "a percentile question asks about one column — try e.g. '90th percentile of salary'",
+    };
+  }
+
+  const filler = new Set([
+    "what",
+    "is",
+    "the",
+    "of",
+    "percentile",
+  ]);
+  const cleaned = norm
+    .replace(/\bp\d{1,3}\b/g, " ")
+    .replace(/\b\d{1,3}(?:st|nd|rd|th)?\s*percentile\b/g, " ")
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column's percentile to find — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = distinct[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a percentile needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "percentile", column: column.name, p, filters },
+  };
+}
+
 export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult {
   if (!question || question.trim() === "") {
     return { ok: false, reason: "empty question — ask about a column, e.g. 'total revenue'" };
@@ -1098,6 +1233,22 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return distinctCount;
+  }
+
+  // Percentile: one column's p-th percentile ("90th percentile of
+  // salary", "p90 revenue"). Checked before the distinct-values
+  // listing and the generic aggregate fallback, which would
+  // otherwise read "90th percentile" as nothing and abstain with a
+  // less useful reason.
+  const percentile = tryParsePercentile(timeBucket.rest, columns, filters);
+  if (percentile) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a percentile can't be grouped by a time period — ask about the whole sheet, e.g. '90th percentile of salary'",
+      };
+    }
+    return percentile;
   }
 
   // Distinct values: every distinct value of one column, with row

@@ -292,6 +292,37 @@ describe("parseQuestion filters", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.query.kind).toBe("rows");
   });
+
+  it("parses a between-range filter as two inclusive bounds", () => {
+    const r = parseQuestion("total revenue where revenue between 100 and 200", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "revenue", op: ">=", value: "100" },
+        { column: "revenue", op: "<=", value: "200" },
+      ]);
+    }
+  });
+
+  it("parses a between-range filter over dates", () => {
+    const r = parseQuestion(
+      "how many rows where date between 2026-01-06 and 2026-01-08",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.filters).toEqual([
+        { column: "date", op: ">=", value: "2026-01-06" },
+        { column: "date", op: "<=", value: "2026-01-08" },
+      ]);
+    }
+  });
+
+  it("abstains on a reversed between-range instead of answering 'no rows'", () => {
+    const r = parseQuestion("total revenue where revenue between 200 and 100", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/smaller value first/);
+  });
 });
 
 describe("parseQuestion time grouping", () => {
@@ -879,5 +910,70 @@ describe("parseQuestion distinct count", () => {
       ok: true,
       query: { kind: "distinct", column: "region", filters: [], limit: 20 },
     });
+  });
+});
+
+describe("parseQuestion percentile", () => {
+  it("parses '90th percentile of revenue'", () => {
+    expect(parseQuestion("90th percentile of revenue", SALES)).toEqual({
+      ok: true,
+      query: { kind: "percentile", column: "revenue", p: 90, filters: [] },
+    });
+  });
+
+  it("parses the short 'p90 revenue' form", () => {
+    expect(parseQuestion("p90 revenue", SALES)).toEqual({
+      ok: true,
+      query: { kind: "percentile", column: "revenue", p: 90, filters: [] },
+    });
+  });
+
+  it("parses 'what is the 25th percentile of salary'", () => {
+    expect(parseQuestion("what is the 25th percentile of salary", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "percentile", column: "salary", p: 25, filters: [] },
+    });
+  });
+
+  it("keeps a filter on a percentile question", () => {
+    expect(parseQuestion("90th percentile of revenue in North", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "percentile",
+        column: "revenue",
+        p: 90,
+        filters: [{ column: "region", op: "=", value: "North" }],
+      },
+    });
+  });
+
+  it("abstains when the percentile is outside 1-99", () => {
+    const r = parseQuestion("150th percentile of revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/between 1 and 99/);
+  });
+
+  it("abstains on a non-numeric column", () => {
+    const r = parseQuestion("90th percentile of region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains when no column is named", () => {
+    const r = parseQuestion("90th percentile", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a grouped percentile instead of answering the whole-sheet one", () => {
+    const r = parseQuestion("90th percentile of revenue by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one column/);
+  });
+
+  it("abstains on a time-grouped percentile question", () => {
+    const r = parseQuestion("90th percentile of revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
   });
 });

@@ -29,6 +29,7 @@ top-N) directly from the spreadsheet.
 - [x] Distinct-values listing (every distinct value with row counts, most frequent first)
 - [x] Multi-column group-by ("by region and product", up to three columns, composite keys, CSV export splits them)
 - [x] Mode + distinct-count questions ("most common product", "how many distinct regions", blanks excluded, alphabetical tie-break)
+- [x] Percentile questions + `between` range filters ("90th percentile of salary", "p90 revenue", "where revenue between 100 and 200", inclusive, smaller value first)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -130,7 +131,10 @@ comes from North", "what share of rows are in North"), and distinct
 values ("list unique regions", "what are the distinct products"),
 mode ("most common product", "what is the mode of region") and
 distinct count ("how many distinct regions", "count distinct
-products").
+products"), percentile ("90th percentile of salary", "p90 revenue")
+and range filters ("total revenue where revenue between 100 and
+200" — inclusive on both ends, the smaller value first; a reversed
+range abstains instead of answering "no rows").
 A distinct-values answer lists every distinct value of the column
 with its row count, most frequent first (alphabetical tie-break),
 showing the first 20 when there are more; blank cells are never
@@ -140,7 +144,11 @@ common region is North (3 of 8 rows, out of 4 distinct values)");
 ties break alphabetically, and a mode is one column, ungrouped
 ("most common product by region" abstains). A distinct-count answer
 is a scalar ("Distinct region values is 4 (across 8 rows)"); blank
-cells are never counted as values. A multi-column group-by answer lists one line per
+cells are never counted as values. A percentile answer interpolates
+linearly between the two nearest ranks (the numpy default, the same
+method as the quartiles in `describe`): "90th percentile of salary
+is 97,100 (across 5 rows, 4 of 5 had a value)"; p = 0 and p = 100
+are just the minimum and maximum, so only 1–99 are accepted. A multi-column group-by answer lists one line per
 combination ("North · Widget A: 240 (2 rows)"), largest first, and a
 blank cell in any group column shows as "(blank)" rather than being
 dropped. A time bucket plus a second group column ("by region and
@@ -341,7 +349,7 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 62-question gold set over
+`npm run eval` scores the engine against a 75-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, multi-column group-bys (region × product,
 department × remote) and top-N over them, top-N, filters and row
@@ -349,18 +357,21 @@ queries, time grouping
 (monthly totals, averages, counts, top months), correlation (units vs
 revenue, id vs salary), period comparison (monthly revenue Jan→Feb
 and Feb→Mar, average salary 2023→2024), share, distinct-values,
-mode and distinct-count questions, plus seventeen questions the
+mode and distinct-count questions, percentile questions (p90/p50/p25
+salary, p75/p90 revenue) and `between` range filters, plus twenty-one questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
 comparison naming one period or the same period twice, a time bucket
 combined with a second group column, a group word that is not a
 column, a top-N over two groups plus a time bucket, a mode or
-distinct count naming no column). Expected
+distinct count naming no column, a percentile outside 1–99, over a
+text column or grouped by another column, a reversed `between`
+range). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-20): answer accuracy 45/45 (100%), abstention
-accuracy 17/17 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-20): answer accuracy 54/54 (100%), abstention
+accuracy 21/21 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row
