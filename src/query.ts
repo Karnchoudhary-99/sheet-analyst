@@ -30,6 +30,10 @@
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
  * - rows: "show rows where region is North", "list employees in Data"
+ * - sorted rows: "show rows sorted by revenue descending",
+ *   "list employees sorted by salary ascending" (numbers sort
+ *   numerically, dates by day, text alphabetically; blank cells
+ *   always sort last; no direction means ascending)
  * - correlation: "correlation between revenue and units",
  *   "how correlated are salary and age" (both columns must be numeric)
  * - period comparison: "compare revenue Jan 2026 vs Feb 2026",
@@ -71,6 +75,15 @@ export type AggregateOp = "sum" | "mean" | "median" | "min" | "max" | "count";
 
 export type FilterOp = "=" | "!=" | ">" | ">=" | "<" | "<=" | "contains";
 
+/**
+ * A row-listing sort: which column to order by, and which way.
+ * Ascending is the default when the question names no direction.
+ */
+export interface SortSpec {
+  column: string;
+  direction: "asc" | "desc";
+}
+
 export interface Filter {
   column: string;
   op: FilterOp;
@@ -101,7 +114,7 @@ export type Query =
       filters: Filter[];
       bucket?: TimeBucket;
     }
-  | { kind: "rows"; filters: Filter[]; limit: number }
+  | { kind: "rows"; filters: Filter[]; limit: number; sort?: SortSpec }
   | { kind: "correlation"; columnA: string; columnB: string; filters: Filter[] }
   | {
       kind: "comparison";
