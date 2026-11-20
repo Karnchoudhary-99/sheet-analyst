@@ -428,6 +428,85 @@ describe("parseQuestion sorted rows", () => {
   });
 });
 
+describe("parseQuestion above/below average", () => {
+  it("parses 'above average' with the column after the marker", () => {
+    const r = parseQuestion("above average revenue", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "aboveBelow",
+        column: "revenue",
+        direction: "above",
+        baseline: "average",
+        filters: [],
+      },
+    });
+  });
+
+  it("parses the column before the marker", () => {
+    const r = parseQuestion("rows with revenue above average", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aboveBelow") {
+      expect(r.query.column).toBe("revenue");
+      expect(r.query.direction).toBe("above");
+      expect(r.query.baseline).toBe("average");
+    }
+  });
+
+  it("prefers the after-side column over the row noun", () => {
+    const r = parseQuestion("which products are above average revenue", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aboveBelow") {
+      expect(r.query.column).toBe("revenue");
+    }
+  });
+
+  it("reads 'below the median' and 'lower than average'", () => {
+    const median = parseQuestion("which employees have salary below the median", STAFF);
+    expect(median.ok).toBe(true);
+    if (median.ok && median.query.kind === "aboveBelow") {
+      expect(median.query).toEqual({
+        kind: "aboveBelow",
+        column: "salary",
+        direction: "below",
+        baseline: "median",
+        filters: [],
+      });
+    }
+    const lower = parseQuestion("salary lower than average", STAFF);
+    expect(lower.ok).toBe(true);
+    if (lower.ok && lower.query.kind === "aboveBelow") {
+      expect(lower.query.direction).toBe("below");
+      expect(lower.query.baseline).toBe("average");
+    }
+  });
+
+  it("keeps filters alongside the comparison", () => {
+    const r = parseQuestion("rows with revenue above average where region is North", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aboveBelow") {
+      expect(r.query.filters).toEqual([{ column: "region", op: "=", value: "North" }]);
+    }
+  });
+
+  it("abstains on an unknown column", () => {
+    const r = parseQuestion("above average profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a non-numeric column", () => {
+    const r = parseQuestion("above average region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a numeric column/);
+  });
+
+  it("abstains on a grouped comparison instead of answering whole-sheet", () => {
+    const r = parseQuestion("above average revenue by region", SALES);
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe("parseQuestion time grouping", () => {
   it("groups a total by month using the sheet's only date column", () => {
     const r = parseQuestion("total revenue by month", SALES);
