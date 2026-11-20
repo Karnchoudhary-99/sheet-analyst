@@ -114,6 +114,32 @@ describe("describeQuery", () => {
     expect(lines).toContain("time bucket: month");
   });
 
+  it("says bottom for a lowest-direction ranking", () => {
+    const lines = describeQuery({
+      kind: "top",
+      column: "revenue",
+      limit: 3,
+      direction: "lowest",
+      groupBy: ["product"],
+      filters: [],
+    });
+    expect(lines[0]).toBe("bottom 3 by revenue, grouped by product");
+    expect(lines).toContain("limit: 3 (lowest)");
+  });
+
+  it("still says top for a highest-direction ranking", () => {
+    const lines = describeQuery({
+      kind: "top",
+      column: "revenue",
+      limit: 3,
+      direction: "highest",
+      groupBy: ["product"],
+      filters: [],
+    });
+    expect(lines[0]).toBe("top 3 by revenue, grouped by product");
+    expect(lines).toContain("limit: 3 (highest)");
+  });
+
   it("names every group column on a multi-column group query", () => {
     const lines = describeQuery({
       kind: "group",
