@@ -181,7 +181,7 @@ describe("executeQuery sorted rows", () => {
   });
 
   it("sorts dates chronologically", () => {
-    const r = ask("show rows sorted by date descending", STAFF);
+    const r = ask("show rows sorted by start_date descending", STAFF);
     expect(r.kind).toBe("rows");
     if (r.kind === "rows") {
       expect(r.rows.map((row) => row.start_date)).toEqual([
