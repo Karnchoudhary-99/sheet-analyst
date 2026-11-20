@@ -38,6 +38,10 @@
  * - distinct values: "list unique regions", "what are the distinct
  *   products" (every distinct value of a column, with row counts,
  *   most frequent first)
+ * - mode: "most common product", "what is the mode of region" (the
+ *   value that appears most often; ties break alphabetically)
+ * - distinct count: "how many distinct regions", "count distinct
+ *   products" (how many different values a column has, blanks excluded)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -118,6 +122,18 @@ export type Query =
       filters: Filter[];
       /** Most values shown (default 20); the result reports the total. */
       limit: number;
+    }
+  | {
+      kind: "mode";
+      /** The column whose most frequent value is asked for. */
+      column: string;
+      filters: Filter[];
+    }
+  | {
+      kind: "distinctCount";
+      /** The column whose number of distinct values is asked for. */
+      column: string;
+      filters: Filter[];
     };
 
 export type ParseResult =
@@ -876,6 +892,126 @@ function tryParseDistinct(
   };
 }
 
+/**
+ * Try to read a mode question ("most common product", "what is the
+ * mode of region", "most frequent department"). Returns null when
+ * the question shows no mode intent; otherwise a mode query, or an
+ * abstention when the column cannot be pinned down. A mode is one
+ * column, ungrouped — "most common product by region" is a
+ * per-group question the engine does not answer, so it abstains
+ * rather than answering the whole-sheet mode.
+ */
+function tryParseMode(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\bmost common\b|\bmost frequent\b|\bmode\b/.test(norm)) return null;
+  if (/\bby\b|\bper\b|\bgroup\b/.test(norm)) {
+    return {
+      ok: false,
+      reason:
+        "a mode question asks about one column — try e.g. 'most common product'",
+    };
+  }
+
+  const filler = new Set([
+    "what",
+    "is",
+    "the",
+    "most",
+    "common",
+    "frequent",
+    "mode",
+    "of",
+  ]);
+  const cleaned = norm
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column's mode to find — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "mode", column: distinct[0].name, filters },
+  };
+}
+
+/**
+ * Try to read a distinct-count question ("how many distinct
+ * regions", "count distinct products", "number of different
+ * departments"). Returns null when the question shows no
+ * distinct-count intent; otherwise a distinctCount query, or an
+ * abstention when the column cannot be pinned down. Blank cells are
+ * not values — they are never counted. A bare "list distinct …"
+ * (no counting word) is not a count question and is left for the
+ * distinct-values parser.
+ */
+function tryParseDistinctCount(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\b(distinct|different)\b/.test(norm)) return null;
+  if (!/\bhow many\b|\bcount\b|\bnumber of\b/.test(norm)) return null;
+  if (/\bby\b|\bper\b|\bgroup\b/.test(norm)) {
+    return {
+      ok: false,
+      reason:
+        "a distinct count asks about one column — try e.g. 'how many distinct regions'",
+    };
+  }
+
+  const filler = new Set([
+    "how",
+    "many",
+    "count",
+    "number",
+    "of",
+    "the",
+    "distinct",
+    "different",
+    "values",
+    "value",
+  ]);
+  const cleaned = norm
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to count — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "distinctCount", column: distinct[0].name, filters },
+  };
+}
+
 export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult {
   if (!question || question.trim() === "") {
     return { ok: false, reason: "empty question — ask about a column, e.g. 'total revenue'" };
@@ -934,6 +1070,34 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return share;
+  }
+
+  // Mode: the most frequent value of one column. Checked before
+  // the generic distinct-values parser, which would otherwise read
+  // "most common" as nothing and fall through to the rows fallback.
+  const mode = tryParseMode(timeBucket.rest, columns, filters);
+  if (mode) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a mode can't be grouped by a time period — ask about the whole sheet, e.g. 'most common product'",
+      };
+    }
+    return mode;
+  }
+
+  // Distinct count: how many different values one column has.
+  // Checked before the distinct-values listing, which would
+  // otherwise answer "how many distinct regions" with the list.
+  const distinctCount = tryParseDistinctCount(timeBucket.rest, columns, filters);
+  if (distinctCount) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a distinct count can't be grouped by a time period — ask about the whole sheet, e.g. 'how many distinct regions'",
+      };
+    }
+    return distinctCount;
   }
 
   // Distinct values: every distinct value of one column, with row

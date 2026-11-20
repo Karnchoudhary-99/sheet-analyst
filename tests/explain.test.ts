@@ -259,3 +259,35 @@ describe("describeQuery distinct values", () => {
     ]);
   });
 });
+
+describe("describeQuery mode and distinct count", () => {
+  it("describes a mode question", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n2026-01-05,North,Widget A,12,240.00\n",
+    );
+    const explained = explainQuestion("most common region", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "most common value of region",
+      "operation: mode",
+      "column: region",
+      "filters: none",
+    ]);
+  });
+
+  it("describes a distinct-count question", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n2026-01-05,North,Widget A,12,240.00\n",
+    );
+    const explained = explainQuestion("how many distinct regions", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "distinct count of region",
+      "operation: count distinct values",
+      "column: region",
+      "filters: none",
+    ]);
+  });
+});

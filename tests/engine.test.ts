@@ -573,3 +573,97 @@ describe("executeQuery distinct values", () => {
     }
   });
 });
+
+describe("executeQuery mode", () => {
+  it("returns the most frequent value with its count and distinct total", () => {
+    const r = ask("most common region");
+    expect(r).toEqual({
+      kind: "mode",
+      column: "region",
+      value: "North",
+      count: 3,
+      totalDistinct: 4,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    });
+  });
+
+  it("breaks ties alphabetically, like the distinct-values listing", () => {
+    // Two colours tie at 2 rows each; "blue" wins over "red".
+    const tied = parseCsv(
+      "colour,shape\nred,circle\nblue,square\nred,triangle\nblue,hexagon\n",
+    );
+    const parsed = parseQuestion("most common colour", tied);
+    if (!parsed.ok) throw new Error(`abstained: ${parsed.reason}`);
+    const r = executeQuery(parsed.query, tied);
+    expect(r).toEqual({
+      kind: "mode",
+      column: "colour",
+      value: "blue",
+      count: 2,
+      totalDistinct: 2,
+      rowsMatched: 4,
+      valuesUsed: 4,
+    });
+  });
+
+  it("respects filters when finding the mode", () => {
+    const r = ask("most common product in North");
+    expect(r.kind).toBe("mode");
+    if (r.kind === "mode") {
+      // North rows are Widget A (twice) and Widget C (once).
+      expect(r.value).toBe("Widget A");
+      expect(r.count).toBe(2);
+      expect(r.totalDistinct).toBe(2);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("reports a null mode when the column has no usable values", () => {
+    const blank = parseCsv("a,b\n1,\n2,\n");
+    const parsed = parseQuestion("most common b", blank);
+    if (!parsed.ok) throw new Error(`abstained: ${parsed.reason}`);
+    const r = executeQuery(parsed.query, blank);
+    expect(r).toEqual({
+      kind: "mode",
+      column: "b",
+      value: null,
+      count: 0,
+      totalDistinct: 0,
+      rowsMatched: 2,
+      valuesUsed: 0,
+    });
+  });
+});
+
+describe("executeQuery distinct count", () => {
+  it("counts distinct values as a scalar, blanks excluded", () => {
+    const r = ask("how many distinct regions");
+    expect(r).toEqual({
+      kind: "scalar",
+      label: "distinct region values",
+      value: 4,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    });
+  });
+
+  it("does not count a blank cell as a value", () => {
+    const r = ask("how many distinct units");
+    expect(r.kind).toBe("scalar");
+    if (r.kind === "scalar") {
+      // The blank-units row contributes no value; 5 distinct numbers remain.
+      expect(r.value).toBe(5);
+      expect(r.valuesUsed).toBe(5);
+    }
+  });
+
+  it("respects filters when counting distinct values", () => {
+    const r = ask("how many distinct products in North", SALES);
+    expect(r.kind).toBe("scalar");
+    if (r.kind === "scalar") {
+      expect(r.value).toBe(2);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+});

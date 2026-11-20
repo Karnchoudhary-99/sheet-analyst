@@ -30,6 +30,8 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["compare revenue Jan 2026 vs Feb 2026", monthly],
   ["what share of revenue is North", sales],
   ["list unique regions", sales],
+  ["most common product", sales],
+  ["how many distinct regions", sales],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

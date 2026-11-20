@@ -98,6 +98,15 @@ export const EVAL_GATE = 0.8;
  * North · Widget A 240 (7 pairs in all); monthly top 2: South ·
  * Widget A 420, East · Widget C 314.93 (11 pairs in all). A top-N
  * over two groups plus a time bucket abstains.
+ *
+ * mode and distinct count — sales regions: North 3, South 2, East 2,
+ * West 1, so the mode is North (3 of 8 rows, 4 distinct values);
+ * sales products tie at 3 each (Widget A, Widget B) so the
+ * alphabetical tie-break picks Widget A; products in North are
+ * Widget A 2, "Widget, Deluxe" 1 (2 distinct values); employees
+ * departments are Engineering 3, Data 2, so the mode is Engineering
+ * (3 of 5 rows, 2 distinct values). A mode or distinct count naming
+ * no column abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -417,6 +426,60 @@ export const GOLD_SET: EvalCase[] = [
     question: "top 3 region and product by revenue by month",
     expect: "abstain",
     note: "a top-N over two groups plus a time bucket is two dimensions at once",
+  },
+  {
+    sheet: "sales",
+    question: "most common region",
+    expect: ["The most common region is North", "3 of 8 rows", "4 distinct values"],
+    note: "North 3, South 2, East 2, West 1 — North is the mode",
+  },
+  {
+    sheet: "sales",
+    question: "most common product",
+    expect: ["The most common product is Widget A", "3 of 8 rows"],
+    note: "Widget A and Widget B tie at 3 rows each; the alphabetical tie-break picks Widget A",
+  },
+  {
+    sheet: "sales",
+    question: "most common product in North",
+    expect: ["The most common product is Widget A", "2 of 3 rows", "2 distinct values"],
+    note: "North rows are Widget A twice and 'Widget, Deluxe' once",
+  },
+  {
+    sheet: "sales",
+    question: "how many distinct regions",
+    expect: ["Distinct region values is 4", "8 rows"],
+    note: "North, South, East, West — 4 distinct regions over 8 rows",
+  },
+  {
+    sheet: "sales",
+    question: "how many distinct products",
+    expect: ["Distinct product values is 4"],
+    note: "Widget A, Widget B, Widget C and 'Widget, Deluxe'",
+  },
+  {
+    sheet: "employees",
+    question: "most common department",
+    expect: ["The most common department is Engineering", "3 of 5 rows"],
+    note: "Engineering 3, Data 2 — Engineering is the mode",
+  },
+  {
+    sheet: "employees",
+    question: "count distinct departments",
+    expect: ["Distinct department values is 2"],
+    note: "Engineering and Data — 2 distinct departments over 5 rows",
+  },
+  {
+    sheet: "sales",
+    question: "most common profit",
+    expect: "abstain",
+    note: "'profit' is not a column",
+  },
+  {
+    sheet: "sales",
+    question: "how many distinct profits",
+    expect: "abstain",
+    note: "'profit' is not a column",
   },
 ];
 

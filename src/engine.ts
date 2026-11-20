@@ -120,6 +120,27 @@ export type QueryResult =
       limitedTo?: number;
       /** Rows the filters matched (the values come from these rows). */
       rowsMatched: number;
+    }
+  | {
+      kind: "mode";
+      /** The column whose most frequent value this is. */
+      column: string;
+      /**
+       * The most frequent value, or null when no usable values.
+       * Ties break alphabetically, the same rule the distinct-values
+       * listing uses, so the mode is stable and reproducible.
+       * Matching is case-sensitive, like the listing — "North" and
+       * "north" are different spellings a user can see and fix.
+       */
+      value: string | null;
+      /** Rows carrying the modal value (0 when there is none). */
+      count: number;
+      /** Distinct values seen (blank cells excluded). */
+      totalDistinct: number;
+      /** Rows the filters matched. */
+      rowsMatched: number;
+      /** Rows with a non-blank value. */
+      valuesUsed: number;
     };
 
 function toNumber(value: string): number | null {
@@ -239,6 +260,29 @@ const OP_LABEL: Record<string, string> = {
   max: "maximum",
   count: "count",
 };
+
+/**
+ * Count raw cell text per value over the given rows. Blank cells are
+ * not values and never appear. Matching is case-sensitive because
+ * the values are displayed, not compared — "North" and "north" are
+ * different spellings a user can see and fix. Sorted most frequent
+ * first, alphabetical tie-break, so the mode and the distinct-values
+ * listing agree with each other.
+ */
+function countRawValues(
+  rows: string[][],
+  cIdx: number,
+): { value: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const cell = (row[cIdx] ?? "").trim();
+    if (cell === "") continue;
+    counts.set(cell, (counts.get(cell) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+}
 
 export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
   const schema = inferSchema(parsed);
@@ -515,19 +559,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     case "distinct": {
       const rows = applyFilters(parsed, schema, query.filters);
       const cIdx = colIndex.get(query.column)!;
-      // Count raw cell text per value; blank cells are not values.
-      // Matching is case-sensitive here because the values are
-      // displayed, not compared — "North" and "north" are different
-      // spellings a user can see and fix.
-      const counts = new Map<string, number>();
-      for (const row of rows) {
-        const cell = (row[cIdx] ?? "").trim();
-        if (cell === "") continue;
-        counts.set(cell, (counts.get(cell) ?? 0) + 1);
-      }
-      const values = [...counts.entries()]
-        .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+      const values = countRawValues(rows, cIdx);
       const limited = values.length > query.limit;
       return {
         kind: "values",
@@ -536,6 +568,35 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         totalDistinct: values.length,
         limitedTo: limited ? query.limit : undefined,
         rowsMatched: rows.length,
+      };
+    }
+
+    case "mode": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      const cIdx = colIndex.get(query.column)!;
+      const values = countRawValues(rows, cIdx);
+      const top = values[0];
+      return {
+        kind: "mode",
+        column: query.column,
+        value: top?.value ?? null,
+        count: top?.count ?? 0,
+        totalDistinct: values.length,
+        rowsMatched: rows.length,
+        valuesUsed: values.reduce((n, v) => n + v.count, 0),
+      };
+    }
+
+    case "distinctCount": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      const cIdx = colIndex.get(query.column)!;
+      const values = countRawValues(rows, cIdx);
+      return {
+        kind: "scalar",
+        label: `distinct ${query.column} values`,
+        value: values.length,
+        rowsMatched: rows.length,
+        valuesUsed: values.reduce((n, v) => n + v.count, 0),
       };
     }
 

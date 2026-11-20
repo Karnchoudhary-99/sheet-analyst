@@ -134,6 +134,20 @@ export function describeQuery(query: Query): string[] {
         `limit: ${query.limit}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
+    case "mode":
+      return [
+        `most common value of ${query.column}`,
+        "operation: mode",
+        `column: ${query.column}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    case "distinctCount":
+      return [
+        `distinct count of ${query.column}`,
+        "operation: count distinct values",
+        `column: ${query.column}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
   }
 }
 

@@ -278,3 +278,35 @@ describe("resultToCsv distinct values", () => {
     );
   });
 });
+
+describe("resultToCsv mode", () => {
+  it("writes the modal value, its row count and the distinct total", () => {
+    const result: QueryResult = {
+      kind: "mode",
+      column: "region",
+      value: "North",
+      count: 3,
+      totalDistinct: 4,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    };
+    expect(resultToCsv(result, "most common region", "…")).toBe(
+      "column,value,rows,distinct_values,rows_matched\nregion,North,3,4,6",
+    );
+  });
+
+  it("leaves the value blank when the mode could not be computed", () => {
+    const result: QueryResult = {
+      kind: "mode",
+      column: "units",
+      value: null,
+      count: 0,
+      totalDistinct: 0,
+      rowsMatched: 0,
+      valuesUsed: 0,
+    };
+    expect(resultToCsv(result, "most common units", "…")).toBe(
+      "column,value,rows,distinct_values,rows_matched\nunits,,0,0,0",
+    );
+  });
+});
