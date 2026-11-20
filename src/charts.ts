@@ -98,14 +98,28 @@ export function sparkline(values: number[]): string {
 /**
  * Render a chart for a query result: time-bucketed groups become a
  * line chart (the shape over time is the point), other groups become
- * a bar chart, and everything else has no chart (null) — a single
- * number or a table of rows is already the answer, and inventing a
- * chart for it would add noise, not information.
+ * a bar chart, a trend becomes a line chart over its fitted periods
+ * (periods with no usable value are left out of the line, never
+ * plotted as zero), and everything else has no chart (null) — a
+ * single number or a table of rows is already the answer, and
+ * inventing a chart for it would add noise, not information.
  */
 export function renderResultChart(
   result: QueryResult,
   options: BarChartOptions = {},
 ): string | null {
+  if (result.kind === "trend") {
+    const points = result.periods
+      .filter(
+        (
+          p,
+        ): p is { label: string; value: number; rows: number; valuesUsed: number } =>
+          p.value !== null,
+      )
+      .map((p) => ({ key: p.label, value: p.value }));
+    if (points.length === 0) return null;
+    return renderLineChart(points, options);
+  }
   if (result.kind !== "groups") return null;
   if (result.bucket) return renderLineChart(result.groups, options);
   return renderBarChart(result.groups, options);
@@ -113,12 +127,25 @@ export function renderResultChart(
 
 /**
  * Render the same group result as an SVG chart, or null when the
- * result has no chart. Time-bucketed groups render as a line chart.
+ * result has no chart. Time-bucketed groups and trends render as a
+ * line chart.
  */
 export function renderResultChartSvg(
   result: QueryResult,
   options: SvgChartOptions = {},
 ): string | null {
+  if (result.kind === "trend") {
+    const points = result.periods
+      .filter(
+        (
+          p,
+        ): p is { label: string; value: number; rows: number; valuesUsed: number } =>
+          p.value !== null,
+      )
+      .map((p) => ({ key: p.label, value: p.value }));
+    if (points.length === 0) return null;
+    return renderLineChartSvg(points, options);
+  }
   if (result.kind !== "groups") return null;
   if (result.bucket) return renderLineChartSvg(result.groups, options);
   return renderBarChartSvg(result.groups, options);
