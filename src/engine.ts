@@ -49,6 +49,11 @@ export type QueryResult =
       limitedTo?: number;
       /** Groups before any top-N slicing, so "top 2 of 4" is honest. */
       totalGroups?: number;
+      /** Set by a top-N ranking: which end of the ranking this is, so
+       * the composer can say "Bottom 3 of 4" instead of "Top 3 of 4"
+       * for a lowest-direction ranking. Plain group answers leave it
+       * unset and are never sliced, so it is never read there. */
+      direction?: "highest" | "lowest";
       /** When set, `groupBy` is a date column and `key` is a period label ("Jan 2026"). */
       bucket?: TimeBucket;
     }
@@ -459,6 +464,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
           rowsMatched: rows.length,
           limitedTo: limited ? query.limit : undefined,
           totalGroups: groups.length,
+          direction: query.direction,
           bucket: query.bucket,
         };
       }
