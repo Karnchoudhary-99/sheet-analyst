@@ -403,3 +403,40 @@ describe("describeQuery trend", () => {
     );
   });
 });
+
+describe("describeQuery missing values", () => {
+  it("describes a single-column count", () => {
+    const lines = describeQuery({
+      kind: "missing",
+      column: "salary",
+      filters: [],
+      listRows: false,
+    });
+    expect(lines[0]).toBe("missing values in salary");
+    expect(lines).toContain("operation: missing values");
+    expect(lines).toContain("column: salary");
+  });
+
+  it("describes a row listing", () => {
+    const lines = describeQuery({
+      kind: "missing",
+      column: "salary",
+      filters: [],
+      listRows: true,
+    });
+    expect(lines[0]).toBe("rows missing salary");
+    expect(lines).toContain("list rows: true");
+  });
+
+  it("describes a whole-sheet report with no column line", () => {
+    const lines = describeQuery({
+      kind: "missing",
+      column: null,
+      filters: [],
+      listRows: false,
+    });
+    expect(lines[0]).toBe("missing values by column");
+    expect(lines).toContain("operation: missing values");
+    expect(lines).not.toContain("column: salary");
+  });
+});

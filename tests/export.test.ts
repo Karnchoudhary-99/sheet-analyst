@@ -373,3 +373,42 @@ describe("resultToCsv above/below average", () => {
     );
   });
 });
+
+describe("resultToCsv missing values", () => {
+  it("writes one row per column with the missing fraction", () => {
+    const result: QueryResult = {
+      kind: "missing",
+      column: null,
+      entries: [
+        { column: "units", missing: 1, total: 6 },
+        { column: "revenue", missing: 0, total: 6 },
+      ],
+      headers: ["units", "revenue"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 6,
+    };
+    expect(resultToCsv(result, "which columns have missing values", "…")).toBe(
+      "column,missing_rows,total_rows,percent_missing\n" +
+        `units,1,6,${1 / 6}\n` +
+        "revenue,0,6,0",
+    );
+  });
+
+  it("writes just the one column for a single-column question", () => {
+    const result: QueryResult = {
+      kind: "missing",
+      column: "units",
+      entries: [{ column: "units", missing: 1, total: 6 }],
+      headers: ["units"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 6,
+    };
+    expect(resultToCsv(result, "how many rows are missing units", "…")).toBe(
+      "column,missing_rows,total_rows,percent_missing\n" + `units,1,6,${1 / 6}`,
+    );
+  });
+});
