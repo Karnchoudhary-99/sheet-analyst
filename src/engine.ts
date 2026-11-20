@@ -20,7 +20,7 @@
 import type { ParsedCsv } from "./csv.js";
 import type { Filter, Query } from "./query.js";
 import { inferSchema, isNullValue, type ColumnInfo } from "./schema.js";
-import { numericStats, pearsonCorrelation } from "./stats.js";
+import { numericStats, ordinal, pearsonCorrelation, percentile } from "./stats.js";
 import { bucketDate, parseDate, type TimeBucket } from "./time.js";
 
 export type QueryResult =
@@ -584,6 +584,25 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         totalDistinct: values.length,
         rowsMatched: rows.length,
         valuesUsed: values.reduce((n, v) => n + v.count, 0),
+      };
+    }
+
+    case "percentile": {
+      const info = colInfo(query.column);
+      if (!info) throw new Error(`unknown column: ${query.column}`);
+      const rows = applyFilters(parsed, schema, query.filters);
+      const values = rows
+        .map((r) => r[colIndex.get(query.column)!] ?? "")
+        .filter((v) => !isNullValue(v))
+        .map(toNumber)
+        .filter((n): n is number => n !== null)
+        .sort((a, b) => a - b);
+      return {
+        kind: "scalar",
+        label: `${ordinal(query.p)} percentile of ${query.column}`,
+        value: values.length === 0 ? null : percentile(values, query.p / 100),
+        rowsMatched: rows.length,
+        valuesUsed: values.length,
       };
     }
 

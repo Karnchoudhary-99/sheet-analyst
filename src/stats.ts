@@ -50,6 +50,17 @@ export function percentile(sorted: number[], p: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo);
 }
 
+/** "1st", "2nd", "3rd", "90th" — the label for a percentile question. */
+export function ordinal(n: number): string {
+  const lastTwo = n % 100;
+  if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
+  const last = n % 10;
+  if (last === 1) return `${n}st`;
+  if (last === 2) return `${n}nd`;
+  if (last === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
 export function numericStats(values: number[]): Pick<
   NumericStats,
   "min" | "max" | "sum" | "mean" | "median" | "q1" | "q3" | "stddev"

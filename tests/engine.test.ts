@@ -102,6 +102,22 @@ describe("executeQuery filters", () => {
       expect(r.rows[0].product).toBe("Widget A");
     }
   });
+
+  it("filters by an inclusive between-range", () => {
+    const r = ask("total revenue where revenue between 100 and 200");
+    if (r.kind === "scalar") {
+      // 199.92 + 149.97 + 124.95; the 240 and 400 rows are outside.
+      expect(r.value).toBeCloseTo(474.84, 2);
+      expect(r.rowsMatched).toBe(3);
+    }
+    const counted = ask("how many rows where revenue between 100 and 200");
+    if (counted.kind === "scalar") expect(counted.value).toBe(3);
+  });
+
+  it("filters by a between-range over dates", () => {
+    const r = ask("how many rows where date between 2026-01-06 and 2026-01-08");
+    if (r.kind === "scalar") expect(r.value).toBe(3);
+  });
 });
 
 describe("executeQuery groups", () => {
@@ -665,5 +681,64 @@ describe("executeQuery distinct count", () => {
       expect(r.value).toBe(2);
       expect(r.rowsMatched).toBe(3);
     }
+  });
+});
+
+describe("executeQuery percentile", () => {
+  it("returns the 90th percentile as a labelled scalar", () => {
+    const r = ask("90th percentile of revenue");
+    expect(r).toEqual({
+      kind: "scalar",
+      label: "90th percentile of revenue",
+      // Sorted revenue: 0, 124.95, 149.97, 199.92, 240, 400 —
+      // rank 0.9 * 5 = 4.5, halfway between 240 and 400.
+      value: 320,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    });
+  });
+
+  it("interpolates the 75th percentile the same way as the quartiles", () => {
+    const r = ask("75th percentile of revenue");
+    expect(r.kind).toBe("scalar");
+    if (r.kind === "scalar") {
+      // Rank 0.75 * 5 = 3.75: 199.92 + 0.75 * (240 - 199.92).
+      expect(r.value).toBeCloseTo(229.98, 10);
+    }
+  });
+
+  it("answers the short p90 form and skips null values", () => {
+    const r = ask("p50 salary", STAFF);
+    expect(r).toEqual({
+      kind: "scalar",
+      label: "50th percentile of salary",
+      value: 95000,
+      rowsMatched: 3,
+      valuesUsed: 3,
+    });
+  });
+
+  it("respects filters when computing a percentile", () => {
+    const r = ask("50th percentile of revenue in North");
+    expect(r.kind).toBe("scalar");
+    if (r.kind === "scalar") {
+      // North revenue: 0, 149.97, 240 — the median is 149.97.
+      expect(r.value).toBe(149.97);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("reports a null percentile when the matched rows have no usable values", () => {
+    const sparse = parseCsv("a,b\n1,10\n2,NA\n3,30\n");
+    const parsed = parseQuestion("90th percentile of b where a is 2", sparse);
+    if (!parsed.ok) throw new Error(`abstained: ${parsed.reason}`);
+    const r = executeQuery(parsed.query, sparse);
+    expect(r).toEqual({
+      kind: "scalar",
+      label: "90th percentile of b",
+      value: null,
+      rowsMatched: 1,
+      valuesUsed: 0,
+    });
   });
 });
