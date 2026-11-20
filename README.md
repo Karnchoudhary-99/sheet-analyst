@@ -34,6 +34,7 @@ top-N) directly from the spreadsheet.
 - [x] Bottom-N questions ("bottom 3 products by revenue", "bottom 2 months by revenue" — the low end of the top-N ranking, smallest first, headed "Bottom N of M" instead of "Top N")
 - [x] Sorted row listings ("show rows sorted by revenue descending", "list employees sorted by salary ascending" — numbers numerically, dates by day, text alphabetically; blank cells always last; the sort runs before the limit, so the first N of a sorted listing are the sorted top N)
 - [x] Above/below-average questions ("rows with revenue above average", "which employees have salary below the median" — rows strictly on one side of the column's mean or median; equal-to-baseline rows are neither; a column with no usable value has no baseline and the answer says so)
+- [x] Missing-values questions ("how many rows are missing salary", "which columns have missing values" — a count per column or a whole-sheet report, worst first; "show rows missing revenue" lists the rows; empty and NA markers count as missing, a zero never does)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -95,6 +96,12 @@ answerQuestion("show rows sorted by revenue descending", sales);
 // blank cells always sort last; no direction means ascending)
 answerQuestion("rows with revenue above average", sales);
 // "4 rows have revenue above the average of 223.7:\n| date | region | product | units | revenue |…"
+answerQuestion("how many rows are missing units", sales);
+// "1 of 8 rows is missing units (12.5%)."
+answerQuestion("which columns have missing values", sales);
+// "Missing values (8 rows):\n- units: 1 of 8 rows missing (12.5%)\n- date: 0 of 8 rows missing (0%)…"
+answerQuestion("show rows missing units", sales);
+// "1 row missing units:\n| date | region | product | units | revenue |…"
 answerQuestion("total profit", sales);
 // "I can't answer that from this data: no column named in the question…"
 answerQuestion("total revenue by month", monthlySales);
@@ -158,7 +165,13 @@ range abstains instead of answering "no rows"), and trend
 ("revenue trend by month", "average salary trend by year" — the
 least-squares slope of the per-period aggregate, so "trended up by
 about 84.95 per month"; a trend needs a period and one numeric
-column).
+column). Missing-values questions ("how many rows are missing
+salary", "which columns have missing values", "show rows missing
+revenue") count empty cells and markers like NA as missing — a zero
+is a value, never a missing one. A whole-sheet report lists every
+column, worst first, so a clean column reads as "0 of 8 rows
+missing" instead of being silently absent; a row listing shows the
+first 10 rows missing the column.
 A distinct-values answer lists every distinct value of the column
 with its row count, most frequent first (alphabetical tie-break),
 showing the first 20 when there are more; blank cells are never
@@ -384,7 +397,7 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 100-question gold set over
+`npm run eval` scores the engine against a 109-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, multi-column group-bys (region × product,
 department × remote) and top-N over them, top-N, bottom-N (lowest
@@ -394,14 +407,16 @@ queries, sorted row listings (revenue descending/ascending, region
 alphabetical — order asserted by substrings spanning adjacent table
 rows), above/below-average questions (revenue above/below its 223.7
 average, salary above its 93,000 median and below its 93,000
-average), time grouping
+average), missing-values questions (units 1 of 8, salary 1 of 5,
+the whole-sheet report, the row listing, the Engineering-filtered
+count), time grouping
 (monthly totals, averages, counts, top months), correlation (units vs
 revenue, id vs salary), period comparison (monthly revenue Jan→Feb
 and Feb→Mar, average salary 2023→2024), share, distinct-values,
 mode and distinct-count questions, percentile questions (p90/p50/p25
 salary, p75/p90 revenue) and `between` range filters, trend
 questions (monthly revenue +84.95/month, average revenue
-+21.24/month, units +3.5/month, average salary −5,000/year), plus thirty questions the
++21.24/month, units +3.5/month, average salary −5,000/year), plus thirty-three questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
 comparison naming one period or the same period twice, a time bucket
@@ -413,12 +428,14 @@ text column or grouped by another column, a reversed `between`
 range, a trend with no period, over a text column, plus a second
 group column, or by an unsupported period, a sort on an unknown
 column, or a sort phrase on an aggregate, an above/below-average
-question naming an unknown or non-numeric column). Expected
+question naming an unknown or non-numeric column, a missing-values
+question naming no column, grouped by another column, or listing
+rows with no column named). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-20): answer accuracy 70/70 (100%), abstention
-accuracy 30/30 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-20): answer accuracy 76/76 (100%), abstention
+accuracy 33/33 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row
