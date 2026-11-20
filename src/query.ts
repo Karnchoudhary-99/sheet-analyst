@@ -30,6 +30,10 @@
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
  * - rows: "show rows where region is North", "list employees in Data"
+ * - sorted rows: "show rows sorted by revenue descending",
+ *   "list employees sorted by salary ascending" (numbers sort
+ *   numerically, dates by day, text alphabetically; blank cells
+ *   always sort last; no direction means ascending)
  * - correlation: "correlation between revenue and units",
  *   "how correlated are salary and age" (both columns must be numeric)
  * - period comparison: "compare revenue Jan 2026 vs Feb 2026",
@@ -71,6 +75,15 @@ export type AggregateOp = "sum" | "mean" | "median" | "min" | "max" | "count";
 
 export type FilterOp = "=" | "!=" | ">" | ">=" | "<" | "<=" | "contains";
 
+/**
+ * A row-listing sort: which column to order by, and which way.
+ * Ascending is the default when the question names no direction.
+ */
+export interface SortSpec {
+  column: string;
+  direction: "asc" | "desc";
+}
+
 export interface Filter {
   column: string;
   op: FilterOp;
@@ -101,7 +114,7 @@ export type Query =
       filters: Filter[];
       bucket?: TimeBucket;
     }
-  | { kind: "rows"; filters: Filter[]; limit: number }
+  | { kind: "rows"; filters: Filter[]; limit: number; sort?: SortSpec }
   | { kind: "correlation"; columnA: string; columnB: string; filters: Filter[] }
   | {
       kind: "comparison";
@@ -292,6 +305,66 @@ function matchColumnsInOrder(phrase: string, columns: ColumnInfo[]): ColumnSpan[
  *   a column the sheet does not have — the question abstains
  *   ("by region and profit" must not answer as "by region").
  */
+/**
+ * Pull a "sorted by <column> [ascending|descending]" clause out of
+ * the question ("show rows sorted by revenue descending", "list
+ * employees sorted by salary"). Returns the sort spec plus the
+ * question with the clause removed, or an error when the sort column
+ * cannot be pinned down. No sort phrase returns the text untouched.
+ * The direction defaults to ascending.
+ *
+ * This runs on the raw question BEFORE the filter extractor: a
+ * "where" value would otherwise swallow the sort phrase ("where
+ * region is North sorted by revenue" reads the value as "North
+ * sorted by revenue descending"). It also runs before the group-by
+ * extractor, which would read "sorted by revenue" as a group-by on
+ * revenue and report the direction word ("descending") as an
+ * unknown column. The match is case-insensitive and works on the
+ * raw text (not the normalized form) so the remaining question
+ * keeps its original casing for the filter extractor — filter
+ * values keep their spelling ("North", not "north").
+ *
+ * The sort phrase may sit before a "where" clause ("sorted by
+ * revenue where region is North"): the lookahead stops the match
+ * at "where" and the clause is kept in the returned text.
+ */
+function extractSort(
+  text: string,
+  columns: ColumnInfo[],
+): { sort: SortSpec | null; rest: string; error?: string } {
+  const m =
+    /\b(?:sorted|sort|ordered|order)\s+by\s+([a-z0-9_ ]+?)(?:\s+(ascending|descending|asc|desc))?(?=\s+where\b|\s*$)/i.exec(
+      text,
+    );
+  if (!m) return { sort: null, rest: text };
+  const columnPhrase = m[1]!.trim();
+  const direction: "asc" | "desc" =
+    m[2] !== undefined &&
+    (m[2].toLowerCase() === "descending" || m[2].toLowerCase() === "desc")
+      ? "desc"
+      : "asc";
+  const hits = findColumns(columnPhrase, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length === 0) {
+    return {
+      sort: null,
+      rest: text,
+      error: `could not find a column to sort by — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      sort: null,
+      rest: text,
+      error: `could not tell which column to sort by — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const rest = (text.slice(0, m.index) + " " + text.slice(m.index + m[0].length))
+    .replace(/\s+/g, " ")
+    .trim();
+  return { sort: { column: distinct[0]!.name, direction }, rest };
+}
+
 function extractGroupBy(
   text: string,
   columns: ColumnInfo[],
@@ -1295,7 +1368,13 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     return { ok: false, reason: "the sheet has no columns to ask about" };
   }
 
-  const extracted = extractFilters(question, parsed);
+  // Sorted rows: pull the sort clause out first (see extractSort) —
+  // the filter extractor would otherwise swallow it into a "where"
+  // value, and the group-by extractor would read it as a grouping.
+  const sort = extractSort(question, columns);
+  if (sort.error) return { ok: false, reason: sort.error };
+
+  const extracted = extractFilters(sort.rest, parsed);
   if (extracted.error) return { ok: false, reason: extracted.error };
   const filters = extracted.filters;
 
@@ -1530,8 +1609,17 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   }
   const text = rest === "" ? timeBucket.rest : rest;
 
-  // Count questions need no target column.
+  // Count questions need no target column. A sort phrase does not
+  // belong on a count — "how many rows sorted by revenue" refuses
+  // instead of silently dropping the sort.
   if (isCountQuestion(text) && resolvedGroupBy.length === 0) {
+    if (sort.sort) {
+      return {
+        ok: false,
+        reason:
+          "sorting applies to row listings — try e.g. 'show rows sorted by revenue descending'",
+      };
+    }
     return { ok: true, query: { kind: "count", filters } };
   }
   if (isCountQuestion(text) && resolvedGroupBy.length > 0) {
@@ -1551,13 +1639,29 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   const op = detectAggregateOp(text);
   // A question with a filter but no aggregate word asks for the
   // matching rows ("rows where region is North", "show sales in North").
+  // A sort phrase also means a row listing ("rows sorted by revenue"),
+  // even with no show/list verb and no filter.
   const normText = normalize(text);
   if (
     normText.startsWith("show") ||
     normText.startsWith("list") ||
+    (sort.sort !== null && !op) ||
     (filters.length > 0 && !op)
   ) {
-    return { ok: true, query: { kind: "rows", filters, limit: 10 } };
+    return {
+      ok: true,
+      query: { kind: "rows", filters, limit: 10, sort: sort.sort ?? undefined },
+    };
+  }
+  // A sort phrase only makes sense on a row listing — "total revenue
+  // sorted by region" refuses instead of answering the plain total
+  // and dropping the sort.
+  if (sort.sort) {
+    return {
+      ok: false,
+      reason:
+        "sorting applies to row listings — try e.g. 'show rows sorted by revenue descending'",
+    };
   }
   if (!op) {
     return {

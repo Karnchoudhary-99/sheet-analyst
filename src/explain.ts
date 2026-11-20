@@ -90,13 +90,22 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters)}`,
       ];
     }
-    case "rows":
+    case "rows": {
+      const sorted = query.sort
+        ? `, sorted by ${query.sort.column} (${query.sort.direction === "desc" ? "descending" : "ascending"})`
+        : "";
       return [
-        `matching rows (first ${query.limit})`,
+        `matching rows (first ${query.limit})${sorted}`,
         "operation: list rows",
         `limit: ${query.limit}`,
+        ...(query.sort
+          ? [
+              `sorted by: ${query.sort.column} (${query.sort.direction === "desc" ? "descending" : "ascending"})`,
+            ]
+          : []),
         `filters: ${describeFilters(query.filters)}`,
       ];
+    }
     case "correlation":
       return [
         `correlation between ${query.columnA} and ${query.columnB}`,

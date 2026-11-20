@@ -373,6 +373,61 @@ describe("parseQuestion filters", () => {
   });
 });
 
+describe("parseQuestion sorted rows", () => {
+  it("parses 'sorted by' with an explicit descending direction", () => {
+    const r = parseQuestion("show rows sorted by revenue descending", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "rows",
+        filters: [],
+        limit: 10,
+        sort: { column: "revenue", direction: "desc" },
+      },
+    });
+  });
+
+  it("defaults to ascending when no direction is named", () => {
+    const r = parseQuestion("list employees sorted by salary", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "rows") {
+      expect(r.query.sort).toEqual({ column: "salary", direction: "asc" });
+    }
+  });
+
+  it("routes a bare 'rows sorted by' question to the row listing", () => {
+    const r = parseQuestion("rows sorted by date", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "rows") {
+      expect(r.query.sort).toEqual({ column: "date", direction: "asc" });
+    }
+  });
+
+  it("keeps filters alongside the sort", () => {
+    const r = parseQuestion(
+      "show rows where region is North sorted by revenue descending",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "rows") {
+      expect(r.query.filters).toEqual([{ column: "region", op: "=", value: "North" }]);
+      expect(r.query.sort).toEqual({ column: "revenue", direction: "desc" });
+    }
+  });
+
+  it("abstains on an unknown sort column instead of listing unsorted", () => {
+    const r = parseQuestion("show rows sorted by profit descending", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find a column to sort by/);
+  });
+
+  it("abstains when a sort phrase is put on an aggregate", () => {
+    const r = parseQuestion("total revenue sorted by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/sorting applies to row listings/);
+  });
+});
+
 describe("parseQuestion time grouping", () => {
   it("groups a total by month using the sheet's only date column", () => {
     const r = parseQuestion("total revenue by month", SALES);

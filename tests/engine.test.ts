@@ -120,6 +120,99 @@ describe("executeQuery filters", () => {
   });
 });
 
+describe("executeQuery sorted rows", () => {
+  it("sorts numerically, highest first when descending", () => {
+    const r = ask("show rows sorted by revenue descending");
+    expect(r.kind).toBe("rows");
+    if (r.kind === "rows") {
+      expect(r.rows.map((row) => row.revenue)).toEqual([
+        "400.00",
+        "240.00",
+        "199.92",
+        "149.97",
+        "124.95",
+        "0.00",
+      ]);
+      expect(r.sortedBy).toEqual({ column: "revenue", direction: "desc" });
+    }
+  });
+
+  it("sorts ascending by default, lowest first", () => {
+    const r = ask("show rows sorted by revenue");
+    expect(r.kind).toBe("rows");
+    if (r.kind === "rows") {
+      expect(r.rows.map((row) => row.revenue)).toEqual([
+        "0.00",
+        "124.95",
+        "149.97",
+        "199.92",
+        "240.00",
+        "400.00",
+      ]);
+    }
+  });
+
+  it("sorts blank cells last in both directions", () => {
+    const desc = ask("show rows sorted by units descending");
+    const asc = ask("show rows sorted by units ascending");
+    expect(desc.kind).toBe("rows");
+    expect(asc.kind).toBe("rows");
+    if (desc.kind === "rows") {
+      expect(desc.rows.map((row) => row.units)).toEqual(["20", "12", "8", "5", "3", ""]);
+    }
+    if (asc.kind === "rows") {
+      expect(asc.rows.map((row) => row.units)).toEqual(["3", "5", "8", "12", "20", ""]);
+    }
+  });
+
+  it("sorts text alphabetically, case-insensitively", () => {
+    const r = ask("show rows sorted by region");
+    expect(r.kind).toBe("rows");
+    if (r.kind === "rows") {
+      expect(r.rows.map((row) => row.region)).toEqual([
+        "East",
+        "North",
+        "North",
+        "North",
+        "South",
+        "West",
+      ]);
+    }
+  });
+
+  it("sorts dates chronologically", () => {
+    const r = ask("show rows sorted by start_date descending", STAFF);
+    expect(r.kind).toBe("rows");
+    if (r.kind === "rows") {
+      expect(r.rows.map((row) => row.start_date)).toEqual([
+        "2025-01-20",
+        "2024-03-01",
+        "2023-07-15",
+      ]);
+    }
+  });
+
+  it("sorts before slicing, so the limit keeps the sorted top", () => {
+    // The 400.00 row is fourth in the sheet; with limit 3 it only
+    // appears when the sort runs before the slice.
+    const r = executeQuery(
+      {
+        kind: "rows",
+        filters: [],
+        limit: 3,
+        sort: { column: "revenue", direction: "desc" },
+      },
+      SALES,
+    );
+    expect(r.kind).toBe("rows");
+    if (r.kind === "rows") {
+      expect(r.totalMatched).toBe(6);
+      expect(r.rows.map((row) => row.revenue)).toEqual(["400.00", "240.00", "199.92"]);
+      expect(r.limitedTo).toBe(3);
+    }
+  });
+});
+
 describe("executeQuery groups", () => {
   it("groups a total by region, largest first", () => {
     const r = ask("total revenue by region");

@@ -127,6 +127,32 @@ describe("composeAnswer groups and rows", () => {
     expect(out).toContain("| region | revenue |");
     expect(out).toContain("| North | 240.00 |");
   });
+
+  it("names the sort in a sorted listing's scope line", () => {
+    const r: QueryResult = {
+      kind: "rows",
+      headers: ["region", "revenue"],
+      rows: [{ region: "East", revenue: "400.00" }],
+      totalMatched: 6,
+      limitedTo: 1,
+      sortedBy: { column: "revenue", direction: "desc" },
+    };
+    const out = composeAnswer(r);
+    expect(out).toContain("Showing 1 of 6 matching rows, sorted by revenue (descending):");
+  });
+
+  it("answers a sorted question end to end, highest revenue first", () => {
+    const out = answerQuestion("show rows sorted by revenue descending", SALES);
+    expect(out).toContain("6 matching rows, sorted by revenue (descending):");
+    // The table's first data row is the 400.00 sale, not the sheet's
+    // first row — substring order in the answer proves the sort.
+    // (Numeric cells are formatted, so 400.00 prints as 400.)
+    const firstRow = out.indexOf("| 2026-01-08 | East | Widget A | 20 | 400 |");
+    const secondRow = out.indexOf("| 2026-01-05 | North | Widget A | 12 | 240 |");
+    expect(firstRow).toBeGreaterThan(-1);
+    expect(secondRow).toBeGreaterThan(-1);
+    expect(firstRow).toBeLessThan(secondRow);
+  });
 });
 
 describe("composeAbstention", () => {

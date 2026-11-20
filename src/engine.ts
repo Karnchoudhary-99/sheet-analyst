@@ -63,6 +63,8 @@ export type QueryResult =
       rows: Record<string, string>[];
       totalMatched: number;
       limitedTo?: number;
+      /** Set when the listing was sorted: the composer names it. */
+      sortedBy?: { column: string; direction: "asc" | "desc" };
     }
   | {
       kind: "correlation";
@@ -263,6 +265,52 @@ export function applyFilters(
       return compareValues(row[idx] ?? "", schema[idx], f.op, f.value);
     }),
   );
+}
+
+/**
+ * Order rows by one column's values: numbers numerically, dates by
+ * day, everything else case-insensitively alphabetical. Blank cells
+ * always sort last in both directions — a missing value is not the
+ * smallest or the largest value, it is no value at all, and putting
+ * it first in a descending sort would present it as the top row.
+ * The sort is stable (Array.prototype.sort is stable in Node), so
+ * rows that tie keep their sheet order.
+ */
+function sortRows(
+  rows: string[][],
+  schema: ColumnInfo[],
+  sort: { column: string; direction: "asc" | "desc" },
+): string[][] {
+  const idx = schema.findIndex((c) => c.name === sort.column);
+  if (idx === -1) return rows;
+  const info = schema[idx]!;
+  const sign = sort.direction === "desc" ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const av = a[idx] ?? "";
+    const bv = b[idx] ?? "";
+    const aNull = isNullValue(av);
+    const bNull = isNullValue(bv);
+    if (aNull && bNull) return 0;
+    if (aNull) return 1;
+    if (bNull) return -1;
+    if (info.type === "integer" || info.type === "number") {
+      const an = toNumber(av);
+      const bn = toNumber(bv);
+      if (an === null && bn === null) return 0;
+      if (an === null) return 1;
+      if (bn === null) return -1;
+      return sign * (an - bn);
+    }
+    if (info.type === "date") {
+      const ae = toEpoch(av);
+      const be = toEpoch(bv);
+      if (ae === null && be === null) return 0;
+      if (ae === null) return 1;
+      if (be === null) return -1;
+      return sign * (ae - be);
+    }
+    return sign * av.trim().toLowerCase().localeCompare(bv.trim().toLowerCase());
+  });
 }
 
 function aggregateValues(op: string, values: number[]): number | null {
@@ -523,7 +571,10 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
 
     case "rows": {
       const rows = applyFilters(parsed, schema, query.filters);
-      const shown = rows.slice(0, query.limit);
+      // Sort before slicing: the limit keeps the first N of the
+      // sorted order, not the first N of the sheet.
+      const ordered = query.sort ? sortRows(rows, schema, query.sort) : rows;
+      const shown = ordered.slice(0, query.limit);
       const records = shown.map((row) => {
         const rec: Record<string, string> = {};
         parsed.headers.forEach((h, i) => {
@@ -537,6 +588,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         rows: records,
         totalMatched: rows.length,
         limitedTo: rows.length > query.limit ? query.limit : undefined,
+        sortedBy: query.sort,
       };
     }
 

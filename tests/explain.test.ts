@@ -162,6 +162,17 @@ describe("describeQuery", () => {
     expect(lines).toContain("limit: 10");
   });
 
+  it("names the sort on a sorted rows query", () => {
+    const lines = describeQuery({
+      kind: "rows",
+      filters: [],
+      limit: 10,
+      sort: { column: "revenue", direction: "desc" },
+    });
+    expect(lines[0]).toBe("matching rows (first 10), sorted by revenue (descending)");
+    expect(lines).toContain("sorted by: revenue (descending)");
+  });
+
   it("names both columns of a correlation", () => {
     expect(
       describeQuery({

@@ -306,10 +306,16 @@ function composeRows(
   parsed?: ParsedCsv,
 ): string {
   if (result.totalMatched === 0) return "No rows match.";
+  // A sorted listing says so, so the reader knows the table is not
+  // in sheet order (and which end they are looking at).
+  const sorted =
+    result.sortedBy !== undefined
+      ? `, sorted by ${result.sortedBy.column} (${result.sortedBy.direction === "desc" ? "descending" : "ascending"})`
+      : "";
   const scope =
     result.limitedTo !== undefined
-      ? `Showing ${result.rows.length} of ${result.totalMatched} matching rows`
-      : `${result.totalMatched} matching ${plural(result.totalMatched, "row")}`;
+      ? `Showing ${result.rows.length} of ${result.totalMatched} matching rows${sorted}`
+      : `${result.totalMatched} matching ${plural(result.totalMatched, "row")}${sorted}`;
   const header = `| ${result.headers.join(" | ")} |`;
   const divider = `| ${result.headers.map(() => "---").join(" | ")} |`;
   // Row cells are raw CSV text; format numeric columns the same way

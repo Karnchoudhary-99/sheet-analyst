@@ -36,6 +36,7 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["90th percentile of salary", staff],
   ["total revenue where revenue between 100 and 200", sales],
   ["revenue trend by month", monthly],
+  ["show rows sorted by revenue descending", sales],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

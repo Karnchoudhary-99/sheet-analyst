@@ -110,6 +110,17 @@ export const EVAL_GATE = 0.8;
  * headed "Bottom N of M", never "Top N". A bottom-N over a group
  * plus a time bucket abstains, same as top-N.
  *
+ * sorted rows — "show rows sorted by revenue descending" lists the
+ * 8 sales rows highest first (449.85, 400, 240, 224.91, 199.92,
+ * 149.97, 124.95, 0); ascending puts the zero-revenue row first and
+ * the blank-units row sorts last in both directions (it has no
+ * units value at all). "show rows sorted by region" orders East,
+ * East, North, North, North, South, South, West. The gold cases assert order by
+ * expecting a substring that spans two adjacent table rows, so a
+ * wrong order fails even though every row is present. Sorting an
+ * unknown column, or putting a sort phrase on an aggregate,
+ * abstains.
+ *
  * mode and distinct count — sales regions: North 3, South 2, East 2,
  * West 1, so the mode is North (3 of 8 rows, 4 distinct values);
  * sales products tie at 3 each (Widget A, Widget B) so the
@@ -190,6 +201,47 @@ export const GOLD_SET: EvalCase[] = [
     question: "highest revenue",
     expect: ["Widget C", "449.85"],
     note: "largest single revenue row is Widget C, South, 449.85",
+  },
+  {
+    sheet: "sales",
+    question: "show rows sorted by revenue descending",
+    expect: [
+      "8 matching rows, sorted by revenue (descending)",
+      "| 449.85 |\n| 2026-01-08 | East | Widget A | 20 | 400 |",
+    ],
+    note:
+      "descending revenue is 449.85, 400, 240, 224.91, 199.92, 149.97, 124.95, 0 — the two-row span proves the 449.85 row comes first",
+  },
+  {
+    sheet: "sales",
+    question: "show rows sorted by revenue ascending",
+    expect: [
+      "8 matching rows, sorted by revenue (ascending)",
+      "| 0 |\n| 2026-01-09 | West | Widget B | 5 | 124.95 |",
+    ],
+    note:
+      "ascending revenue starts 0, 124.95 — the zero-revenue row (blank units) is first; the two-row span proves the order",
+  },
+  {
+    sheet: "sales",
+    question: "show rows sorted by region",
+    expect: [
+      "8 matching rows, sorted by region (ascending)",
+      "| 2026-01-12 | East | Widget B | 9 | 224.91 |\n| 2026-01-05 | North | Widget A | 12 | 240 |",
+    ],
+    note: "regions sort East, East, North, North, North, South, South, West — the last East row precedes the first North row",
+  },
+  {
+    sheet: "sales",
+    question: "show rows sorted by profit descending",
+    expect: "abstain",
+    note: "no profit column — the parser refuses instead of listing unsorted rows",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue sorted by region",
+    expect: "abstain",
+    note: "a sort phrase on an aggregate is refused instead of answering the plain total",
   },
   {
     sheet: "sales",
