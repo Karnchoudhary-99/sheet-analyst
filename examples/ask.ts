@@ -22,6 +22,7 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["total revenue by region and product", sales],
   ["top 2 region and product by revenue", sales],
   ["top 3 products by revenue", sales],
+  ["bottom 3 products by revenue", sales],
   ["how many rows where region is North", sales],
   ["average salary by department", staff],
   ["how many employees in Engineering", staff],
