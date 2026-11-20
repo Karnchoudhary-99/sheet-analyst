@@ -226,6 +226,20 @@ function composeValues(result: Extract<QueryResult, { kind: "values" }>): string
   return `${scope}:\n${lines.join("\n")}`;
 }
 
+function composeMode(result: Extract<QueryResult, { kind: "mode" }>): string {
+  if (result.value === null) {
+    return (
+      `I could not find the most common ${result.column} — the column has no usable ` +
+      `values in the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")}.`
+    );
+  }
+  return (
+    `The most common ${result.column} is ${result.value} ` +
+    `(${result.count} of ${result.rowsMatched} ${plural(result.rowsMatched, "row")}, ` +
+    `out of ${result.totalDistinct} distinct ${plural(result.totalDistinct, "value")}).`
+  );
+}
+
 function composeRows(
   result: Extract<QueryResult, { kind: "rows" }>,
   parsed?: ParsedCsv,
@@ -274,6 +288,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeShare(result);
     case "values":
       return composeValues(result);
+    case "mode":
+      return composeMode(result);
   }
 }
 

@@ -18,6 +18,8 @@
  *   where `share` is the fraction (0.35 for 35%, empty when the
  *   total is zero) and `label` is `total <column>` or `rows`.
  *   Distinct values become one row per value of `value,rows`.
+ *   A mode becomes one row of `column,value,rows,distinct_values,
+ *   rows_matched` (empty value when the column has no usable values).
  *   An abstention (no result) exports as a single `question,answer` row — the file still says
  *   what happened instead of being silently empty.
  */
@@ -124,6 +126,17 @@ export function resultToCsv(
       }
       return lines.join("\n");
     }
+    case "mode":
+      return [
+        csvRow(["column", "value", "rows", "distinct_values", "rows_matched"]),
+        csvRow([
+          result.column,
+          result.value ?? "",
+          String(result.count),
+          String(result.totalDistinct),
+          String(result.rowsMatched),
+        ]),
+      ].join("\n");
   }
 }
 
