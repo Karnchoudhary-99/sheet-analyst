@@ -553,6 +553,39 @@ describe("composeAnswer share", () => {
         "(389.97 of 1,114.84, from 2 of 6 rows).",
     );
   });
+
+  it("states a value share over an or subset", () => {
+    const answer = answerQuestion("what share of revenue is North or South", SALES);
+    // North + South 589.89 of 1,114.84 = 52.91%, from 4 of 6 rows.
+    expect(answer).toBe(
+      "Region is North or region is South accounts for 52.91% of total revenue " +
+        "(589.89 of 1,114.84, from 4 of 6 rows).",
+    );
+  });
+
+  it("states a row-count share over an or subset", () => {
+    const answer = answerQuestion("what share of rows are in North or South", SALES);
+    expect(answer).toBe(
+      "4 of 6 rows (66.67%) match region is North or region is South.",
+    );
+  });
+
+  it("parenthesises a multi-filter or branch in a share", () => {
+    const answer = answerQuestion(
+      "what share of revenue where region is North or South and product is Widget A",
+      SALES,
+    );
+    // (North) or (South and Widget A): North 389.97, no South Widget A.
+    expect(answer).toBe(
+      "Region is North or (region is South and product is Widget A) accounts for " +
+        "34.98% of total revenue (389.97 of 1,114.84, from 3 of 6 rows).",
+    );
+  });
+
+  it("abstains when an or share spans two columns", () => {
+    const answer = answerQuestion("what share of revenue is North or Widget A", SALES);
+    expect(answer).toMatch(/needs one column/);
+  });
 });
 
 describe("composeAnswer distribution", () => {

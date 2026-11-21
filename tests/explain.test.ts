@@ -288,6 +288,43 @@ describe("describeQuery share", () => {
       "filters: region = North",
     ]);
   });
+
+  it("describes an or subset with its alternatives", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,12,240.00\n" +
+        "2026-01-06,South,Widget B,8,199.92\n",
+    );
+    const explained = explainQuestion(
+      "what share of revenue is North or South",
+      sales,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "share of total revenue for region = North or region = South",
+      "operation: share",
+      "column: revenue",
+      "filters: region = North or region = South",
+    ]);
+  });
+
+  it("parenthesises a multi-filter or branch", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,12,240.00\n" +
+        "2026-01-06,South,Widget B,8,199.92\n",
+    );
+    const explained = explainQuestion(
+      "total revenue where region is North or South and product is Widget A",
+      sales,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toContain(
+      "filters: region = North or (region = South and product = Widget A)",
+    );
+  });
 });
 
 describe("describeQuery distinct values", () => {

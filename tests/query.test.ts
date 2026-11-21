@@ -549,6 +549,168 @@ describe("parseQuestion compound filters", () => {
   });
 });
 
+describe("parseQuestion or filters", () => {
+  it("parses a bare value as the same column's second branch", () => {
+    const r = parseQuestion("total revenue where region is North or South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([]);
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "region", op: "=", value: "South" }],
+      ]);
+    }
+  });
+
+  it("parses two full conditions joined by or", () => {
+    const r = parseQuestion(
+      "how many rows where revenue > 400 or revenue < 130",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.orGroups).toEqual([
+        [{ column: "revenue", op: ">", value: "400" }],
+        [{ column: "revenue", op: "<", value: "130" }],
+      ]);
+    }
+  });
+
+  it("parses or across two columns", () => {
+    const r = parseQuestion(
+      "total revenue where region is North or product is Widget C",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "product", op: "=", value: "Widget C" }],
+      ]);
+    }
+  });
+
+  it("parses three branches", () => {
+    const r = parseQuestion(
+      "total revenue where region is North or South or East",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "region", op: "=", value: "South" }],
+        [{ column: "region", op: "=", value: "East" }],
+      ]);
+    }
+  });
+
+  it("binds and tighter than or", () => {
+    // "a and b or c" is (a and b) or c: the second branch inherits
+    // the region from the first, then adds its own product filter.
+    const r = parseQuestion(
+      "total revenue where region is North or South and product is Widget A",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [
+          { column: "region", op: "=", value: "South" },
+          { column: "product", op: "=", value: "Widget A" },
+        ],
+      ]);
+    }
+  });
+
+  it("keeps a between-range's own and inside an or branch", () => {
+    const r = parseQuestion(
+      "how many rows where revenue between 100 and 200 or revenue > 400",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.orGroups).toEqual([
+        [
+          { column: "revenue", op: ">=", value: "100" },
+          { column: "revenue", op: "<=", value: "200" },
+        ],
+        [{ column: "revenue", op: ">", value: "400" }],
+      ]);
+    }
+  });
+
+  it("does not split an or inside a quoted value", () => {
+    const r = parseQuestion(
+      'total revenue where product is "Salt or Pepper"',
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "product", op: "=", value: "Salt or Pepper" },
+      ]);
+      expect(r.query.orGroups).toBeUndefined();
+    }
+  });
+
+  it("reads an unquoted or between two values as two branches", () => {
+    // Unlike "and" (which may sit inside a value), an unquoted
+    // "or" between two values is two alternatives — a single
+    // product literally named "Salt or Pepper" needs quotes.
+    const r = parseQuestion("total revenue where product is Salt or Pepper", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([]);
+      expect(r.query.orGroups).toEqual([
+        [{ column: "product", op: "=", value: "Salt" }],
+        [{ column: "product", op: "=", value: "Pepper" }],
+      ]);
+    }
+  });
+
+  it("abstains naming the unknown column in an or branch", () => {
+    const r = parseQuestion(
+      "total revenue where region is North or profit is 10",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/profit is 10/);
+  });
+
+  it("abstains on a bare value with nothing to inherit from", () => {
+    const r = parseQuestion("total revenue where South or region is North", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell what "South" means/);
+  });
+
+  it("abstains when a bare value follows a non-equality filter", () => {
+    // "200" cannot inherit from "revenue > 100" — the operator is
+    // not "=", so the question is ambiguous.
+    const r = parseQuestion("total revenue where revenue > 100 or 200", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell what "200" means/);
+  });
+
+  it("refuses a column phrase with stray words instead of dropping them", () => {
+    const r = parseQuestion(
+      "total revenue where South and product is Widget A",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/is not part of a column name/);
+  });
+
+  it("still parses 'is greater than' with the verb in the phrase", () => {
+    const r = parseQuestion("total revenue where revenue is greater than 100", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([{ column: "revenue", op: ">", value: "100" }]);
+    }
+  });
+});
+
 describe("parseQuestion distribution", () => {
   it("parses a distribution question", () => {
     const r = parseQuestion("distribution of salary", STAFF);
