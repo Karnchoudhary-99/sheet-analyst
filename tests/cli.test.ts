@@ -255,6 +255,31 @@ describe("runCli end-to-end", () => {
     expect(c.stdout.join("")).toContain("1 of 5 rows is missing salary");
   });
 
+  it("answers a distribution question end to end", async () => {
+    const text = capture();
+    expect(await runCli(["ask", staffPath, "distribution of salary"], text.out)).toBe(0);
+    expect(text.stdout.join("")).toContain(
+      "Distribution of salary (4 values across 5 rows):",
+    );
+    expect(text.stdout.join("")).toContain("88,000–90,500");
+
+    const chart = capture();
+    expect(
+      await runCli(
+        ["chart", join(root, "examples", "scores.csv"), "histogram of score"],
+        chart.out,
+      ),
+    ).toBe(0);
+    expect(chart.stdout.join("")).toContain("8–132");
+  });
+
+  it("explains a distribution question end to end", async () => {
+    const c = capture();
+    expect(await runCli(["explain", staffPath, "distribution of salary"], c.out)).toBe(0);
+    expect(c.stdout.join("")).toContain("distribution of salary");
+    expect(c.stdout.join("")).toContain("operation: histogram");
+  });
+
   it("answers a compound where filter end to end", async () => {
     const text = capture();
     expect(
@@ -686,6 +711,24 @@ describe("runCli ask --out", () => {
       expect(written).toBe(
         "label,value,rows_at_value,distinct_values,rows_matched,values_used\n2nd highest salary,95000,1,4,5,4\n",
       );
+    } finally {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+  });
+
+  it("writes a distribution answer as CSV", async () => {
+    const tmp = join(root, "examples", ".cli-out-dist.csv");
+    try {
+      const c = capture();
+      expect(
+        await runCli(["ask", staffPath, "distribution of salary", "--out", tmp], c.out),
+      ).toBe(0);
+      expect(c.stdout.join("")).toContain(`Wrote ${tmp}`);
+      const written = readFileSync(tmp, "utf8");
+      // Header + 4 bins (88,000 / 91,000 / 95,000 / 98,000), then the CLI's trailing newline.
+      expect(written).toContain("from,to,rows\n");
+      expect(written.split("\n")).toHaveLength(6);
+      expect(written.trimEnd().endsWith(",1")).toBe(true);
     } finally {
       if (existsSync(tmp)) unlinkSync(tmp);
     }

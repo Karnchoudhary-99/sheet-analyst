@@ -208,3 +208,36 @@ export function describe(parsed: ParsedCsv): { name: string; stats: ColumnStats 
     ),
   }));
 }
+
+export interface HistogramBin {
+  /** Inclusive lower edge. */
+  from: number;
+  /** Exclusive upper edge (the last bin includes its max). */
+  to: number;
+  count: number;
+}
+
+/**
+ * Bucket `values` into `bins` equal-width bins spanning [min, max].
+ * An empty input yields no bins; a single distinct value yields one
+ * bin holding everything. The maximum value always lands in the last
+ * bin, never past the edge. Lives here (not in charts.ts) so the
+ * query engine can bin values without importing the rendering layer.
+ */
+export function histogram(values: number[], bins = 10): HistogramBin[] {
+  if (values.length === 0 || bins < 1) return [];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) return [{ from: min, to: max, count: values.length }];
+  const width = (max - min) / bins;
+  const out: HistogramBin[] = Array.from({ length: bins }, (_, i) => ({
+    from: min + i * width,
+    to: min + (i + 1) * width,
+    count: 0,
+  }));
+  for (const v of values) {
+    const idx = Math.min(bins - 1, Math.floor((v - min) / width));
+    out[idx]!.count += 1;
+  }
+  return out;
+}

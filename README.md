@@ -39,6 +39,7 @@ top-N) directly from the spreadsheet.
 - [x] Duplicate questions ("how many duplicate rows", "which columns have duplicates" — a count per column or a whole-sheet report over every column, worst first, plus the exact duplicate rows; "show duplicate rows" / "show duplicates in product" lists the rows; a repeated value is counted from its second occurrence, blanks never count as duplicates)
 - [x] Ordinal-rank questions ("second highest salary", "3rd lowest revenue" — the nth distinct value from the top or the bottom of one numeric column; ties share the rank, so the answer also says how many rows hold that value; a rank past the end says so instead of falling back to the last value)
 - [x] Compound filters ("total revenue where region is North and product is Widget A", "how many rows where revenue > 100 and units < 10" — every condition must hold; a between-range keeps its own "and"; an unknown column in any condition abstains naming it; an "and" inside a value is left alone)
+- [x] Distribution questions ("distribution of salary", "histogram of revenue" — values binned into an equal-width histogram, at most 10 bins and never more than the distinct-value count; a text column abstains; `sheet chart` draws it, `ask --out` exports one CSV row per bin)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -171,7 +172,10 @@ comes from North", "what share of rows are in North"), and distinct
 values ("list unique regions", "what are the distinct products"),
 mode ("most common product", "what is the mode of region") and
 distinct count ("how many distinct regions", "count distinct
-products"), percentile ("90th percentile of salary", "p90 revenue")
+products"), distribution ("distribution of salary", "histogram of
+revenue" — values binned into an equal-width histogram, at most 10
+bins and never more than the distinct-value count; `sheet chart`
+draws it), percentile ("90th percentile of salary", "p90 revenue")
 and range filters ("total revenue where revenue between 100 and
 200" — inclusive on both ends, the smaller value first; a reversed
 range abstains instead of answering "no rows"), rank ("second

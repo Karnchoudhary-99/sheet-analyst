@@ -549,6 +549,66 @@ describe("parseQuestion compound filters", () => {
   });
 });
 
+describe("parseQuestion distribution", () => {
+  it("parses a distribution question", () => {
+    const r = parseQuestion("distribution of salary", STAFF);
+    expect(r).toEqual({
+      ok: true,
+      query: { kind: "distribution", column: "salary", filters: [] },
+    });
+  });
+
+  it("parses histogram as a distribution question", () => {
+    const r = parseQuestion("histogram of revenue", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.query.kind).toBe("distribution");
+  });
+
+  it("parses a show-me distribution question", () => {
+    const r = parseQuestion("show distribution of salary", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "distribution") {
+      expect(r.query.column).toBe("salary");
+    }
+  });
+
+  it("carries filters into a distribution question", () => {
+    const r = parseQuestion("distribution of revenue where region is North", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "distribution") {
+      expect(r.query.filters).toEqual([{ column: "region", op: "=", value: "North" }]);
+    }
+  });
+
+  it("resolves a trailing in-value filter for a distribution", () => {
+    const r = parseQuestion("distribution of salary in Engineering", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "distribution") {
+      expect(r.query.filters).toEqual([
+        { column: "department", op: "=", value: "Engineering" },
+      ]);
+    }
+  });
+
+  it("abstains on a text column", () => {
+    const r = parseQuestion("distribution of region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a numeric column/);
+  });
+
+  it("abstains on an unknown column", () => {
+    const r = parseQuestion("distribution of profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a time-bucketed distribution", () => {
+    const r = parseQuestion("distribution of salary by month", STAFF);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/time period/);
+  });
+});
+
 describe("parseQuestion sorted rows", () => {
   it("parses 'sorted by' with an explicit descending direction", () => {
     const r = parseQuestion("show rows sorted by revenue descending", SALES);
