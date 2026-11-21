@@ -39,6 +39,8 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["total revenue where revenue between 100 and 200", sales],
   ["total revenue where region is North and product is Widget A", sales],
   ["how many rows where region is North and revenue > 100", sales],
+  ["total revenue where region is North or South", sales],
+  ["what share of revenue is North or South", sales],
   ["distribution of salary", staff],
   ["histogram of score", scores],
   ["revenue trend by month", monthly],

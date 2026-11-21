@@ -183,6 +183,82 @@ describe("executeQuery compound filters", () => {
   });
 });
 
+describe("executeQuery or filters", () => {
+  it("unions two branches of the same column", () => {
+    const r = ask("total revenue where region is North or South");
+    if (r.kind === "scalar") {
+      // North 389.97 + South 199.92; East and West are cut.
+      expect(r.value).toBeCloseTo(589.89, 2);
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+
+  it("unions two comparisons on one column", () => {
+    const r = ask("how many rows where revenue > 300 or revenue < 130");
+    if (r.kind === "scalar") {
+      // Above 300: the 400 row. Below 130: 124.95 and 0.00.
+      expect(r.value).toBe(3);
+    }
+    const total = ask("total revenue where revenue > 300 or revenue < 130");
+    if (total.kind === "scalar") {
+      expect(total.value).toBeCloseTo(524.95, 2);
+    }
+  });
+
+  it("unions branches across two columns", () => {
+    const r = ask("total revenue where region is North or product is Widget C");
+    if (r.kind === "scalar") {
+      // North 389.97 + Widget C 149.97, but the Widget C row is
+      // already North, so it is counted once: 389.97.
+      expect(r.value).toBeCloseTo(389.97, 2);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("binds and tighter than or", () => {
+    // (revenue > 250 and region is North) or (region is South):
+    // no North row is above 250, so the answer is South alone.
+    // The other reading — revenue > 250 over (North or South) —
+    // would match nothing at all.
+    const r = ask("total revenue where revenue > 250 and region is North or South");
+    if (r.kind === "scalar") {
+      expect(r.value).toBeCloseTo(199.92, 2);
+      expect(r.rowsMatched).toBe(1);
+    }
+  });
+
+  it("groups the union", () => {
+    const r = ask("total revenue by region where region is North or East");
+    expect(r.kind).toBe("groups");
+    if (r.kind === "groups") {
+      expect(r.groups).toEqual([
+        { key: "East", keys: ["East"], value: 400, count: 1 },
+        { key: "North", keys: ["North"], value: 389.97, count: 3 },
+      ]);
+    }
+  });
+
+  it("shares out an or subset", () => {
+    const r = ask("what share of revenue is North or South");
+    expect(r.kind).toBe("share");
+    if (r.kind === "share") {
+      // North + South 589.89 of 1,114.84.
+      expect(r.share).toBeCloseTo(0.5291, 4);
+      expect(r.subsetRows).toBe(4);
+    }
+  });
+
+  it("counts rows in an or subset", () => {
+    const r = ask("what share of rows are in North or South");
+    expect(r.kind).toBe("share");
+    if (r.kind === "share") {
+      expect(r.subsetValue).toBe(4);
+      expect(r.totalValue).toBe(6);
+      expect(r.share).toBeCloseTo(2 / 3, 4);
+    }
+  });
+});
+
 describe("executeQuery distribution", () => {
   it("bins values into at most 10 equal-width bins", () => {
     const r = ask("distribution of revenue");

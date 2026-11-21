@@ -112,6 +112,8 @@ export type QueryResult =
       column: string | null;
       /** The subset whose share this is (at least one filter). */
       filters: Filter[];
+      /** OR-groups of the subset, when the question used "or". */
+      orGroups?: Filter[][];
       /** The subset's total (sum of the column) or subset row count. */
       subsetValue: number;
       /** The whole sheet's total (sum of the column) or total row count. */
@@ -178,6 +180,8 @@ export type QueryResult =
       /** Rows with a usable numeric value. */
       valuesUsed: number;
       filters: Filter[];
+      /** OR-groups of the filters, when the question used "or". */
+      orGroups?: Filter[][];
     }
   | {
       kind: "trend";
@@ -410,19 +414,31 @@ function compareValues(cell: string, info: ColumnInfo, op: Filter["op"], raw: st
   return false;
 }
 
+/**
+ * Rows matching a query's filters: every `filters` entry must hold
+ * (AND), and when `orGroups` is non-empty at least one group must
+ * hold fully (each group is itself an AND). A row passes only when
+ * both sides pass — "where revenue > 100 and region is North or
+ * South" is revenue > 100 AND (North OR South), never just the OR.
+ */
 export function applyFilters(
   parsed: ParsedCsv,
   schema: ColumnInfo[],
   filters: Filter[],
+  orGroups: Filter[][] = [],
 ): string[][] {
-  if (filters.length === 0) return parsed.rows;
+  if (filters.length === 0 && orGroups.length === 0) return parsed.rows;
   const colIndex = new Map(schema.map((c, i) => [c.name, i]));
-  return parsed.rows.filter((row) =>
-    filters.every((f) => {
+  const matches = (row: string[], fs: Filter[]): boolean =>
+    fs.every((f) => {
       const idx = colIndex.get(f.column);
       if (idx === undefined) return false;
       return compareValues(row[idx] ?? "", schema[idx], f.op, f.value);
-    }),
+    });
+  return parsed.rows.filter(
+    (row) =>
+      matches(row, filters) &&
+      (orGroups.length === 0 || orGroups.some((g) => matches(row, g))),
   );
 }
 
@@ -533,7 +549,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
 
   switch (query.kind) {
     case "count": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       return {
         kind: "scalar",
         label: "count",
@@ -546,7 +562,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     case "aggregate": {
       const info = colInfo(query.column);
       if (!info) throw new Error(`unknown column: ${query.column}`);
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const values = rows
         .map((r) => r[colIndex.get(query.column)!] ?? "")
         .filter((v) => !isNullValue(v))
@@ -562,7 +578,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "group": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const gIdxs = query.groupBy.map((name) => colIndex.get(name)!);
       const cIdx = query.column ? colIndex.get(query.column)! : -1;
       // A time bucket only ever groups one column (the parser
@@ -620,7 +636,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "top": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       if (query.groupBy) {
         // Rank groups by the summed column (the "by revenue" in
         // "top 3 products by revenue"). With a time bucket the
@@ -702,7 +718,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     case "correlation": {
       const aIdx = colIndex.get(query.columnA)!;
       const bIdx = colIndex.get(query.columnB)!;
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       // Only rows where BOTH columns have a usable numeric value
       // pair up; a blank in either column drops the row from the
       // pairing, never from the row count.
@@ -729,7 +745,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "rows": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       // Sort before slicing: the limit keeps the first N of the
       // sorted order, not the first N of the sheet.
       const ordered = query.sort ? sortRows(rows, schema, query.sort) : rows;
@@ -752,7 +768,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "share": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const totalRows = parsed.rows.length;
       if (query.column === null) {
         // Row-count share: the filtered rows as a fraction of all rows.
@@ -760,6 +776,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
           kind: "share",
           column: null,
           filters: query.filters,
+          orGroups: query.orGroups,
           subsetValue: rows.length,
           totalValue: totalRows,
           share: totalRows === 0 ? null : rows.length / totalRows,
@@ -792,6 +809,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         kind: "share",
         column: query.column,
         filters: query.filters,
+        orGroups: query.orGroups,
         subsetValue: subset.sum,
         totalValue: total.sum,
         share: total.sum === 0 ? null : subset.sum / total.sum,
@@ -803,7 +821,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "distinct": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const cIdx = colIndex.get(query.column)!;
       const values = countRawValues(rows, cIdx);
       const limited = values.length > query.limit;
@@ -818,7 +836,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "mode": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const cIdx = colIndex.get(query.column)!;
       const values = countRawValues(rows, cIdx);
       const top = values[0];
@@ -836,7 +854,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     case "distribution": {
       const info = colInfo(query.column);
       if (!info) throw new Error(`unknown column: ${query.column}`);
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const values = rows
         .map((r) => r[colIndex.get(query.column)!] ?? "")
         .filter((v) => !isNullValue(v))
@@ -855,13 +873,14 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         rowsMatched: rows.length,
         valuesUsed: values.length,
         filters: query.filters,
+        orGroups: query.orGroups,
       };
     }
 
     case "percentile": {
       const info = colInfo(query.column);
       if (!info) throw new Error(`unknown column: ${query.column}`);
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const values = rows
         .map((r) => r[colIndex.get(query.column)!] ?? "")
         .filter((v) => !isNullValue(v))
@@ -880,7 +899,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     case "rank": {
       const info = colInfo(query.column);
       if (!info) throw new Error(`unknown column: ${query.column}`);
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const values = rows
         .map((r) => r[colIndex.get(query.column)!] ?? "")
         .filter((v) => !isNullValue(v))
@@ -909,7 +928,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "distinctCount": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const cIdx = colIndex.get(query.column)!;
       const values = countRawValues(rows, cIdx);
       return {
@@ -924,7 +943,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     case "comparison": {
       const dIdx = colIndex.get(query.dateColumn)!;
       const cIdx = query.column ? colIndex.get(query.column)! : -1;
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const inPeriod = (row: string[], bucket: TimeBucket, key: string): boolean => {
         const b = bucketDate(row[dIdx] ?? "", bucket);
         return b !== null && b.key === key;
@@ -967,7 +986,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "trend": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const dIdx = colIndex.get(query.dateColumn)!;
       const cIdx = colIndex.get(query.column)!;
       // Bucket the filtered rows by period. Rows with no usable date
@@ -1033,7 +1052,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "missing": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       // A "missing value" is what the schema calls null: empty, or
       // a marker like NA or N/A — never a zero, which is a value.
       const countMissing = (cIdx: number): number => {
@@ -1085,7 +1104,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "outliers": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       // One entry per numeric column: the Tukey fence over the
       // matched rows' usable values, and how many of them fall
       // outside it. A blank is not an outlier — it is no value —
@@ -1164,7 +1183,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "duplicates": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       // Exact duplicate rows: rows beyond the first occurrence of
       // an identical row — raw cell text, blanks included, the same
       // definition the data-quality profile uses. Their positions
@@ -1251,7 +1270,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
     }
 
     case "aboveBelow": {
-      const rows = applyFilters(parsed, schema, query.filters);
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
       const cIdx = colIndex.get(query.column)!;
       // The baseline is computed over the matched rows only, skipping
       // rows with no usable value — a blank is not a zero.

@@ -34,8 +34,25 @@ function describeFilter(filter: Filter): string {
   return `${filter.column} ${filter.op} ${filter.value}`;
 }
 
-function describeFilters(filters: Filter[]): string {
-  return filters.length === 0 ? "none" : filters.map(describeFilter).join(", ");
+function describeFilters(filters: Filter[], orGroups?: Filter[][]): string {
+  const plain = filters.map(describeFilter);
+  const groups = (orGroups ?? []).map((g) => {
+    const inner = g.map(describeFilter).join(" and ");
+    return g.length > 1 ? `(${inner})` : inner;
+  });
+  const parts = [...plain];
+  if (groups.length > 0) {
+    // Parenthesise the OR set when it sits next to plain filters,
+    // so the precedence is visible; on its own it reads plainly.
+    parts.push(
+      plain.length === 0
+        ? groups.join(" or ")
+        : groups.length > 1
+          ? `(${groups.join(" or ")})`
+          : groups[0]!,
+    );
+  }
+  return parts.length === 0 ? "none" : parts.join(", ");
 }
 
 /**
@@ -50,13 +67,13 @@ export function describeQuery(query: Query): string[] {
         `${OP_LABEL[query.op] ?? query.op} of ${query.column}`,
         `operation: ${query.op}`,
         `column: ${query.column}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "count":
       return [
         "count of matching rows",
         "operation: count",
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "group": {
       const bucket = query.bucket ? `, bucketed by ${query.bucket}` : "";
@@ -70,7 +87,7 @@ export function describeQuery(query: Query): string[] {
         ...(query.column ? [`column: ${query.column}`] : []),
         `group by: ${query.groupBy.join(", ")}`,
         ...(query.bucket ? [`time bucket: ${query.bucket}`] : []),
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "top": {
@@ -87,7 +104,7 @@ export function describeQuery(query: Query): string[] {
         `limit: ${query.limit} (${query.direction})`,
         ...(query.groupBy ? [`group by: ${query.groupBy.join(", ")}`] : []),
         ...(query.bucket ? [`time bucket: ${query.bucket}`] : []),
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "rows": {
@@ -103,7 +120,7 @@ export function describeQuery(query: Query): string[] {
               `sorted by: ${query.sort.column} (${query.sort.direction === "desc" ? "descending" : "ascending"})`,
             ]
           : []),
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "correlation":
@@ -112,7 +129,7 @@ export function describeQuery(query: Query): string[] {
         "operation: correlation",
         `column A: ${query.columnA}`,
         `column B: ${query.columnB}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "comparison": {
       const what = query.column
@@ -125,7 +142,7 @@ export function describeQuery(query: Query): string[] {
         `date column: ${query.dateColumn}`,
         `period A: ${query.periodA.label}`,
         `period B: ${query.periodB.label}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "share": {
@@ -133,10 +150,10 @@ export function describeQuery(query: Query): string[] {
         ? `share of total ${query.column}`
         : "share of rows";
       return [
-        `${what} for ${describeFilters(query.filters)}`,
+        `${what} for ${describeFilters(query.filters, query.orGroups)}`,
         "operation: share",
         ...(query.column ? [`column: ${query.column}`] : []),
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "distinct":
@@ -145,28 +162,28 @@ export function describeQuery(query: Query): string[] {
         "operation: list distinct values",
         `column: ${query.column}`,
         `limit: ${query.limit}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "mode":
       return [
         `most common value of ${query.column}`,
         "operation: mode",
         `column: ${query.column}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "distribution":
       return [
         `distribution of ${query.column}`,
         "operation: histogram",
         `column: ${query.column}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "distinctCount":
       return [
         `distinct count of ${query.column}`,
         "operation: count distinct values",
         `column: ${query.column}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "percentile":
       return [
@@ -174,7 +191,7 @@ export function describeQuery(query: Query): string[] {
         "operation: percentile",
         `column: ${query.column}`,
         `percentile: ${query.p}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "rank":
       return [
@@ -183,7 +200,7 @@ export function describeQuery(query: Query): string[] {
         `column: ${query.column}`,
         `rank: ${query.n}`,
         `direction: ${query.direction}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "trend": {
       const what = `${OP_LABEL[query.op] ?? query.op} ${query.column}`;
@@ -193,7 +210,7 @@ export function describeQuery(query: Query): string[] {
         `column: ${query.column}`,
         `date column: ${query.dateColumn}`,
         `time bucket: ${query.bucket}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "aboveBelow":
@@ -202,7 +219,7 @@ export function describeQuery(query: Query): string[] {
         `operation: ${query.direction} ${query.baseline}`,
         `column: ${query.column}`,
         `baseline: ${query.baseline}`,
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     case "missing": {
       const what = query.listRows
@@ -215,7 +232,7 @@ export function describeQuery(query: Query): string[] {
         "operation: missing values",
         ...(query.column ? [`column: ${query.column}`] : []),
         ...(query.listRows ? ["list rows: true"] : []),
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "outliers": {
@@ -229,7 +246,7 @@ export function describeQuery(query: Query): string[] {
         "operation: outliers",
         ...(query.column ? [`column: ${query.column}`] : []),
         ...(query.listRows ? ["list rows: true"] : []),
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
     case "duplicates": {
@@ -245,7 +262,7 @@ export function describeQuery(query: Query): string[] {
         "operation: duplicates",
         ...(query.column ? [`column: ${query.column}`] : []),
         ...(query.listRows ? ["list rows: true"] : []),
-        `filters: ${describeFilters(query.filters)}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
   }
