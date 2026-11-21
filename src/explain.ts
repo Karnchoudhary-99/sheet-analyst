@@ -154,6 +154,13 @@ export function describeQuery(query: Query): string[] {
         `column: ${query.column}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
+    case "distribution":
+      return [
+        `distribution of ${query.column}`,
+        "operation: histogram",
+        `column: ${query.column}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
     case "distinctCount":
       return [
         `distinct count of ${query.column}`,

@@ -164,6 +164,13 @@ export function resultToCsv(
       }
       return lines.join("\n");
     }
+    case "distribution": {
+      const lines = [csvRow(["from", "to", "rows"])];
+      for (const b of result.bins) {
+        lines.push(csvRow([String(b.from), String(b.to), String(b.count)]));
+      }
+      return lines.join("\n");
+    }
     case "mode":
       return [
         csvRow(["column", "value", "rows", "distinct_values", "rows_matched"]),
