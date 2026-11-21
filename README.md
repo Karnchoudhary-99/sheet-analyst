@@ -36,6 +36,7 @@ top-N) directly from the spreadsheet.
 - [x] Above/below-average questions ("rows with revenue above average", "which employees have salary below the median" — rows strictly on one side of the column's mean or median; equal-to-baseline rows are neither; a column with no usable value has no baseline and the answer says so)
 - [x] Missing-values questions ("how many rows are missing salary", "which columns have missing values" — a count per column or a whole-sheet report, worst first; "show rows missing revenue" lists the rows; empty and NA markers count as missing, a zero never does)
 - [x] Outlier questions ("how many outliers in score", "which columns have outliers" — a count per column or a whole-sheet report over numeric columns, worst first; "show outliers in score" lists the rows; Tukey IQR fence, the same fence the data-quality profile reports)
+- [x] Duplicate questions ("how many duplicate rows", "which columns have duplicates" — a count per column or a whole-sheet report over every column, worst first, plus the exact duplicate rows; "show duplicate rows" / "show duplicates in product" lists the rows; a repeated value is counted from its second occurrence, blanks never count as duplicates)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -235,7 +236,16 @@ column with no outliers says so with its fence (\"No outliers in
 revenue — every value is inside [-136.35, 593.81]\"), a column with
 too few values says so too, and a text column or a grouped question
 abstains. The fence is computed over the filtered rows, so
-\"outliers in score in Math\" judges only the Math rows. When a
+\"outliers in score in Math\" judges only the Math rows. Duplicates
+count rows beyond the first occurrence of a repeated value
+(\"how many duplicate products\" — \"4 of 7 rows are duplicates in
+product (57.14%) — 2 values appear more than once\"), and the
+whole-sheet report leads with the exact duplicate rows (\"3 of 7
+rows are exact duplicates of an earlier row\") before listing every
+column, worst first; \"show duplicate rows\" lists the exact
+duplicates themselves. Blank cells are not values, so two blanks
+never count as a duplicate, and different spellings (\"North\" vs
+\"north\") are different values. When a
 question cannot be understood unambiguously — unknown
 or ambiguous column, a value that belongs to several columns — the
 parser abstains with a reason instead of answering a different question.

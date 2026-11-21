@@ -15,6 +15,7 @@ const sales = parseCsv(readFileSync(join(root, "examples", "sales.csv"), "utf8")
 const staff = parseCsv(readFileSync(join(root, "examples", "employees.csv"), "utf8"));
 const monthly = parseCsv(readFileSync(join(root, "examples", "monthly-sales.csv"), "utf8"));
 const scores = parseCsv(readFileSync(join(root, "examples", "scores.csv"), "utf8"));
+const duplicates = parseCsv(readFileSync(join(root, "examples", "duplicates.csv"), "utf8"));
 
 const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["total revenue", sales],
@@ -45,6 +46,9 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["how many outliers in score", scores],
   ["which columns have outliers", scores],
   ["show outliers in score", scores],
+  ["how many duplicate rows", duplicates],
+  ["how many duplicate products", duplicates],
+  ["show duplicate rows", duplicates],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];
