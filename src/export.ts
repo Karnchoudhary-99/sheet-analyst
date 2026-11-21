@@ -36,6 +36,13 @@
  *   (the fraction, 0.125 for 12.5%; empty bounds when fewer than 4
  *   usable values, so no fence exists); a single-column question
  *   exports just that column's row.
+ *   Duplicates become one row per column of
+ *   `column,duplicate_rows,total_rows,percent_duplicates,values_with_duplicates`
+ *   (the fraction, 0.5714 for 57.14%); a whole-sheet report adds a
+ *   leading row for the exact duplicate rows
+ *   (`(full rows),duplicate_rows,total_rows,percent_duplicates,`
+ *   with no values-with-duplicates — a full row is not a value);
+ *   a single-column question exports just that column's row.
  */
 
 import type { QueryResult } from "./engine.js";
@@ -201,6 +208,45 @@ export function resultToCsv(
             e.total === 0 ? "" : String(e.outliers / e.total),
             e.lowBound === null ? "" : String(e.lowBound),
             e.highBound === null ? "" : String(e.highBound),
+          ]),
+        );
+      }
+      return lines.join("\n");
+    }
+    case "duplicates": {
+      const lines = [
+        csvRow([
+          "column",
+          "duplicate_rows",
+          "total_rows",
+          "percent_duplicates",
+          "values_with_duplicates",
+        ]),
+      ];
+      // A whole-sheet report leads with the exact duplicate rows —
+      // the headline number the answer opens with — before the
+      // per-column rows.
+      if (result.column === null) {
+        lines.push(
+          csvRow([
+            "(full rows)",
+            String(result.duplicateRows),
+            String(result.rowsMatched),
+            result.rowsMatched === 0
+              ? ""
+              : String(result.duplicateRows / result.rowsMatched),
+            "",
+          ]),
+        );
+      }
+      for (const e of result.entries) {
+        lines.push(
+          csvRow([
+            e.column,
+            String(e.duplicates),
+            String(e.total),
+            e.total === 0 ? "" : String(e.duplicates / e.total),
+            String(e.valuesWithDuplicates),
           ]),
         );
       }
