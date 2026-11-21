@@ -819,6 +819,42 @@ export const GOLD_SET: EvalCase[] = [
     note: "a reversed between-range inside a compound still abstains",
   },
   {
+    sheet: "employees",
+    question: "distribution of salary",
+    expect: ["Distribution of salary (4 values across 5 rows):", "88,000–90,500", "95,500–98,000"],
+    note: "88,000 / 91,000 / 95,000 / 98,000 (one NA skipped) over 4 bins of width 2,500, one value each",
+  },
+  {
+    sheet: "scores",
+    question: "histogram of score",
+    expect: ["Distribution of score (8 values across 8 rows):", "8–132", "876–1,000"],
+    note: "8 values over 8 bins of width 124: the 7 ordinary scores (8–15) all land in the first bin, Tim's 1,000 alone in the last",
+  },
+  {
+    sheet: "sales",
+    question: "distribution of revenue where region is North",
+    expect: ["Distribution of revenue (3 values across 3 rows):", "0–80", "160–240"],
+    note: "North revenue 0 / 149.97 / 240 over 3 bins of width 80, one value each",
+  },
+  {
+    sheet: "sales",
+    question: "distribution of region",
+    expect: "abstain",
+    note: "region is text — a histogram needs a numeric column",
+  },
+  {
+    sheet: "employees",
+    question: "distribution of salary by month",
+    expect: "abstain",
+    note: "a distribution can't be grouped by a time period",
+  },
+  {
+    sheet: "sales",
+    question: "distribution of profit",
+    expect: "abstain",
+    note: "no 'profit' column exists",
+  },
+  {
     sheet: "monthly",
     question: "revenue trend by month",
     expect: ["trended up", "84.95", "from 664.91 in Jan 2026", "to 834.81 in Mar 2026", "3 months"],
