@@ -21,7 +21,7 @@ import type { ParsedCsv } from "./csv.js";
 import type { Filter, Query } from "./query.js";
 import { inferSchema, isNullValue, type ColumnInfo } from "./schema.js";
 import { outlierFence } from "./profile.js";
-import { leastSquaresSlope, numericStats, ordinal, pearsonCorrelation, percentile } from "./stats.js";
+import { leastSquaresSlope, histogram, numericStats, ordinal, pearsonCorrelation, percentile, type HistogramBin } from "./stats.js";
 import { bucketDate, parseDate, type TimeBucket } from "./time.js";
 
 export type QueryResult =
@@ -163,6 +163,21 @@ export type QueryResult =
       rowsMatched: number;
       /** Rows with a non-blank value. */
       valuesUsed: number;
+    }
+  | {
+      kind: "distribution";
+      /** The numeric column whose values are binned. */
+      column: string;
+      /**
+       * Equal-width bins spanning [min, max]; the maximum value
+       * always lands in the last bin. The bins sum to `valuesUsed`.
+       */
+      bins: HistogramBin[];
+      /** Rows the filters matched. */
+      rowsMatched: number;
+      /** Rows with a usable numeric value. */
+      valuesUsed: number;
+      filters: Filter[];
     }
   | {
       kind: "trend";
@@ -815,6 +830,31 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         totalDistinct: values.length,
         rowsMatched: rows.length,
         valuesUsed: values.reduce((n, v) => n + v.count, 0),
+      };
+    }
+
+    case "distribution": {
+      const info = colInfo(query.column);
+      if (!info) throw new Error(`unknown column: ${query.column}`);
+      const rows = applyFilters(parsed, schema, query.filters);
+      const values = rows
+        .map((r) => r[colIndex.get(query.column)!] ?? "")
+        .filter((v) => !isNullValue(v))
+        .map(toNumber)
+        .filter((n): n is number => n !== null);
+      // Never more bins than distinct values: a histogram with
+      // more bins than values is mostly empty bars. Ten is the cap.
+      const bins = histogram(
+        values,
+        Math.max(1, Math.min(10, new Set(values).size)),
+      );
+      return {
+        kind: "distribution",
+        column: query.column,
+        bins,
+        rowsMatched: rows.length,
+        valuesUsed: values.length,
+        filters: query.filters,
       };
     }
 
