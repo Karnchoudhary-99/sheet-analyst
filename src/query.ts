@@ -122,9 +122,17 @@ export interface Filter {
   value: string;
 }
 
+/**
+ * `orGroups` (on every query kind) holds the OR side of a where
+ * clause: each group is an AND of its filters, and at least one
+ * group must hold fully — "where region is North or South" is two
+ * one-filter groups. Absent (or empty) means no OR constraint; the
+ * plain `filters` are always AND. Only a top-level "or" in a where
+ * clause ever sets it.
+ */
 export type Query =
-  | { kind: "aggregate"; column: string; op: Exclude<AggregateOp, "count">; filters: Filter[] }
-  | { kind: "count"; filters: Filter[] }
+  | { kind: "aggregate"; column: string; op: Exclude<AggregateOp, "count">; filters: Filter[]; orGroups?: Filter[][] }
+  | { kind: "count"; filters: Filter[]; orGroups?: Filter[][] }
   | {
       kind: "group";
       /** One or more columns, in the order named in the question. */
@@ -132,6 +140,7 @@ export type Query =
       column: string | null;
       op: AggregateOp;
       filters: Filter[];
+      orGroups?: Filter[][];
       /** When set, `groupBy` is a date column grouped into periods. */
       bucket?: TimeBucket;
     }
@@ -143,10 +152,11 @@ export type Query =
       /** One or more columns to rank ("top 3 region and product by revenue"). */
       groupBy?: string[];
       filters: Filter[];
+      orGroups?: Filter[][];
       bucket?: TimeBucket;
     }
-  | { kind: "rows"; filters: Filter[]; limit: number; sort?: SortSpec }
-  | { kind: "correlation"; columnA: string; columnB: string; filters: Filter[] }
+  | { kind: "rows"; filters: Filter[]; orGroups?: Filter[][]; limit: number; sort?: SortSpec }
+  | { kind: "correlation"; columnA: string; columnB: string; filters: Filter[]; orGroups?: Filter[][] }
   | {
       kind: "comparison";
       /** Null when comparing row counts ("compare rows in Jan vs Feb"). */
@@ -157,6 +167,7 @@ export type Query =
       periodA: PeriodSpec;
       periodB: PeriodSpec;
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "share";
@@ -169,12 +180,14 @@ export type Query =
       column: string | null;
       /** The subset whose share is asked for (at least one filter). */
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "distinct";
       /** The column whose distinct values are listed. */
       column: string;
       filters: Filter[];
+      orGroups?: Filter[][];
       /** Most values shown (default 20); the result reports the total. */
       limit: number;
     }
@@ -183,18 +196,21 @@ export type Query =
       /** The numeric column whose values are binned. */
       column: string;
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "mode";
       /** The column whose most frequent value is asked for. */
       column: string;
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "distinctCount";
       /** The column whose number of distinct values is asked for. */
       column: string;
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "percentile";
@@ -203,6 +219,7 @@ export type Query =
       /** 1–99: "90th percentile" is p = 90. */
       p: number;
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "rank";
@@ -213,6 +230,7 @@ export type Query =
       /** Which end of the ranking the rank is counted from. */
       direction: "highest" | "lowest";
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "trend";
@@ -225,6 +243,7 @@ export type Query =
       /** The period the aggregates are bucketed into. */
       bucket: TimeBucket;
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "aboveBelow";
@@ -235,6 +254,7 @@ export type Query =
       /** Mean or median of the column over the matched rows. */
       baseline: "average" | "median";
       filters: Filter[];
+      orGroups?: Filter[][];
     }
   | {
       kind: "missing";
@@ -246,6 +266,7 @@ export type Query =
        */
       column: string | null;
       filters: Filter[];
+      orGroups?: Filter[][];
       /**
        * True for "show rows missing <column>": list the rows
        * themselves instead of counting them.
@@ -262,6 +283,7 @@ export type Query =
        */
       column: string | null;
       filters: Filter[];
+      orGroups?: Filter[][];
       /**
        * True for "show outliers in <column>": list the rows
        * themselves instead of counting them.
@@ -281,6 +303,7 @@ export type Query =
        */
       column: string | null;
       filters: Filter[];
+      orGroups?: Filter[][];
       /**
        * True for "show duplicate rows" / "show duplicates in
        * <column>": list the duplicate rows themselves instead of
@@ -685,6 +708,8 @@ function distinctValues(parsed: ParsedCsv, colIndex: number): Set<string> {
 
 interface FilterExtraction {
   filters: Filter[];
+  /** OR-groups from the where clause (see the Query doc). */
+  orGroups: Filter[][];
   rest: string;
   error?: string;
 }
@@ -854,6 +879,7 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const columns = inferSchema(parsed);
   let rest = question;
   const filters: Filter[] = [];
+  const orGroups: Filter[][] = [];
 
   const where = /\bwhere\b/i.exec(rest);
   if (where) {
@@ -880,7 +906,7 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
         compound.push(...parsedCondition.filters);
       }
       if (hardError !== null) {
-        return { filters, rest, error: hardError };
+        return { filters, orGroups, rest, error: hardError };
       }
       if (!softFailed) {
         filters.push(...compound);
@@ -891,7 +917,7 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
     if (!handled) {
       const parsed = parseWhereCondition(clause, columns);
       if ("error" in parsed) {
-        return { filters, rest, error: parsed.error };
+        return { filters, orGroups, rest, error: parsed.error };
       }
       filters.push(...parsed.filters);
       rest = rest.slice(0, where.index).trim();
@@ -918,6 +944,7 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
     } else if (owners.length > 1) {
       return {
         filters,
+        orGroups,
         rest,
         error: `"${value}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0].name} is ${value}"`,
       };
@@ -925,7 +952,7 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
     // No owner: not a filter (e.g. "for each department"); leave it.
   }
 
-  return { filters, rest };
+  return { filters, orGroups, rest };
 }
 
 /**
@@ -939,6 +966,7 @@ function tryParseCorrelation(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\bcorrelat\w*\b/.test(norm)) return null;
@@ -976,6 +1004,7 @@ function tryParseCorrelation(
       columnA: distinct[0].name,
       columnB: distinct[1].name,
       filters,
+      orGroups,
     },
   };
 }
@@ -995,6 +1024,7 @@ function tryParseComparison(
   columns: ColumnInfo[],
   parsed: ParsedCsv,
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   const intent =
@@ -1073,6 +1103,7 @@ function tryParseComparison(
         periodA,
         periodB,
         filters,
+        orGroups,
       },
     };
   }
@@ -1107,6 +1138,7 @@ function tryParseComparison(
       periodA,
       periodB,
       filters,
+      orGroups,
     },
   };
 }
@@ -1130,6 +1162,7 @@ function tryParseShare(
   columns: ColumnInfo[],
   parsed: ParsedCsv,
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\bshare\b|\bpercent(age)?\b|%/.test(norm)) return null;
@@ -1183,7 +1216,7 @@ function tryParseShare(
   // nothing to share out — or the named thing is not a column at all.
   if (distinct.length === 0) {
     if (filters.length > 0) {
-      return { ok: true, query: { kind: "share", column: null, filters } };
+      return { ok: true, query: { kind: "share", column: null, filters, orGroups } };
     }
     return {
       ok: false,
@@ -1248,7 +1281,7 @@ function tryParseShare(
         "a share needs a group to compare — say which rows, e.g. 'what share of revenue is North'",
     };
   }
-  return { ok: true, query: { kind: "share", column: column.name, filters: allFilters } };
+  return { ok: true, query: { kind: "share", column: column.name, filters: allFilters, orGroups } };
 }
 
 /**
@@ -1262,6 +1295,7 @@ function tryParseDistinct(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\bdistinct\b|\bunique\b/.test(norm)) return null;
@@ -1299,7 +1333,7 @@ function tryParseDistinct(
   }
   return {
     ok: true,
-    query: { kind: "distinct", column: distinct[0].name, filters, limit: 20 },
+    query: { kind: "distinct", column: distinct[0].name, filters, orGroups, limit: 20 },
   };
 }
 
@@ -1316,6 +1350,7 @@ function tryParseMode(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\bmost common\b|\bmost frequent\b|\bmode\b/.test(norm)) return null;
@@ -1357,7 +1392,7 @@ function tryParseMode(
   }
   return {
     ok: true,
-    query: { kind: "mode", column: distinct[0].name, filters },
+    query: { kind: "mode", column: distinct[0].name, filters, orGroups },
   };
 }
 
@@ -1383,6 +1418,7 @@ function tryParseDistribution(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\b(distribution|histogram)\b/.test(norm)) return null;
@@ -1421,7 +1457,7 @@ function tryParseDistribution(
   }
   return {
     ok: true,
-    query: { kind: "distribution", column: column.name, filters },
+    query: { kind: "distribution", column: column.name, filters, orGroups },
   };
 }
 
@@ -1429,6 +1465,7 @@ function tryParseDistinctCount(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\b(distinct|different)\b/.test(norm)) return null;
@@ -1473,7 +1510,7 @@ function tryParseDistinctCount(
   }
   return {
     ok: true,
-    query: { kind: "distinctCount", column: distinct[0].name, filters },
+    query: { kind: "distinctCount", column: distinct[0].name, filters, orGroups },
   };
 }
 
@@ -1506,6 +1543,7 @@ function tryParseAboveBelow(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   const marker = /\b(above|below|higher than|lower than)\s+(?:the\s+)?(average|median)\b/.exec(norm);
@@ -1550,7 +1588,7 @@ function tryParseAboveBelow(
   }
   return {
     ok: true,
-    query: { kind: "aboveBelow", column: column.name, direction, baseline, filters },
+    query: { kind: "aboveBelow", column: column.name, direction, baseline, filters, orGroups },
   };
 }
 
@@ -1577,6 +1615,7 @@ function tryParseMissing(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\b(missing|blank|null|empty)\b/.test(norm)) return null;
@@ -1667,7 +1706,7 @@ function tryParseMissing(
   }
   return {
     ok: true,
-    query: { kind: "missing", column: column?.name ?? null, filters, listRows },
+    query: { kind: "missing", column: column?.name ?? null, filters, orGroups, listRows },
   };
 }
 
@@ -1694,6 +1733,7 @@ function tryParseOutliers(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\boutliers?\b/.test(norm)) return null;
@@ -1790,7 +1830,7 @@ function tryParseOutliers(
   }
   return {
     ok: true,
-    query: { kind: "outliers", column: column?.name ?? null, filters, listRows },
+    query: { kind: "outliers", column: column?.name ?? null, filters, orGroups, listRows },
   };
 }
 
@@ -1820,6 +1860,7 @@ function tryParseDuplicates(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\bduplicat\w*\b|\brepeat\w*\b/.test(norm)) return null;
@@ -1911,7 +1952,7 @@ function tryParseDuplicates(
       (/\bwhich\b/.test(norm) && /\brows?\b/.test(norm)));
   return {
     ok: true,
-    query: { kind: "duplicates", column: column?.name ?? null, filters, listRows },
+    query: { kind: "duplicates", column: column?.name ?? null, filters, orGroups, listRows },
   };
 }
 
@@ -1919,6 +1960,7 @@ function tryParsePercentile(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   const ordinal = /(\d{1,3})(?:st|nd|rd|th)?\s*percentile\b/.exec(norm);
@@ -1976,7 +2018,7 @@ function tryParsePercentile(
   }
   return {
     ok: true,
-    query: { kind: "percentile", column: column.name, p, filters },
+    query: { kind: "percentile", column: column.name, p, filters, orGroups },
   };
 }
 
@@ -2031,6 +2073,7 @@ function tryParseRank(
   text: string,
   columns: ColumnInfo[],
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   const direction = /\b(highest|largest|biggest|greatest|maximum)\b/.test(norm)
@@ -2114,7 +2157,7 @@ function tryParseRank(
   }
   return {
     ok: true,
-    query: { kind: "rank", column: column.name, n, direction, filters },
+    query: { kind: "rank", column: column.name, n, direction, filters, orGroups },
   };
 }
 
@@ -2133,6 +2176,7 @@ function tryParseTrend(
   columns: ColumnInfo[],
   bucket: TimeBucket | null,
   filters: Filter[],
+  orGroups?: Filter[][],
 ): ParseResult | null {
   const norm = normalize(text);
   if (!/\btrend\w*\b/.test(norm)) return null;
@@ -2226,6 +2270,7 @@ function tryParseTrend(
       dateColumn: dateColumn.name,
       bucket,
       filters,
+      orGroups,
     },
   };
 }
@@ -2248,12 +2293,15 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   const extracted = extractFilters(sort.rest, parsed);
   if (extracted.error) return { ok: false, reason: extracted.error };
   const filters = extracted.filters;
+  // Only set when a where clause actually used "or": an empty
+  // array would change every parsed query's shape for no reason.
+  const orGroups = extracted.orGroups.length > 0 ? extracted.orGroups : undefined;
 
   // Period comparison: two named periods ("compare revenue Jan 2026
   // vs Feb 2026"). Once the question shows comparison intent it is
   // parsed here or abstained — falling through would answer the
   // plain total instead of the comparison asked for.
-  const comparison = tryParseComparison(extracted.rest, columns, parsed, filters);
+  const comparison = tryParseComparison(extracted.rest, columns, parsed, filters, orGroups);
   if (comparison) return comparison;
 
   const timeBucket = extractTimeBucket(extracted.rest);
@@ -2285,14 +2333,14 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // ("revenue trend by month"). Once the question shows trend intent
   // it is parsed here or abstained — falling through would answer
   // the plain monthly grouping instead of the trend asked for.
-  const trend = tryParseTrend(timeBucket.rest, columns, bucket, filters);
+  const trend = tryParseTrend(timeBucket.rest, columns, bucket, filters, orGroups);
   if (trend) return trend;
 
   // Share: a filtered subset's total as a share of the whole sheet.
   // Once the question shows share intent it is parsed here or
   // abstained — falling through would answer the plain total instead
   // of the share asked for.
-  const share = tryParseShare(timeBucket.rest, columns, parsed, filters);
+  const share = tryParseShare(timeBucket.rest, columns, parsed, filters, orGroups);
   if (share) {
     if (bucket) {
       return {
@@ -2306,7 +2354,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // Mode: the most frequent value of one column. Checked before
   // the generic distinct-values parser, which would otherwise read
   // "most common" as nothing and fall through to the rows fallback.
-  const mode = tryParseMode(timeBucket.rest, columns, filters);
+  const mode = tryParseMode(timeBucket.rest, columns, filters, orGroups);
   if (mode) {
     if (bucket) {
       return {
@@ -2320,7 +2368,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // Distinct count: how many different values one column has.
   // Checked before the distinct-values listing, which would
   // otherwise answer "how many distinct regions" with the list.
-  const distinctCount = tryParseDistinctCount(timeBucket.rest, columns, filters);
+  const distinctCount = tryParseDistinctCount(timeBucket.rest, columns, filters, orGroups);
   if (distinctCount) {
     if (bucket) {
       return {
@@ -2336,7 +2384,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // listing and the generic aggregate fallback, which would
   // otherwise read "90th percentile" as nothing and abstain with a
   // less useful reason.
-  const percentile = tryParsePercentile(timeBucket.rest, columns, filters);
+  const percentile = tryParsePercentile(timeBucket.rest, columns, filters, orGroups);
   if (percentile) {
     if (bucket) {
       return {
@@ -2352,7 +2400,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // Checked before the generic aggregate fallback, which would
   // otherwise read "second highest salary" as a plain maximum and
   // answer with the highest row — silently wrong.
-  const rank = tryParseRank(timeBucket.rest, columns, filters);
+  const rank = tryParseRank(timeBucket.rest, columns, filters, orGroups);
   if (rank) {
     if (bucket) {
       return {
@@ -2367,7 +2415,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // median ("rows with revenue above average"). Checked before the
   // generic aggregate fallback, which would otherwise read "average"
   // as a plain mean and answer the average itself.
-  const aboveBelow = tryParseAboveBelow(timeBucket.rest, columns, filters);
+  const aboveBelow = tryParseAboveBelow(timeBucket.rest, columns, filters, orGroups);
   if (aboveBelow) {
     if (bucket) {
       return {
@@ -2383,7 +2431,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // before the distinct-values listing and the generic aggregate
   // fallback, which would otherwise read "missing" as nothing and
   // answer a count of rows or abstain with a less useful reason.
-  const missing = tryParseMissing(timeBucket.rest, columns, filters);
+  const missing = tryParseMissing(timeBucket.rest, columns, filters, orGroups);
   if (missing) {
     if (bucket) {
       return {
@@ -2400,7 +2448,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // missing values, before the distinct-values listing and the
   // generic aggregate fallback, which would otherwise read
   // "outliers" as nothing and answer a count of rows.
-  const outliers = tryParseOutliers(timeBucket.rest, columns, filters);
+  const outliers = tryParseOutliers(timeBucket.rest, columns, filters, orGroups);
   if (outliers) {
     if (bucket) {
       return {
@@ -2417,7 +2465,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // outliers, before the distinct-values listing and the generic
   // aggregate fallback, which would otherwise read "duplicates"
   // as nothing and answer a count of rows.
-  const duplicates = tryParseDuplicates(timeBucket.rest, columns, filters);
+  const duplicates = tryParseDuplicates(timeBucket.rest, columns, filters, orGroups);
   if (duplicates) {
     if (bucket) {
       return {
@@ -2432,7 +2480,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // Distinct values: every distinct value of one column, with row
   // counts. Checked before the generic "list/show rows" fallback
   // below, which would otherwise answer with rows instead.
-  const distinct = tryParseDistinct(timeBucket.rest, columns, filters);
+  const distinct = tryParseDistinct(timeBucket.rest, columns, filters, orGroups);
   if (distinct) {
     if (bucket) {
       return {
@@ -2448,7 +2496,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // before the generic aggregate fallback, which would otherwise
   // read "distribution" as nothing and abstain with a less useful
   // reason.
-  const distribution = tryParseDistribution(timeBucket.rest, columns, filters);
+  const distribution = tryParseDistribution(timeBucket.rest, columns, filters, orGroups);
   if (distribution) {
     if (bucket) {
       return {
@@ -2460,7 +2508,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   }
 
   // Correlation: two numeric columns, no grouping or ranking.
-  const correlation = tryParseCorrelation(timeBucket.rest, columns, filters);
+  const correlation = tryParseCorrelation(timeBucket.rest, columns, filters, orGroups);
   if (correlation) {
     if (bucket) {
       return {
@@ -2552,6 +2600,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
         direction: top.direction,
         groupBy: topGroupBy,
         filters,
+        orGroups,
         bucket: topBucket,
       },
     };
@@ -2589,7 +2638,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
           "sorting applies to row listings — try e.g. 'show rows sorted by revenue descending'",
       };
     }
-    return { ok: true, query: { kind: "count", filters } };
+    return { ok: true, query: { kind: "count", filters, orGroups } };
   }
   if (isCountQuestion(text) && resolvedGroupBy.length > 0) {
     return {
@@ -2600,6 +2649,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
         column: null,
         op: "count",
         filters,
+        orGroups,
         bucket: bucket ?? undefined,
       },
     };
@@ -2619,7 +2669,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   ) {
     return {
       ok: true,
-      query: { kind: "rows", filters, limit: 10, sort: sort.sort ?? undefined },
+      query: { kind: "rows", filters, orGroups, limit: 10, sort: sort.sort ?? undefined },
     };
   }
   // A sort phrase only makes sense on a row listing — "total revenue
@@ -2669,9 +2719,10 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
         column: column.name,
         op,
         filters,
+        orGroups,
         bucket: bucket ?? undefined,
       },
     };
   }
-  return { ok: true, query: { kind: "aggregate", column: column.name, op, filters } };
+  return { ok: true, query: { kind: "aggregate", column: column.name, op, filters, orGroups } };
 }
