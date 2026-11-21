@@ -1385,6 +1385,87 @@ function tryParseComparison(
  * North"). A value that belongs to several columns abstains —
  * guessing the column would share out the wrong subset.
  */
+/**
+ * Resolve one subset value ("North") to its owning text column and
+ * the value's spelling as it appears in the sheet. A value in no
+ * column, or in several, is an error — guessing the column would
+ * share out the wrong subset.
+ */
+function resolveShareValue(
+  value: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): { filter: Filter } | { error: string } {
+  const owners = columns.filter((col, idx) => {
+    if (col.type !== "text" && col.type !== "boolean") return false;
+    return distinctValues(parsed, idx).has(value);
+  });
+  if (owners.length === 0) {
+    return {
+      error: `could not find "${value}" in any column — say which rows, e.g. "where ${columns.find((c) => c.type === "text")?.name ?? "region"} is ${value}"`,
+    };
+  }
+  if (owners.length > 1) {
+    return {
+      error: `"${value}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0].name} is ${value}"`,
+    };
+  }
+  // Keep the value's spelling as it appears in the sheet ("North",
+  // not the lowercased "north" the parser matched on), so answers
+  // read naturally.
+  const ownerIdx = columns.indexOf(owners[0]);
+  let rawValue = value;
+  for (const row of parsed.rows) {
+    const cell = (row[ownerIdx] ?? "").trim();
+    if (cell.toLowerCase() === value) {
+      rawValue = cell;
+      break;
+    }
+  }
+  return { filter: { column: owners[0].name, op: "=", value: rawValue } };
+}
+
+/**
+ * Resolve an "X or Y" subset ("North or South") into OR groups.
+ * Every value must belong to the same text column — "North or
+ * Widget A" spans two columns and has no single subset to share.
+ * Returns null when there is no "or" in the text. The words for
+ * the thing being counted ("rows", "employees") are stripped from
+ * each part before resolving.
+ */
+function resolveShareOrValues(
+  text: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): { orGroups: Filter[][] } | { error: string } | null {
+  const parts = text.split(/\s+or\s+/);
+  if (parts.length === 1) return null;
+  const countWords = new Set(["row", "rows", "employee", "employees"]);
+  const groups: Filter[][] = [];
+  let owner: string | null = null;
+  for (const part of parts) {
+    const value = part
+      .split(" ")
+      .filter((w) => w !== "" && !countWords.has(w))
+      .join(" ");
+    if (value === "") {
+      return {
+        error: `could not tell what "${part.trim()}" means — say which rows, e.g. "where ${columns.find((c) => c.type === "text")?.name ?? "region"} is ..."`,
+      };
+    }
+    const resolved = resolveShareValue(value, columns, parsed);
+    if ("error" in resolved) return { error: resolved.error };
+    if (owner === null) owner = resolved.filter.column;
+    if (resolved.filter.column !== owner) {
+      return {
+        error: `"${value}" is in ${resolved.filter.column} but the other values are in ${owner} — an "or" share needs one column; say which one, e.g. "where ${owner} is ${value}"`,
+      };
+    }
+    groups.push([resolved.filter]);
+  }
+  return { orGroups: groups };
+}
+
 function tryParseShare(
   text: string,
   columns: ColumnInfo[],
@@ -1443,8 +1524,18 @@ function tryParseShare(
   // a filter already pins the subset down; otherwise there is
   // nothing to share out — or the named thing is not a column at all.
   if (distinct.length === 0) {
-    if (filters.length > 0) {
+    if (filters.length > 0 || (orGroups !== undefined && orGroups.length > 0)) {
       return { ok: true, query: { kind: "share", column: null, filters, orGroups } };
+    }
+    // "what share of rows are in North or South": no column named,
+    // but an "or" list of values pins the subset down.
+    const orValues = resolveShareOrValues(cleaned, columns, parsed);
+    if (orValues && "error" in orValues) return { ok: false, reason: orValues.error };
+    if (orValues) {
+      return {
+        ok: true,
+        query: { kind: "share", column: null, filters, orGroups: orValues.orGroups },
+      };
     }
     return {
       ok: false,
@@ -1472,37 +1563,34 @@ function tryParseShare(
   // means there is nothing left to resolve.
   let rest = stripColumnName(cleaned, column);
   if (rest !== "") {
-    const owners = columns.filter((col, idx) => {
-      if (col.type !== "text" && col.type !== "boolean") return false;
-      return distinctValues(parsed, idx).has(rest);
-    });
-    if (owners.length === 0) {
-      return {
-        ok: false,
-        reason: `could not find "${rest}" in any column — say which rows, e.g. "where ${columns.find((c) => c.type === "text")?.name ?? "region"} is ${rest}"`,
-      };
-    }
-    if (owners.length > 1) {
-      return {
-        ok: false,
-        reason: `"${rest}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0].name} is ${rest}"`,
-      };
-    }
-    // Keep the value's spelling as it appears in the sheet ("North",
-    // not the lowercased "north" the parser matched on), so answers
-    // read naturally.
-    const ownerIdx = columns.indexOf(owners[0]);
-    let rawValue = rest;
-    for (const row of parsed.rows) {
-      const cell = (row[ownerIdx] ?? "").trim();
-      if (cell.toLowerCase() === rest) {
-        rawValue = cell;
-        break;
+    // "what share of revenue is North or South": an "or" list of
+    // values is the subset. It cannot combine with a where clause
+    // that already used "or" — one OR per share question.
+    const orValues = resolveShareOrValues(rest, columns, parsed);
+    if (orValues && "error" in orValues) return { ok: false, reason: orValues.error };
+    if (orValues) {
+      if (orGroups !== undefined && orGroups.length > 0) {
+        return {
+          ok: false,
+          reason:
+            "a share can use \"or\" once — combine the conditions with \"where\", e.g. 'what share of revenue where region is North or South'",
+        };
       }
+      return {
+        ok: true,
+        query: {
+          kind: "share",
+          column: column.name,
+          filters: allFilters,
+          orGroups: orValues.orGroups,
+        },
+      };
     }
-    allFilters.push({ column: owners[0].name, op: "=", value: rawValue });
+    const resolved = resolveShareValue(rest, columns, parsed);
+    if ("error" in resolved) return { ok: false, reason: resolved.error };
+    allFilters.push(resolved.filter);
   }
-  if (allFilters.length === 0) {
+  if (allFilters.length === 0 && (orGroups === undefined || orGroups.length === 0)) {
     return {
       ok: false,
       reason:
@@ -2893,7 +2981,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
     normText.startsWith("show") ||
     normText.startsWith("list") ||
     (sort.sort !== null && !op) ||
-    (filters.length > 0 && !op)
+    ((filters.length > 0 || (orGroups !== undefined && orGroups.length > 0)) && !op)
   ) {
     return {
       ok: true,
