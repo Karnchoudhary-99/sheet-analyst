@@ -199,6 +199,16 @@ export const EVAL_GATE = 0.8;
  * North revenue 240, 149.97, 0 has 2nd highest 149.97. A rank over
  * a text column, an unknown column, or grouped by another column,
  * abstains.
+ *
+ * or filters — sales revenue by region: North 389.97, South
+ * 649.77, East 624.91, West 124.95, so North or South totals
+ * 1,039.74 over 5 rows and North or South or East totals 1,664.65
+ * over 7 rows. Revenue above 400 (449.85, 1 row) or below 130
+ * (124.95 and 0.00, 2 rows) is 3 rows. AND binds tighter than OR:
+ * North, or South and Widget A, is North alone (389.97, 3 rows —
+ * no South row is Widget A). North or South is 58.1% of total
+ * revenue (1,039.74 of 1,789.60) and 5 of 8 rows (62.5%). An
+ * unknown column in an or branch abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -817,6 +827,48 @@ export const GOLD_SET: EvalCase[] = [
     question: "total revenue where revenue between 200 and 100 and region is North",
     expect: "abstain",
     note: "a reversed between-range inside a compound still abstains",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where region is North or South",
+    expect: ["1,039.74", "5 rows"],
+    note: "North 389.97 + South 649.77 = 1,039.74 over 5 rows",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where region is North or South or East",
+    expect: ["1,664.65", "7 rows"],
+    note: "North 389.97 + South 649.77 + East 624.91 = 1,664.65 over 7 rows",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows where revenue > 400 or revenue < 130",
+    expect: ["3 matching rows"],
+    note: "above 400: the 449.85 row; below 130: the 124.95 and 0.00 rows",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where region is North or South and product is Widget A",
+    expect: ["389.97", "3 rows"],
+    note: "AND binds tighter: (North) or (South and Widget A) — North alone, no South row is Widget A",
+  },
+  {
+    sheet: "sales",
+    question: "what share of revenue is North or South",
+    expect: ["58.1%", "1,039.74 of 1,789.6"],
+    note: "1,039.74 / 1,789.60 = 58.1% over 5 of 8 rows",
+  },
+  {
+    sheet: "sales",
+    question: "what share of rows are in North or South",
+    expect: ["5 of 8 rows", "62.5%"],
+    note: "North 3 rows + South 2 rows = 5 of 8",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where region is North or profit is 10",
+    expect: "abstain",
+    note: "an unknown column in an or branch abstains instead of answering over the North rows alone",
   },
   {
     sheet: "employees",
