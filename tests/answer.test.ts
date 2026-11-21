@@ -555,6 +555,22 @@ describe("composeAnswer share", () => {
   });
 });
 
+describe("composeAnswer distribution", () => {
+  it("renders the bins as an ASCII histogram with a scope line", () => {
+    const answer = answerQuestion("distribution of revenue", SALES);
+    expect(answer).toContain("Distribution of revenue (6 values across 6 rows):");
+    expect(answer).toContain("0–66.67");
+    expect(answer).toContain("133.33–200");
+    expect(answer).toContain("333.33–400");
+  });
+
+  it("says so when the column has no usable values", () => {
+    expect(answerQuestion("distribution of units where units > 100", SALES)).toBe(
+      "I could not show the distribution of units — none of the 0 matching rows has a usable value.",
+    );
+  });
+});
+
 describe("composeAnswer distinct values", () => {
   it("lists distinct values most frequent first with row counts", () => {
     expect(answerQuestion("list unique regions", SALES)).toBe(
