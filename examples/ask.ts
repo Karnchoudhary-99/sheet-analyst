@@ -43,6 +43,7 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["how many rows are missing units", sales],
   ["which columns have missing values", sales],
   ["show rows missing salary", staff],
+  ["how many rows are missing salaries", staff],
   ["how many outliers in score", scores],
   ["which columns have outliers", scores],
   ["show outliers in score", scores],

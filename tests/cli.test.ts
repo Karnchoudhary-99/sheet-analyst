@@ -247,6 +247,14 @@ describe("runCli end-to-end", () => {
     expect(out.result.groups[0].key).toBe("Widget A");
   });
 
+  it("answers a plural column name end to end", async () => {
+    const c = capture();
+    expect(
+      await runCli(["ask", staffPath, "how many rows are missing salaries"], c.out),
+    ).toBe(0);
+    expect(c.stdout.join("")).toContain("1 of 5 rows is missing salary");
+  });
+
   it("answers an abstention honestly with exit 0", async () => {
     const c = capture();
     expect(await runCli(["ask", salesPath, "total profit"], c.out)).toBe(0);
