@@ -41,6 +41,8 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["how many rows where region is North and revenue > 100", sales],
   ["total revenue where region is North or South", sales],
   ["what share of revenue is North or South", sales],
+  ["total revenue excluding North", sales],
+  ["total revenue for North and South", sales],
   ["distribution of salary", staff],
   ["histogram of score", scores],
   ["revenue trend by month", monthly],

@@ -209,6 +209,15 @@ export const EVAL_GATE = 0.8;
  * no South row is Widget A). North or South is 58.1% of total
  * revenue (1,039.74 of 1,789.60) and 5 of 8 rows (62.5%). An
  * unknown column in an or branch abstains.
+ *
+ * exclusion and trailing lists — excluding North leaves 1,399.63
+ * (5 rows), excluding North and South leaves 749.86 (East 624.91 +
+ * West 124.95, 3 rows); the complement is 78.21% of total revenue.
+ * "for North and South" and "in North or South" both total
+ * 1,039.74 over 5 rows. A single unknown trailing value ("in
+ * 2024") abstains instead of answering the whole sheet, and a
+ * typo'd column ("total revnue", "by regoin") abstains with a
+ * "did you mean" hint.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -869,6 +878,54 @@ export const GOLD_SET: EvalCase[] = [
     question: "total revenue where region is North or profit is 10",
     expect: "abstain",
     note: "an unknown column in an or branch abstains instead of answering over the North rows alone",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue excluding North",
+    expect: ["1,399.63", "5 rows"],
+    note: "1,789.60 - 389.97 = 1,399.63 over the 5 non-North rows",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue excluding North and South",
+    expect: ["749.86", "3 rows"],
+    note: "East 624.91 + West 124.95 = 749.86 over 3 rows",
+  },
+  {
+    sheet: "sales",
+    question: "what share of revenue excluding North",
+    expect: ["78.21%", "1,399.63 of 1,789.6"],
+    note: "1,399.63 / 1,789.60 = 78.21% over 5 of 8 rows",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue for North and South",
+    expect: ["1,039.74", "5 rows"],
+    note: "a trailing list is an or: North 389.97 + South 649.77 over 5 rows",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue in North or South",
+    expect: ["1,039.74", "5 rows"],
+    note: "the same list after 'in'",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue in 2024",
+    expect: "abstain",
+    note: "a single unknown trailing value abstains instead of answering the whole-sheet total",
+  },
+  {
+    sheet: "sales",
+    question: "total revnue",
+    expect: "abstain",
+    note: "a typo'd column abstains (with a 'did you mean revenue' hint)",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue by regoin",
+    expect: "abstain",
+    note: "a typo'd group-by abstains (with a 'did you mean region' hint) instead of answering the plain total",
   },
   {
     sheet: "employees",
