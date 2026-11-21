@@ -275,7 +275,49 @@ export function normalize(text: string): string {
 }
 
 function singular(word: string): string {
+  // "-ies" pluralises a trailing "y" ("salaries" -> "salary"), so
+  // undo that first; otherwise a plain trailing "s" ("revenues" ->
+  // "revenue"). "series" would singularise to "sery", but that
+  // spelling is only ever used as a fallback — the raw name still
+  // matches first in findColumns, so a "series" column is safe.
+  if (word.endsWith("ies") && word.length > 3) return word.slice(0, -3) + "y";
   return word.endsWith("s") && word.length > 1 ? word.slice(0, -1) : word;
+}
+
+/**
+ * The plural of a word: a trailing consonant + "y" becomes "-ies"
+ * ("salary" -> "salaries"), otherwise a plain "s" ("revenue" ->
+ * "revenues"). A word already ending in "s" ("units") is its own
+ * plural here — its singular is handled by singular().
+ */
+function plural(word: string): string {
+  if (word.endsWith("s")) return word;
+  if (/[^aeiou]y$/.test(word)) return word.slice(0, -1) + "ies";
+  return `${word}s`;
+}
+
+/**
+ * Remove a column name from a cleaned question, leaving whatever
+ * the sheet does not explain. The plural form is removed first:
+ * "missing salaries" names the salary column, and removing
+ * "salary" from "salaries" would otherwise leave a stray "s"
+ * behind. Multi-word names pluralise their last word ("start
+ * dates"). The singular form is tried too, so "missing unit"
+ * still names the "units" column.
+ */
+function stripColumnName(cleaned: string, column: ColumnInfo): string {
+  const colName = normalize(column.name);
+  const words = colName.split(" ");
+  const last = words[words.length - 1];
+  const colNamePlural = [...words.slice(0, -1), plural(last)].join(" ");
+  const colNameSingular = words.map(singular).join(" ");
+  const singularLast = singular(last);
+  const colNameSingularPlural = [...words.slice(0, -1), plural(singularLast)].join(" ");
+  let rest = cleaned;
+  for (const name of [colNamePlural, colNameSingularPlural, colName, colNameSingular]) {
+    rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
+  }
+  return rest;
 }
 
 /**
@@ -1035,12 +1077,7 @@ function tryParseShare(
   // ("revenue is North" — the column name is removed, "north" is
   // what's left). A "where …" / "in …" filter already extracted
   // means there is nothing left to resolve.
-  const colName = normalize(column.name);
-  const colNameSingular = colName.split(" ").map(singular).join(" ");
-  let rest = cleaned;
-  for (const name of [colName, colNameSingular]) {
-    rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
-  }
+  let rest = stripColumnName(cleaned, column);
   if (rest !== "") {
     const owners = columns.filter((col, idx) => {
       if (col.type !== "text" && col.type !== "boolean") return false;
@@ -1413,12 +1450,7 @@ function tryParseMissing(
   if (column) {
     // Anything left after removing the column name is a word the
     // sheet does not explain — refuse rather than dropping it.
-    const colName = normalize(column.name);
-    const colNameSingular = colName.split(" ").map(singular).join(" ");
-    let rest = cleaned;
-    for (const name of [colName, colNameSingular]) {
-      rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
-    }
+    const rest = stripColumnName(cleaned, column);
     if (rest !== "") {
       return {
         ok: false,
@@ -1541,12 +1573,7 @@ function tryParseOutliers(
     }
     // Anything left after removing the column name is a word the
     // sheet does not explain — refuse rather than dropping it.
-    const colName = normalize(column.name);
-    const colNameSingular = colName.split(" ").map(singular).join(" ");
-    let rest = cleaned;
-    for (const name of [colName, colNameSingular]) {
-      rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
-    }
+    const rest = stripColumnName(cleaned, column);
     if (rest !== "") {
       return {
         ok: false,
@@ -1671,21 +1698,8 @@ function tryParseDuplicates(
   const column = distinct[0] ?? null;
   if (column) {
     // Anything left after removing the column name is a word the
-    // sheet does not explain — refuse rather than dropping it. The
-    // plural form is removed first: "duplicate products" names the
-    // product column, and removing "product" from "products" would
-    // otherwise leave a stray "s" behind.
-    const colName = normalize(column.name);
-    const colNameSingular = colName.split(" ").map(singular).join(" ");
-    let rest = cleaned;
-    for (const name of [colName, colNameSingular]) {
-      const pluralName = name.endsWith("s") ? name : `${name}s`;
-      rest = rest
-        .replace(pluralName, " ")
-        .replace(name, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    }
+    // sheet does not explain — refuse rather than dropping it.
+    const rest = stripColumnName(cleaned, column);
     if (rest !== "") {
       return {
         ok: false,

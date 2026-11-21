@@ -120,6 +120,12 @@ answerQuestion("list unique regions", sales);
 // "Distinct region (4 values):\n- North: 3 rows\n- East: 2 rows…"
 ```
 
+Column names can be written in the plural — `"how many rows are
+missing salaries"`, `"how many outliers in revenues"`, `"what share
+of revenues is North"` all resolve to the `salary` / `revenue`
+column, including `-ies` plurals (`salaries` → `salary`). Multi-word
+names pluralise their last word (`"start dates"`).
+
 Time grouping (`src/time.ts`) collapses the sheet's date column
 into periods — `"total revenue by month"`, `"average salary by
 year"`, `"top 2 months by revenue"`, `"how many rows by quarter"`.

@@ -878,6 +878,18 @@ describe("parseQuestion share", () => {
     });
   });
 
+  it("parses 'what share of revenues is North' — plural column names work", () => {
+    const r = parseQuestion("what share of revenues is North", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "share",
+        column: "revenue",
+        filters: [{ column: "region", op: "=", value: "North" }],
+      },
+    });
+  });
+
   it("parses 'what percentage of total revenue comes from North'", () => {
     const r = parseQuestion(
       "what percentage of total revenue comes from North",
@@ -1266,6 +1278,27 @@ describe("parseQuestion missing values", () => {
     });
   });
 
+  it("parses 'how many rows are missing salaries' as a count — '-ies' plurals work", () => {
+    expect(parseQuestion("how many rows are missing salaries", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "salary", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'show rows missing salaries' as a row listing", () => {
+    expect(parseQuestion("show rows missing salaries", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "salary", filters: [], listRows: true },
+    });
+  });
+
+  it("parses 'how many rows are missing revenues' as a count", () => {
+    expect(parseQuestion("how many rows are missing revenues", SALES)).toEqual({
+      ok: true,
+      query: { kind: "missing", column: "revenue", filters: [], listRows: false },
+    });
+  });
+
   it("parses 'count missing salary' as a count", () => {
     expect(parseQuestion("count missing salary", STAFF)).toEqual({
       ok: true,
@@ -1350,6 +1383,33 @@ describe("parseQuestion outliers", () => {
       ok: true,
       query: { kind: "outliers", column: "revenue", filters: [], listRows: false },
     });
+  });
+
+  it("parses 'how many outliers in salaries' as a count — '-ies' plurals work", () => {
+    expect(parseQuestion("how many outliers in salaries", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: "salary", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'how many outliers in revenues' as a count", () => {
+    expect(parseQuestion("how many outliers in revenues", SALES)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: "revenue", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'show outliers in revenues' as a row listing", () => {
+    expect(parseQuestion("show outliers in revenues", SALES)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: "revenue", filters: [], listRows: true },
+    });
+  });
+
+  it("still abstains on a genuinely unknown trailing word", () => {
+    const r = parseQuestion("how many outliers in revenue xyz", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not understand "xyz"/);
   });
 
   it("parses 'count outliers in units' as a count", () => {
@@ -1462,6 +1522,13 @@ describe("parseQuestion duplicates", () => {
     expect(parseQuestion("how many duplicate products", DUPS)).toEqual({
       ok: true,
       query: { kind: "duplicates", column: "product", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'how many duplicate salaries' as a count — '-ies' plurals work", () => {
+    expect(parseQuestion("how many duplicate salaries", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: "salary", filters: [], listRows: false },
     });
   });
 
