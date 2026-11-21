@@ -14,6 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sales = parseCsv(readFileSync(join(root, "examples", "sales.csv"), "utf8"));
 const staff = parseCsv(readFileSync(join(root, "examples", "employees.csv"), "utf8"));
 const monthly = parseCsv(readFileSync(join(root, "examples", "monthly-sales.csv"), "utf8"));
+const scores = parseCsv(readFileSync(join(root, "examples", "scores.csv"), "utf8"));
 
 const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["total revenue", sales],
@@ -41,6 +42,9 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["how many rows are missing units", sales],
   ["which columns have missing values", sales],
   ["show rows missing salary", staff],
+  ["how many outliers in score", scores],
+  ["which columns have outliers", scores],
+  ["show outliers in score", scores],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

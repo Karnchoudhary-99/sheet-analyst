@@ -395,6 +395,81 @@ function composeMissing(
   );
 }
 
+function composeOutliers(
+  result: Extract<QueryResult, { kind: "outliers" }>,
+  parsed?: ParsedCsv,
+): string {
+  const pct = (outliers: number, total: number): string =>
+    total === 0 ? "0%" : `${formatNumber((outliers / total) * 100)}%`;
+  const seen = (entry: { low: number | null; high: number | null }): string =>
+    entry.low === null || entry.high === null
+      ? ""
+      : entry.low === entry.high
+        ? ` (seen ${formatNumber(entry.low)})`
+        : ` (seen ${formatNumber(entry.low)} to ${formatNumber(entry.high)})`;
+  const fence = (entry: { lowBound: number | null; highBound: number | null }): string =>
+    entry.lowBound === null || entry.highBound === null
+      ? ""
+      : ` outside [${formatNumber(entry.lowBound)}, ${formatNumber(entry.highBound)}]`;
+  // The whole-sheet report lists every numeric column, most outliers
+  // first, so a clean column reads as "0 outliers" instead of being
+  // silently absent from the report.
+  if (result.column === null) {
+    if (result.rowsMatched === 0) return "No rows match.";
+    const lines = result.entries.map((e) => {
+      if (e.lowBound === null || e.highBound === null) {
+        return `- ${e.column}: not enough values (${e.total} values) to judge outliers`;
+      }
+      if (e.outliers === 0) {
+        return `- ${e.column}: 0 outliers (inside [${formatNumber(e.lowBound)}, ${formatNumber(e.highBound)}])`;
+      }
+      return `- ${e.column}: ${e.outliers} ${plural(e.outliers, "outlier")}${fence(e)}${seen(e)}`;
+    });
+    if (result.entries.every((e) => e.outliers === 0 && e.lowBound !== null)) {
+      return (
+        `No outliers — every numeric value in the ${result.rowsMatched} ` +
+        `${plural(result.rowsMatched, "row")} is inside its fence.`
+      );
+    }
+    return `Outliers (${result.rowsMatched} ${plural(result.rowsMatched, "row")}):\n${lines.join("\n")}`;
+  }
+  const entry = result.entries[0]!;
+  if (entry.total === 0) {
+    return (
+      `I could not find outliers in ${result.column} — none of the ` +
+      `${result.rowsMatched} matching ${plural(result.rowsMatched, "row")} has a usable value.`
+    );
+  }
+  if (entry.lowBound === null || entry.highBound === null) {
+    return (
+      `Too few values to judge outliers in ${result.column} — only ` +
+      `${entry.total} of ${result.rowsMatched} ${plural(result.rowsMatched, "row")} ` +
+      `${entry.total === 1 ? "has" : "have"} a value (at least 4 needed).`
+    );
+  }
+  if (result.listRows) {
+    if (result.totalMatched === 0) {
+      return `No rows are outliers in ${result.column}.`;
+    }
+    const scope =
+      result.limitedTo !== undefined
+        ? `Showing ${result.rows.length} of ${result.totalMatched} rows that are outliers in ${result.column}`
+        : result.totalMatched === 1
+          ? `1 row that is an outlier in ${result.column}`
+          : `${result.totalMatched} rows that are outliers in ${result.column}`;
+    return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
+  }
+  if (entry.outliers === 0) {
+    return `No outliers in ${result.column} — every value is inside [${formatNumber(entry.lowBound)}, ${formatNumber(entry.highBound)}].`;
+  }
+  const verb = entry.outliers === 1 ? "is" : "are";
+  const noun = entry.outliers === 1 ? "an outlier" : "outliers";
+  return (
+    `${entry.outliers} of ${entry.total} ${plural(entry.total, "row")} ${verb} ` +
+    `${noun} in ${result.column} (${pct(entry.outliers, entry.total)})${fence(entry)}${seen(entry)}.`
+  );
+}
+
 function composeAboveBelow(
   result: Extract<QueryResult, { kind: "aboveBelow" }>,
   parsed?: ParsedCsv,
@@ -440,6 +515,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeTrend(result);
     case "missing":
       return composeMissing(result, parsed);
+    case "outliers":
+      return composeOutliers(result, parsed);
   }
 }
 

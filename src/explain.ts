@@ -202,6 +202,20 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters)}`,
       ];
     }
+    case "outliers": {
+      const what = query.listRows
+        ? `rows that are outliers in ${query.column}`
+        : query.column
+          ? `outliers in ${query.column}`
+          : "outliers by column";
+      return [
+        what,
+        "operation: outliers",
+        ...(query.column ? [`column: ${query.column}`] : []),
+        ...(query.listRows ? ["list rows: true"] : []),
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    }
   }
 }
 

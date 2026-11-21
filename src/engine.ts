@@ -20,6 +20,7 @@
 import type { ParsedCsv } from "./csv.js";
 import type { Filter, Query } from "./query.js";
 import { inferSchema, isNullValue, type ColumnInfo } from "./schema.js";
+import { outlierFence } from "./profile.js";
 import { leastSquaresSlope, numericStats, ordinal, pearsonCorrelation, percentile } from "./stats.js";
 import { bucketDate, parseDate, type TimeBucket } from "./time.js";
 
@@ -217,6 +218,46 @@ export type QueryResult =
        */
       rows: Record<string, string>[];
       /** Rows missing the column (0 unless the question listed them). */
+      totalMatched: number;
+      limitedTo?: number;
+      /** True when the question asked to list the rows. */
+      listRows: boolean;
+      /** Rows the filters matched (the counts are over these). */
+      rowsMatched: number;
+    }
+  | {
+      kind: "outliers";
+      /** The column checked, or null for a whole-sheet report. */
+      column: string | null;
+      /**
+       * Outlier counts per column, most outliers first (alphabetical
+       * tie-break). A single-column question lists just that column;
+       * a whole-sheet report lists every numeric column, including
+       * the clean ones, so "no outliers" is visible, not implied by
+       * absence. Text/date/boolean columns never appear: an outlier
+       * needs numbers.
+       */
+      entries: {
+        column: string;
+        /** Rows with a usable value in this column. */
+        total: number;
+        /** Rows whose value falls outside the fence. */
+        outliers: number;
+        /** The fence bounds; null when fewer than 4 usable values. */
+        lowBound: number | null;
+        highBound: number | null;
+        /** Smallest / largest outlier seen; null when there are none. */
+        low: number | null;
+        high: number | null;
+      }[];
+      headers: string[];
+      /**
+       * Rows that are outliers in the column, in sheet order, sliced
+       * to 10 — only when the question asked to list them; empty
+       * otherwise.
+       */
+      rows: Record<string, string>[];
+      /** Outlier rows (0 unless the question listed them). */
       totalMatched: number;
       limitedTo?: number;
       /** True when the question asked to list the rows. */
@@ -904,6 +945,85 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
       }
       return {
         kind: "missing",
+        column: query.column,
+        entries,
+        headers: parsed.headers,
+        rows: records,
+        totalMatched,
+        limitedTo,
+        listRows: query.listRows,
+        rowsMatched: rows.length,
+      };
+    }
+
+    case "outliers": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      // One entry per numeric column: the Tukey fence over the
+      // matched rows' usable values, and how many of them fall
+      // outside it. A blank is not an outlier — it is no value —
+      // and a zero is a value, never an outlier by itself.
+      const buildEntry = (name: string) => {
+        const cIdx = colIndex.get(name)!;
+        const values: number[] = [];
+        for (const row of rows) {
+          const raw = row[cIdx] ?? "";
+          if (isNullValue(raw)) continue;
+          const n = toNumber(raw);
+          if (n !== null) values.push(n);
+        }
+        const fence = outlierFence(values);
+        const outside =
+          fence === null
+            ? []
+            : values.filter((v) => v < fence.lowBound || v > fence.highBound);
+        return {
+          column: name,
+          total: values.length,
+          outliers: outside.length,
+          lowBound: fence?.lowBound ?? null,
+          highBound: fence?.highBound ?? null,
+          low: outside.length === 0 ? null : Math.min(...outside),
+          high: outside.length === 0 ? null : Math.max(...outside),
+        };
+      };
+      const names =
+        query.column !== null
+          ? [query.column]
+          : schema
+              .filter((c) => c.type === "integer" || c.type === "number")
+              .map((c) => c.name);
+      const entries = names
+        .map(buildEntry)
+        // Most outliers first, so the problem columns lead the report;
+        // alphabetical tie-break keeps the order stable.
+        .sort((a, b) => b.outliers - a.outliers || a.column.localeCompare(b.column));
+      let records: Record<string, string>[] = [];
+      let totalMatched = 0;
+      let limitedTo: number | undefined;
+      if (query.listRows && query.column !== null) {
+        const entry = entries[0]!;
+        if (entry.lowBound !== null && entry.highBound !== null) {
+          const cIdx = colIndex.get(query.column)!;
+          const matching = rows.filter((row) => {
+            const n = toNumber(row[cIdx] ?? "");
+            return (
+              n !== null && (n < entry.lowBound! || n > entry.highBound!)
+            );
+          });
+          totalMatched = matching.length;
+          const shown = matching.slice(0, 10);
+          records = shown.map((row) => {
+            const rec: Record<string, string> = {};
+            parsed.headers.forEach((h, i) => {
+              rec[h] = row[i] ?? "";
+            });
+            return rec;
+          });
+          limitedTo = matching.length > 10 ? 10 : undefined;
+        }
+      }
+      return {
+        kind: "outliers",
         column: query.column,
         entries,
         headers: parsed.headers,

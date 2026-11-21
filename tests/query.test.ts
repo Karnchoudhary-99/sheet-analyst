@@ -1343,3 +1343,88 @@ describe("parseQuestion missing values", () => {
     if (!r.ok) expect(r.reason).toMatch(/could not tell which column/);
   });
 });
+
+describe("parseQuestion outliers", () => {
+  it("parses 'how many outliers in revenue' as a count", () => {
+    expect(parseQuestion("how many outliers in revenue", SALES)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: "revenue", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'count outliers in units' as a count", () => {
+    expect(parseQuestion("count outliers in units", SALES)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: "units", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'which columns have outliers' as a whole-sheet report", () => {
+    expect(parseQuestion("which columns have outliers", SALES)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: null, filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'show outliers in revenue' as a row listing", () => {
+    expect(parseQuestion("show outliers in revenue", SALES)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: "revenue", filters: [], listRows: true },
+    });
+  });
+
+  it("parses 'which rows are outliers in salary' as a row listing", () => {
+    expect(parseQuestion("which rows are outliers in salary", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "outliers", column: "salary", filters: [], listRows: true },
+    });
+  });
+
+  it("keeps a filter on an outlier question", () => {
+    expect(parseQuestion("how many outliers in salary in Engineering", STAFF)).toEqual({
+      ok: true,
+      query: {
+        kind: "outliers",
+        column: "salary",
+        filters: [{ column: "department", op: "=", value: "Engineering" }],
+        listRows: false,
+      },
+    });
+  });
+
+  it("abstains on a text column — outliers need numbers", () => {
+    const r = parseQuestion("how many outliers in region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains when the column does not exist", () => {
+    const r = parseQuestion("how many outliers in profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a grouped outlier question instead of answering the whole-sheet count", () => {
+    const r = parseQuestion("how many outliers in revenue by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one column/);
+  });
+
+  it("abstains on a time-grouped outlier question", () => {
+    const r = parseQuestion("how many outliers in revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+
+  it("abstains when listing rows with no column named", () => {
+    const r = parseQuestion("show outlier rows", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs one column/);
+  });
+
+  it("abstains on an ambiguous column", () => {
+    const r = parseQuestion("how many outliers in units revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell which column/);
+  });
+});

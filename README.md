@@ -35,6 +35,7 @@ top-N) directly from the spreadsheet.
 - [x] Sorted row listings ("show rows sorted by revenue descending", "list employees sorted by salary ascending" — numbers numerically, dates by day, text alphabetically; blank cells always last; the sort runs before the limit, so the first N of a sorted listing are the sorted top N)
 - [x] Above/below-average questions ("rows with revenue above average", "which employees have salary below the median" — rows strictly on one side of the column's mean or median; equal-to-baseline rows are neither; a column with no usable value has no baseline and the answer says so)
 - [x] Missing-values questions ("how many rows are missing salary", "which columns have missing values" — a count per column or a whole-sheet report, worst first; "show rows missing revenue" lists the rows; empty and NA markers count as missing, a zero never does)
+- [x] Outlier questions ("how many outliers in score", "which columns have outliers" — a count per column or a whole-sheet report over numeric columns, worst first; "show outliers in score" lists the rows; Tukey IQR fence, the same fence the data-quality profile reports)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -224,7 +225,18 @@ is no line to fit, and that is said plainly. Filters compare numbers
 numerically, dates by day, and text case-insensitively. Aggregates skip
 null values and say so when some matching rows had no usable value; a
 column with no usable values at all is reported as such, never rendered
-as zero. When a question cannot be understood unambiguously — unknown
+as zero. Outliers use the same Tukey IQR fence as the data-quality
+profile (1.5 × IQR outside Q1/Q3; fewer than 4 usable values means
+no fence). \"how many outliers in score\" counts them (\"1 of 8 rows
+is an outlier in score (12.5%) outside [2.75, 20.75] (seen 1,000)\"),
+\"which columns have outliers\" reports every numeric column, worst
+first, and \"show outliers in score\" lists the rows themselves. A
+column with no outliers says so with its fence (\"No outliers in
+revenue — every value is inside [-136.35, 593.81]\"), a column with
+too few values says so too, and a text column or a grouped question
+abstains. The fence is computed over the filtered rows, so
+\"outliers in score in Math\" judges only the Math rows. When a
+question cannot be understood unambiguously — unknown
 or ambiguous column, a value that belongs to several columns — the
 parser abstains with a reason instead of answering a different question.
 

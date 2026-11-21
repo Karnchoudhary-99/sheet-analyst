@@ -64,8 +64,11 @@ function medianOf(sorted: number[]): number {
   return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/** Tukey IQR fence outliers for sorted numeric values; null below 4 values. */
-export function iqrOutliers(sortedValues: number[]): OutlierSummary | null {
+/** Tukey IQR fence bounds for sorted numeric values; null below 4 values. */
+export function outlierFence(sortedValues: number[]): {
+  lowBound: number;
+  highBound: number;
+} | null {
   const sorted = [...sortedValues].sort((a, b) => a - b);
   if (sorted.length < 4) return null;
   const lowerHalf = sorted.slice(0, Math.floor(sorted.length / 2));
@@ -75,16 +78,22 @@ export function iqrOutliers(sortedValues: number[]): OutlierSummary | null {
   const iqr = q3 - q1;
   // A zero IQR means the middle half is one value: any different value
   // is outside the fence, which is the honest reading, not a bug.
-  const lowBound = q1 - 1.5 * iqr;
-  const highBound = q3 + 1.5 * iqr;
-  const outside = sorted.filter((v) => v < lowBound || v > highBound);
+  return { lowBound: q1 - 1.5 * iqr, highBound: q3 + 1.5 * iqr };
+}
+
+/** Tukey IQR fence outliers for sorted numeric values; null below 4 values. */
+export function iqrOutliers(sortedValues: number[]): OutlierSummary | null {
+  const sorted = [...sortedValues].sort((a, b) => a - b);
+  const fence = outlierFence(sorted);
+  if (fence === null) return null;
+  const outside = sorted.filter((v) => v < fence.lowBound || v > fence.highBound);
   if (outside.length === 0) return null;
   return {
     count: outside.length,
     low: outside[0],
     high: outside[outside.length - 1],
-    lowBound,
-    highBound,
+    lowBound: fence.lowBound,
+    highBound: fence.highBound,
   };
 }
 

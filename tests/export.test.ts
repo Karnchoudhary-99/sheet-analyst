@@ -412,3 +412,69 @@ describe("resultToCsv missing values", () => {
     );
   });
 });
+
+describe("resultToCsv outliers", () => {
+  it("writes one row per column with the outlier fraction and fence", () => {
+    const result: QueryResult = {
+      kind: "outliers",
+      column: null,
+      entries: [
+        {
+          column: "score",
+          total: 8,
+          outliers: 1,
+          lowBound: 2.75,
+          highBound: 20.75,
+          low: 1000,
+          high: 1000,
+        },
+        {
+          column: "hours",
+          total: 8,
+          outliers: 0,
+          lowBound: 2.5,
+          highBound: 10.5,
+          low: null,
+          high: null,
+        },
+      ],
+      headers: ["score", "hours"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 8,
+    };
+    expect(resultToCsv(result, "which columns have outliers", "…")).toBe(
+      "column,outliers,total_rows,percent_outliers,low_bound,high_bound\n" +
+        "score,1,8,0.125,2.75,20.75\n" +
+        "hours,0,8,0,2.5,10.5",
+    );
+  });
+
+  it("writes just the one column for a single-column question, with empty bounds when there is no fence", () => {
+    const result: QueryResult = {
+      kind: "outliers",
+      column: "y",
+      entries: [
+        {
+          column: "y",
+          total: 3,
+          outliers: 0,
+          lowBound: null,
+          highBound: null,
+          low: null,
+          high: null,
+        },
+      ],
+      headers: ["y"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 3,
+    };
+    expect(resultToCsv(result, "how many outliers in y", "…")).toBe(
+      "column,outliers,total_rows,percent_outliers,low_bound,high_bound\n" +
+        "y,0,3,0,,",
+    );
+  });
+});

@@ -66,6 +66,10 @@
  *   columns have missing values" (a count per column, or a
  *   whole-sheet report over every column), "show rows missing
  *   revenue" (the rows themselves, first 10)
+ * - outliers: "how many outliers in revenue", "which columns have
+ *   outliers" (a count per column, or a whole-sheet report over
+ *   every numeric column), "show outliers in revenue" (the rows
+ *   themselves, first 10)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -210,6 +214,22 @@ export type Query =
       filters: Filter[];
       /**
        * True for "show rows missing <column>": list the rows
+       * themselves instead of counting them.
+       */
+      listRows: boolean;
+    }
+  | {
+      kind: "outliers";
+      /**
+       * The column to check, or null for a whole-sheet report over
+       * every numeric column ("which columns have outliers").
+       * An outlier is a value outside the Tukey IQR fence — the
+       * same fence the data-quality profile reports.
+       */
+      column: string | null;
+      filters: Filter[];
+      /**
+       * True for "show outliers in <column>": list the rows
        * themselves instead of counting them.
        */
       listRows: boolean;
@@ -680,18 +700,22 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   }
 
   // Trailing "in <value>" / "for <value>" with a known categorical value.
+  // The LAST marker wins: "outliers in salary in Engineering" filters
+  // on Engineering, not on "salary in Engineering" — the first "in"
+  // belongs to the column phrase ("outliers in salary"), the filter
+  // is the trailing one.
   for (const marker of ["in", "for"]) {
-    const re = new RegExp(`\\b${marker}\\s+([^,;]+?)\\s*$`, "i");
+    const re = new RegExp(`^(.*)\\b${marker}\\s+([^,;]+?)\\s*$`, "i");
     const m = re.exec(rest);
     if (!m) continue;
-    const value = m[1].trim().replace(/^["']|["']$/g, "");
+    const value = m[2].trim().replace(/^["']|["']$/g, "");
     const owners = columns.filter((col, idx) => {
       if (col.type !== "text" && col.type !== "boolean") return false;
       return distinctValues(parsed, idx).has(value.toLowerCase());
     });
     if (owners.length === 1) {
       filters.push({ column: owners[0].name, op: "=", value });
-      rest = rest.slice(0, m.index).trim();
+      rest = rest.slice(0, m[1].length).trim();
     } else if (owners.length > 1) {
       return {
         filters,
@@ -1404,6 +1428,134 @@ function tryParseMissing(
   };
 }
 
+/**
+ * Try to read an outlier question ("how many outliers in revenue",
+ * "which columns have outliers", "show outliers in revenue").
+ * Returns null when the question shows no outlier intent; otherwise
+ * an outliers query, or an abstention when the column cannot be
+ * pinned down or is not numeric.
+ *
+ * Three shapes, mirroring the missing-values questions:
+ * - one column, counted ("how many outliers in revenue") —
+ *   "how many"/"count" wins over the row noun, so this counts
+ *   instead of listing;
+ * - one column, listed ("show outliers in revenue", "which rows
+ *   are outliers in salary") — the rows themselves, first 10;
+ * - no column ("which columns have outliers") — a report over
+ *   every numeric column. Listing with no column abstains: there is
+ *   no one column to list. A grouped question ("outliers in revenue
+ *   by region") abstains, like missing values — it is a per-group
+ *   question the engine does not answer.
+ */
+function tryParseOutliers(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\boutliers?\b/.test(norm)) return null;
+  if (/\bby\b|\bper\b|\bgroup\b/.test(norm)) {
+    return {
+      ok: false,
+      reason:
+        "an outlier question asks about one column — try e.g. 'how many outliers in revenue'",
+    };
+  }
+
+  const filler = new Set([
+    "what",
+    "how",
+    "many",
+    "count",
+    "rows",
+    "row",
+    "are",
+    "is",
+    "the",
+    "of",
+    "in",
+    "with",
+    "values",
+    "value",
+    "cells",
+    "cell",
+    "show",
+    "list",
+    "which",
+    "columns",
+    "column",
+    "have",
+    "has",
+    "there",
+    "any",
+    "outlier",
+    "outliers",
+    "for",
+    "all",
+    "find",
+  ]);
+  const cleaned = norm
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to check — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = distinct[0] ?? null;
+  if (column) {
+    if (column.type !== "integer" && column.type !== "number") {
+      return {
+        ok: false,
+        reason: `outliers need a numeric column — "${column.name}" is ${column.type}`,
+      };
+    }
+    // Anything left after removing the column name is a word the
+    // sheet does not explain — refuse rather than dropping it.
+    const colName = normalize(column.name);
+    const colNameSingular = colName.split(" ").map(singular).join(" ");
+    let rest = cleaned;
+    for (const name of [colName, colNameSingular]) {
+      rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
+    }
+    if (rest !== "") {
+      return {
+        ok: false,
+        reason: `could not understand "${rest}" in the question — try e.g. 'how many outliers in ${column.name}'`,
+      };
+    }
+  } else if (cleaned !== "") {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+
+  // "how many"/"count" counts, even when the question also says
+  // "rows" ("how many rows are outliers in revenue"). Otherwise a
+  // show/list/which-rows phrasing lists the rows.
+  const wantsCount = /\bhow many\b|\bcount\b/.test(norm);
+  const listRows =
+    !wantsCount &&
+    (/^\s*(show|list)\b/.test(norm) ||
+      (/\bwhich\b/.test(norm) && /\brows?\b/.test(norm) && column !== null));
+  if (listRows && column === null) {
+    return {
+      ok: false,
+      reason:
+        "listing outlier rows needs one column — try e.g. 'show outliers in revenue'",
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "outliers", column: column?.name ?? null, filters, listRows },
+  };
+}
+
 function tryParsePercentile(
   text: string,
   columns: ColumnInfo[],
@@ -1728,6 +1880,23 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return missing;
+  }
+
+  // Outliers: a count per column, a whole-sheet report, or the rows
+  // themselves ("show outliers in revenue"). Checked right after
+  // missing values, before the distinct-values listing and the
+  // generic aggregate fallback, which would otherwise read
+  // "outliers" as nothing and answer a count of rows.
+  const outliers = tryParseOutliers(timeBucket.rest, columns, filters);
+  if (outliers) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason:
+          "outliers can't be grouped by a time period — ask about the whole sheet, e.g. 'how many outliers in revenue'",
+      };
+    }
+    return outliers;
   }
 
   // Distinct values: every distinct value of one column, with row

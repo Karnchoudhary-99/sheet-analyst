@@ -51,6 +51,7 @@ export {
 } from "./charts.js";
 export {
   iqrOutliers,
+  outlierFence,
   profileColumn,
   profileSheet,
   type ColumnProfile,
