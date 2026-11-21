@@ -733,7 +733,11 @@ interface FilterExtraction {
  * - a trailing "in <value>" / "for <value>" where the value is a known
  *   categorical value of exactly one column ("sales in North").
  * A bare value that belongs to several columns abstains — guessing
- * the column would answer a different question.
+ * the column would answer a different question. A trailing list
+ * ("in North and South", "in North or South") resolves to OR groups
+ * instead of being silently dropped, and a single unknown trailing
+ * value ("in 2024") abstains — answering the whole sheet would
+ * answer a different question than the one asked.
  */
 /**
  * The column phrase of a where condition must be the column name
@@ -1244,6 +1248,73 @@ function resolveExclusionValues(
   };
 }
 
+/**
+ * Resolve a trailing "in"/"for" value that lists several values
+ * ("North and South", "North or South") into OR groups. The whole
+ * value is tried first by the caller; this only runs when it has no
+ * single owner. Returns null when the value is not a list (the
+ * caller leaves it alone — "for each department", or a column name
+ * like "salary" in "outliers in salary"), an error when it looks
+ * like a list but cannot be resolved, and the groups otherwise. A
+ * quoted value is never split: it was one value the sheet simply
+ * does not have.
+ */
+function resolveInValueList(
+  value: string,
+  quoted: boolean,
+  before: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): { orGroups: Filter[][] } | { error: string } | null {
+  // A column name as the value ("outliers in salary") is the column
+  // being asked about, not a filter — leave it for the question parser.
+  if (findColumns(value, columns).length > 0) return null;
+  // "for each department" is the group-by phrase.
+  if (/^each\b/i.test(value)) return null;
+  // "compare rows in Jan vs Feb": the "in" belongs to the
+  // comparison's period phrasing, not to a filter.
+  if (/\bvs\b/i.test(value)) return null;
+  // "how many outliers in profit", "how many duplicates in profit":
+  // the "in" names the subject column those questions read — a word
+  // that is not a column is their "no column named" abstention, not
+  // a filter to resolve here.
+  if (/\b(outlier|duplicate)s?\b/i.test(before)) return null;
+  const firstText = columns.find((c) => c.type === "text")?.name ?? "region";
+  const parts = quoted ? [value] : value.split(/\s+(?:and|or)\s+/i);
+  if (parts.length === 1) {
+    // A single unknown value: refuse rather than silently dropping
+    // the filter — "total revenue in 2024" must not answer the
+    // whole-sheet total as if nothing had been asked.
+    return {
+      error: `could not find "${value}" in any column — say which rows, e.g. "where ${firstText} is ${value}"`,
+    };
+  }
+  const groups: Filter[][] = [];
+  let owner: string | null = null;
+  for (const part of parts) {
+    const owners = valueOwners(part, columns, parsed);
+    if (owners.length !== 1) {
+      return {
+        error: `could not find "${part}" in any column — say which rows, e.g. "where ${firstText} is ${part}"`,
+      };
+    }
+    if (owner === null) owner = owners[0].name;
+    if (owners[0].name !== owner) {
+      return {
+        error: `"${part}" is in ${owners[0].name} but the other values are in ${owner} — a list after "in" needs one column`,
+      };
+    }
+    groups.push([
+      {
+        column: owners[0].name,
+        op: "=",
+        value: sheetSpelling(part, owners[0], columns, parsed),
+      },
+    ]);
+  }
+  return { orGroups: groups };
+}
+
 function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const columns = inferSchema(parsed);
   let rest = question;
@@ -1346,8 +1417,24 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
         rest,
         error: `"${value}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0].name} is ${value}"`,
       };
+    } else {
+      // No owner: usually not a filter ("for each department", a
+      // column name like "salary" in "outliers in salary") — but a
+      // list of values ("in North and South") is a filter the old
+      // code silently dropped, answering the whole sheet as if
+      // nothing had been asked. Resolve the list, or refuse.
+      const quoted = /^["'].*["']$/.test(m[2].trim());
+      const list = resolveInValueList(value, quoted, m[1], columns, parsed);
+      if (list && "error" in list) {
+        return { filters, orGroups, rest, error: list.error };
+      }
+      if (list) {
+        orGroups.push(...list.orGroups);
+        rest = rest.slice(0, m[1].length).trim();
+      }
+      // Otherwise leave it: "for each", a column name, or a value
+      // no other rule covers.
     }
-    // No owner: not a filter (e.g. "for each department"); leave it.
   }
 
   return { filters, orGroups, rest };

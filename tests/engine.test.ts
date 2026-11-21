@@ -288,6 +288,25 @@ describe("executeQuery excluding filters", () => {
   });
 });
 
+describe("executeQuery trailing in/for lists", () => {
+  it("unions a list after for", () => {
+    const r = ask("total revenue for North and South");
+    if (r.kind === "scalar") {
+      // North 389.97 + South 199.92; East and West are cut.
+      expect(r.value).toBeCloseTo(589.89, 2);
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+
+  it("unions a list after in with or", () => {
+    const r = ask("total revenue in North or South");
+    if (r.kind === "scalar") {
+      expect(r.value).toBeCloseTo(589.89, 2);
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+});
+
 describe("executeQuery distribution", () => {
   it("bins values into at most 10 equal-width bins", () => {
     const r = ask("distribution of revenue");

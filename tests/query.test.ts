@@ -798,6 +798,55 @@ describe("parseQuestion excluding filters", () => {
   });
 });
 
+describe("parseQuestion trailing in/for lists", () => {
+  it("resolves a list after in to or groups", () => {
+    const r = parseQuestion("total revenue in North and South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([]);
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "region", op: "=", value: "South" }],
+      ]);
+    }
+  });
+
+  it("resolves a list after for with or", () => {
+    const r = parseQuestion("total revenue for North or South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "region", op: "=", value: "South" }],
+      ]);
+    }
+  });
+
+  it("abstains on a single unknown trailing value instead of dropping it", () => {
+    const r = parseQuestion("total revenue in 2024", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "2024"/);
+  });
+
+  it("abstains on an unknown trailing word", () => {
+    const r = parseQuestion("total revenue in Frobnicate", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "Frobnicate"/);
+  });
+
+  it("leaves an outliers subject column for the outliers parser", () => {
+    const r = parseQuestion("how many outliers in profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("does not split a quoted list value", () => {
+    const r = parseQuestion('total revenue in "North and South"', SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "North and South"/);
+  });
+});
+
 describe("parseQuestion distribution", () => {
   it("parses a distribution question", () => {
     const r = parseQuestion("distribution of salary", STAFF);
