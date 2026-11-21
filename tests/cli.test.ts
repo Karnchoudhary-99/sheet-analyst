@@ -318,7 +318,7 @@ describe("runCli workbooks", () => {
   it("abstains with the sheet list when the workbook question names no sheet", async () => {
     const c = capture();
     expect(await runCli(["ask", examplesDir, "total revenue"], c.out)).toBe(0);
-    expect(c.stdout.join("")).toContain("Sheets available: employees, monthly-sales, sales");
+    expect(c.stdout.join("")).toContain("Sheets available: duplicates, employees, monthly-sales, sales, scores");
   });
 
   it("runs columns/describe on a workbook sheet with --sheet", async () => {

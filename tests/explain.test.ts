@@ -483,13 +483,8 @@ describe("describeQuery duplicates", () => {
     const lines = describeQuery({
       kind: "duplicates",
       column: "product",
-      duplicateRows: 3,
-      entries: [{ column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 }],
-      headers: ["region", "product", "units"],
-      rows: [],
-      totalMatched: 0,
+      filters: [],
       listRows: false,
-      rowsMatched: 7,
     });
     expect(lines[0]).toBe("duplicates in product");
     expect(lines).toContain("operation: duplicates");
@@ -500,13 +495,8 @@ describe("describeQuery duplicates", () => {
     const lines = describeQuery({
       kind: "duplicates",
       column: "product",
-      duplicateRows: 3,
-      entries: [{ column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 }],
-      headers: ["region", "product", "units"],
-      rows: [],
-      totalMatched: 4,
+      filters: [],
       listRows: true,
-      rowsMatched: 7,
     });
     expect(lines[0]).toBe("rows that are duplicates in product");
     expect(lines).toContain("list rows: true");
@@ -516,13 +506,8 @@ describe("describeQuery duplicates", () => {
     const lines = describeQuery({
       kind: "duplicates",
       column: null,
-      duplicateRows: 3,
-      entries: [],
-      headers: ["region", "product", "units"],
-      rows: [],
-      totalMatched: 3,
+      filters: [],
       listRows: true,
-      rowsMatched: 7,
     });
     expect(lines[0]).toBe("rows that duplicate an earlier row");
     expect(lines).toContain("operation: duplicates");
@@ -533,13 +518,8 @@ describe("describeQuery duplicates", () => {
     const lines = describeQuery({
       kind: "duplicates",
       column: null,
-      duplicateRows: 3,
-      entries: [],
-      headers: ["region", "product", "units"],
-      rows: [],
-      totalMatched: 0,
+      filters: [],
       listRows: false,
-      rowsMatched: 7,
     });
     expect(lines[0]).toBe("duplicates by column");
     expect(lines).toContain("operation: duplicates");
