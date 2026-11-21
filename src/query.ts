@@ -52,6 +52,9 @@
  * - distinct values: "list unique regions", "what are the distinct
  *   products" (every distinct value of a column, with row counts,
  *   most frequent first)
+ * - distribution: "distribution of salary", "histogram of revenue"
+ *   (values binned into an equal-width histogram, at most 10 bins;
+ *   a numeric column only — a text column abstains)
  * - mode: "most common product", "what is the mode of region" (the
  *   value that appears most often; ties break alphabetically)
  * - distinct count: "how many distinct regions", "count distinct
@@ -174,6 +177,12 @@ export type Query =
       filters: Filter[];
       /** Most values shown (default 20); the result reports the total. */
       limit: number;
+    }
+  | {
+      kind: "distribution";
+      /** The numeric column whose values are binned. */
+      column: string;
+      filters: Filter[];
     }
   | {
       kind: "mode";
@@ -1362,6 +1371,60 @@ function tryParseMode(
  * (no counting word) is not a count question and is left for the
  * distinct-values parser.
  */
+/**
+ * Try to read a distribution question ("distribution of salary",
+ * "histogram of revenue", "show distribution of age"). Returns null
+ * when the question shows no distribution intent; otherwise a
+ * distribution query, or an abstention when the column cannot be
+ * pinned down or is not numeric — a histogram of a text column has
+ * no bins to draw.
+ */
+function tryParseDistribution(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\b(distribution|histogram)\b/.test(norm)) return null;
+  const filler = new Set([
+    "show",
+    "me",
+    "the",
+    "distribution",
+    "histogram",
+    "of",
+  ]);
+  const cleaned = norm
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to chart — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = distinct[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a distribution needs a numeric column — "${column.name}" is ${column.type}; try e.g. "distribution of salary"`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "distribution", column: column.name, filters },
+  };
+}
+
 function tryParseDistinctCount(
   text: string,
   columns: ColumnInfo[],
@@ -2378,6 +2441,22 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return distinct;
+  }
+
+  // Distribution: a numeric column binned into a histogram
+  // ("distribution of salary", "histogram of revenue"). Checked
+  // before the generic aggregate fallback, which would otherwise
+  // read "distribution" as nothing and abstain with a less useful
+  // reason.
+  const distribution = tryParseDistribution(timeBucket.rest, columns, filters);
+  if (distribution) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a distribution can't be grouped by a time period — ask about the whole sheet, e.g. 'distribution of salary'",
+      };
+    }
+    return distribution;
   }
 
   // Correlation: two numeric columns, no grouping or ranking.
