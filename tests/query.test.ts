@@ -1428,3 +1428,105 @@ describe("parseQuestion outliers", () => {
     if (!r.ok) expect(r.reason).toMatch(/could not tell which column/);
   });
 });
+
+// North/Widget A/12 appears 3 times, South/Widget B/8 twice:
+// 3 exact duplicate rows; product has 4 duplicate rows over 2
+// repeated values, region and units 3 each.
+const DUPS = parseCsv(
+  "region,product,units\n" +
+    "North,Widget A,12\n" +
+    "South,Widget B,8\n" +
+    "North,Widget A,12\n" +
+    "East,Widget C,5\n" +
+    "South,Widget B,8\n" +
+    "North,Widget A,12\n" +
+    "West,Widget B,3\n",
+);
+
+describe("parseQuestion duplicates", () => {
+  it("parses 'how many duplicate rows' as a whole-sheet report", () => {
+    expect(parseQuestion("how many duplicate rows", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: null, filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'are there duplicate rows' as a whole-sheet report", () => {
+    expect(parseQuestion("are there duplicate rows", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: null, filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'how many duplicate products' as a count — plural column names work", () => {
+    expect(parseQuestion("how many duplicate products", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: "product", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'count duplicates in region' as a count", () => {
+    expect(parseQuestion("count duplicates in region", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: "region", filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'which columns have duplicates' as a whole-sheet report", () => {
+    expect(parseQuestion("which columns have duplicates", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: null, filters: [], listRows: false },
+    });
+  });
+
+  it("parses 'show duplicate rows' as a listing of the exact duplicate rows", () => {
+    expect(parseQuestion("show duplicate rows", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: null, filters: [], listRows: true },
+    });
+  });
+
+  it("parses 'show duplicates in product' as a row listing", () => {
+    expect(parseQuestion("show duplicates in product", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: "product", filters: [], listRows: true },
+    });
+  });
+
+  it("parses 'which rows are duplicates' as a listing even with no column named", () => {
+    expect(parseQuestion("which rows are duplicates", DUPS)).toEqual({
+      ok: true,
+      query: { kind: "duplicates", column: null, filters: [], listRows: true },
+    });
+  });
+
+  it("keeps a filter on a duplicate question", () => {
+    expect(parseQuestion("how many duplicates in product in North", DUPS)).toEqual({
+      ok: true,
+      query: {
+        kind: "duplicates",
+        column: "product",
+        filters: [{ column: "region", op: "=", value: "North" }],
+        listRows: false,
+      },
+    });
+  });
+
+  it("abstains when the column does not exist", () => {
+    const r = parseQuestion("how many duplicates in profit", DUPS);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a grouped duplicate question instead of answering the whole-sheet count", () => {
+    const r = parseQuestion("how many duplicate products by region", DUPS);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one column/);
+  });
+
+  it("abstains on an ambiguous column", () => {
+    const r = parseQuestion("how many duplicates in units region", DUPS);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell which column/);
+  });
+});

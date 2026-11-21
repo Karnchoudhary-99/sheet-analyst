@@ -478,3 +478,46 @@ describe("resultToCsv outliers", () => {
     );
   });
 });
+
+describe("resultToCsv duplicates", () => {
+  it("writes the full-row count first, then one row per column", () => {
+    const result: QueryResult = {
+      kind: "duplicates",
+      column: null,
+      duplicateRows: 3,
+      entries: [
+        { column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 },
+        { column: "region", duplicates: 3, total: 7, valuesWithDuplicates: 2 },
+      ],
+      headers: ["region", "product", "units"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 7,
+    };
+    expect(resultToCsv(result, "how many duplicate rows", "…")).toBe(
+      "column,duplicate_rows,total_rows,percent_duplicates,values_with_duplicates\n" +
+        "(full rows),3,7,0.42857142857142855,\n" +
+        "product,4,7,0.5714285714285714,2\n" +
+        "region,3,7,0.42857142857142855,2",
+    );
+  });
+
+  it("writes just the one column for a single-column question", () => {
+    const result: QueryResult = {
+      kind: "duplicates",
+      column: "product",
+      duplicateRows: 3,
+      entries: [{ column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 }],
+      headers: ["region", "product", "units"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 7,
+    };
+    expect(resultToCsv(result, "how many duplicate products", "…")).toBe(
+      "column,duplicate_rows,total_rows,percent_duplicates,values_with_duplicates\n" +
+        "product,4,7,0.5714285714285714,2",
+    );
+  });
+});

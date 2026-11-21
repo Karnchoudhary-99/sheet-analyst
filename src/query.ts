@@ -70,6 +70,11 @@
  *   outliers" (a count per column, or a whole-sheet report over
  *   every numeric column), "show outliers in revenue" (the rows
  *   themselves, first 10)
+ * - duplicates: "how many duplicate rows", "which columns have
+ *   duplicates" (a count per column, or a whole-sheet report over
+ *   every column, plus the exact duplicate rows), "show duplicate
+ *   rows" / "show duplicates in product" (the duplicate rows
+ *   themselves, first 10)
  */
 
 import type { ParsedCsv } from "./csv.js";
@@ -231,6 +236,26 @@ export type Query =
       /**
        * True for "show outliers in <column>": list the rows
        * themselves instead of counting them.
+       */
+      listRows: boolean;
+    }
+  | {
+      kind: "duplicates";
+      /**
+       * The column to check, or null for a whole-sheet report over
+       * every column ("which columns have duplicates"). A duplicate
+       * is a value that appears more than once — blanks are not
+       * values, so two blank cells never count as a duplicate. The
+       * report also counts exact duplicate rows: a full row
+       * identical to an earlier one, the same definition the
+       * data-quality profile uses.
+       */
+      column: string | null;
+      filters: Filter[];
+      /**
+       * True for "show duplicate rows" / "show duplicates in
+       * <column>": list the duplicate rows themselves instead of
+       * counting them.
        */
       listRows: boolean;
     };
@@ -1556,6 +1581,140 @@ function tryParseOutliers(
   };
 }
 
+/**
+ * Try to read a duplicate question ("how many duplicate rows",
+ * "which columns have duplicates", "show duplicates in product").
+ * Returns null when the question shows no duplicate intent;
+ * otherwise a duplicates query, or an abstention when the column
+ * cannot be pinned down.
+ *
+ * Three shapes, mirroring the missing-values and outlier questions:
+ * - one column, counted ("how many duplicate products") — "how
+ *   many"/"count" wins over the row noun, so this counts instead
+ *   of listing;
+ * - one column, listed ("show duplicates in product", "which rows
+ *   are duplicates in region") — the duplicate rows themselves,
+ *   first 10;
+ * - no column ("how many duplicate rows", "which columns have
+ *   duplicates") — a whole-sheet report: the exact duplicate rows
+ *   plus a per-column count over every column. Listing with no
+ *   column lists the exact duplicate rows. A grouped question
+ *   ("duplicate products by region") abstains, like missing values
+ *   and outliers — it is a per-group question the engine does not
+ *   answer.
+ */
+function tryParseDuplicates(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\bduplicat\w*\b|\brepeat\w*\b/.test(norm)) return null;
+  if (/\bby\b|\bper\b|\bgroup\b/.test(norm)) {
+    return {
+      ok: false,
+      reason:
+        "a duplicate question asks about one column — try e.g. 'how many duplicate rows'",
+    };
+  }
+
+  const filler = new Set([
+    "what",
+    "how",
+    "many",
+    "count",
+    "rows",
+    "row",
+    "are",
+    "is",
+    "the",
+    "of",
+    "in",
+    "with",
+    "values",
+    "value",
+    "cells",
+    "cell",
+    "show",
+    "list",
+    "which",
+    "columns",
+    "column",
+    "have",
+    "has",
+    "there",
+    "any",
+    "duplicate",
+    "duplicates",
+    "duplicated",
+    "repeat",
+    "repeats",
+    "repeated",
+    "repeating",
+    "exact",
+    "for",
+    "all",
+    "find",
+  ]);
+  const cleaned = norm
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to check — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = distinct[0] ?? null;
+  if (column) {
+    // Anything left after removing the column name is a word the
+    // sheet does not explain — refuse rather than dropping it. The
+    // plural form is removed first: "duplicate products" names the
+    // product column, and removing "product" from "products" would
+    // otherwise leave a stray "s" behind.
+    const colName = normalize(column.name);
+    const colNameSingular = colName.split(" ").map(singular).join(" ");
+    let rest = cleaned;
+    for (const name of [colName, colNameSingular]) {
+      const pluralName = name.endsWith("s") ? name : `${name}s`;
+      rest = rest
+        .replace(pluralName, " ")
+        .replace(name, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    if (rest !== "") {
+      return {
+        ok: false,
+        reason: `could not understand "${rest}" in the question — try e.g. 'how many duplicates in ${column.name}'`,
+      };
+    }
+  } else if (cleaned !== "") {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+
+  // "how many"/"count" counts, even when the question also says
+  // "rows" ("how many duplicate rows"). Otherwise a show/list/
+  // which-rows phrasing lists the rows. Unlike missing values and
+  // outliers, listing needs no column: with none named, the exact
+  // duplicate rows are listed.
+  const wantsCount = /\bhow many\b|\bcount\b/.test(norm);
+  const listRows =
+    !wantsCount &&
+    (/^\s*(show|list)\b/.test(norm) ||
+      (/\bwhich\b/.test(norm) && /\brows?\b/.test(norm)));
+  return {
+    ok: true,
+    query: { kind: "duplicates", column: column?.name ?? null, filters, listRows },
+  };
+}
+
 function tryParsePercentile(
   text: string,
   columns: ColumnInfo[],
@@ -1897,6 +2056,23 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return outliers;
+  }
+
+  // Duplicates: a count per column, a whole-sheet report, or the
+  // rows themselves ("show duplicate rows"). Checked right after
+  // outliers, before the distinct-values listing and the generic
+  // aggregate fallback, which would otherwise read "duplicates"
+  // as nothing and answer a count of rows.
+  const duplicates = tryParseDuplicates(timeBucket.rest, columns, filters);
+  if (duplicates) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason:
+          "duplicates can't be grouped by a time period — ask about the whole sheet, e.g. 'how many duplicate rows'",
+      };
+    }
+    return duplicates;
   }
 
   // Distinct values: every distinct value of one column, with row

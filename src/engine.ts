@@ -264,6 +264,49 @@ export type QueryResult =
       listRows: boolean;
       /** Rows the filters matched (the counts are over these). */
       rowsMatched: number;
+    }
+  | {
+      kind: "duplicates";
+      /** The column checked, or null for a whole-sheet report. */
+      column: string | null;
+      /**
+       * Full rows beyond the first occurrence of an identical row
+       * (raw cell text, blanks included — the same definition the
+       * data-quality profile uses). A single-column question still
+       * reports it, so the whole-sheet picture is never hidden.
+       */
+      duplicateRows: number;
+      /**
+       * Duplicate counts per column, most duplicates first
+       * (alphabetical tie-break). A single-column question lists
+       * just that column; a whole-sheet report lists every column,
+       * including the clean ones, so "no duplicates" is visible,
+       * not implied by absence.
+       */
+      entries: {
+        column: string;
+        /** Rows beyond the first occurrence of a repeated value. */
+        duplicates: number;
+        /** Rows with a non-blank value (blanks are not values). */
+        total: number;
+        /** Distinct values that appear more than once. */
+        valuesWithDuplicates: number;
+      }[];
+      headers: string[];
+      /**
+       * Duplicate rows, in sheet order, sliced to 10 — only when
+       * the question asked to list them; empty otherwise. With a
+       * column named, the rows whose value already appeared
+       * earlier; without one, the exact duplicate rows.
+       */
+      rows: Record<string, string>[];
+      /** Duplicate rows (0 unless the question listed them). */
+      totalMatched: number;
+      limitedTo?: number;
+      /** True when the question asked to list the rows. */
+      listRows: boolean;
+      /** Rows the filters matched (the counts are over these). */
+      rowsMatched: number;
     };
 
 function toNumber(value: string): number | null {
@@ -1025,6 +1068,93 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
       return {
         kind: "outliers",
         column: query.column,
+        entries,
+        headers: parsed.headers,
+        rows: records,
+        totalMatched,
+        limitedTo,
+        listRows: query.listRows,
+        rowsMatched: rows.length,
+      };
+    }
+
+    case "duplicates": {
+      const rows = applyFilters(parsed, schema, query.filters);
+      // Exact duplicate rows: rows beyond the first occurrence of
+      // an identical row — raw cell text, blanks included, the same
+      // definition the data-quality profile uses. Their positions
+      // are kept so a listing can show them in sheet order.
+      const seenRows = new Set<string>();
+      let duplicateRows = 0;
+      const fullRowDupes: string[][] = [];
+      for (const row of rows) {
+        const key = row.map((cell) => cell ?? "").join("\u0000");
+        if (seenRows.has(key)) {
+          duplicateRows += 1;
+          fullRowDupes.push(row);
+        } else {
+          seenRows.add(key);
+        }
+      }
+      // Per-column duplicates: rows beyond the first occurrence of
+      // a repeated value. Blank cells are not values — two blanks
+      // are two missing values, never a duplicate — so the counts
+      // come from countRawValues, which skips blanks.
+      const buildEntry = (name: string) => {
+        const cIdx = colIndex.get(name)!;
+        const counts = countRawValues(rows, cIdx);
+        return {
+          column: name,
+          duplicates: counts.reduce(
+            (n, v) => n + (v.count > 1 ? v.count - 1 : 0),
+            0,
+          ),
+          total: counts.reduce((n, v) => n + v.count, 0),
+          valuesWithDuplicates: counts.filter((v) => v.count > 1).length,
+        };
+      };
+      const names =
+        query.column !== null ? [query.column] : schema.map((c) => c.name);
+      const entries = names
+        .map(buildEntry)
+        // Most duplicates first, so the problem columns lead the
+        // report; alphabetical tie-break keeps the order stable.
+        .sort((a, b) => b.duplicates - a.duplicates || a.column.localeCompare(b.column));
+      let records: Record<string, string>[] = [];
+      let totalMatched = 0;
+      let limitedTo: number | undefined;
+      if (query.listRows) {
+        let matching: string[][];
+        if (query.column !== null) {
+          // Rows whose value already appeared earlier in the
+          // column, in sheet order — blanks never qualify.
+          const cIdx = colIndex.get(query.column)!;
+          const seen = new Set<string>();
+          matching = rows.filter((row) => {
+            const cell = (row[cIdx] ?? "").trim();
+            if (cell === "") return false;
+            if (seen.has(cell)) return true;
+            seen.add(cell);
+            return false;
+          });
+        } else {
+          matching = fullRowDupes;
+        }
+        totalMatched = matching.length;
+        const shown = matching.slice(0, 10);
+        records = shown.map((row) => {
+          const rec: Record<string, string> = {};
+          parsed.headers.forEach((h, i) => {
+            rec[h] = row[i] ?? "";
+          });
+          return rec;
+        });
+        limitedTo = matching.length > 10 ? 10 : undefined;
+      }
+      return {
+        kind: "duplicates",
+        column: query.column,
+        duplicateRows,
         entries,
         headers: parsed.headers,
         rows: records,

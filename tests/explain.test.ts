@@ -477,3 +477,52 @@ describe("describeQuery outliers", () => {
     expect(lines).not.toContain("column: score");
   });
 });
+
+describe("describeQuery duplicates", () => {
+  it("describes a single-column count", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: "product",
+      filters: [],
+      listRows: false,
+    });
+    expect(lines[0]).toBe("duplicates in product");
+    expect(lines).toContain("operation: duplicates");
+    expect(lines).toContain("column: product");
+  });
+
+  it("describes a row listing in one column", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: "product",
+      filters: [],
+      listRows: true,
+    });
+    expect(lines[0]).toBe("rows that are duplicates in product");
+    expect(lines).toContain("list rows: true");
+  });
+
+  it("describes an exact-duplicate-row listing with no column", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: null,
+      filters: [],
+      listRows: true,
+    });
+    expect(lines[0]).toBe("rows that duplicate an earlier row");
+    expect(lines).toContain("operation: duplicates");
+    expect(lines).not.toContain("column: product");
+  });
+
+  it("describes a whole-sheet report with no column line", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: null,
+      filters: [],
+      listRows: false,
+    });
+    expect(lines[0]).toBe("duplicates by column");
+    expect(lines).toContain("operation: duplicates");
+    expect(lines).not.toContain("column: product");
+  });
+});

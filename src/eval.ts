@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { answerQuestion } from "./answer.js";
 import { parseCsv } from "./csv.js";
 
-export type SheetName = "sales" | "employees" | "monthly" | "scores";
+export type SheetName = "sales" | "employees" | "monthly" | "scores" | "duplicates";
 
 /**
  * One gold case. `expect` is either the substrings a correct answer
@@ -45,8 +45,10 @@ export const EVAL_GATE = 0.8;
 /**
  * Gold set over examples/sales.csv (8 rows),
  * examples/employees.csv (5 rows), examples/monthly-sales.csv
- * (12 rows, Jan–Mar 2026) and examples/scores.csv (8 rows, one
- * planted outlier — Tim's score of 1000 among scores of 8–15).
+ * (12 rows, Jan–Mar 2026), examples/scores.csv (8 rows, one
+ * planted outlier — Tim's score of 1000 among scores of 8–15) and
+ * examples/duplicates.csv (7 rows, three planted repeat rows —
+ * North/Widget A/12 three times, South/Widget B/8 twice).
  * Expected figures hand-computed:
  *
  * sales — revenue total 1,789.60; units total 72 over 7 valued rows
@@ -176,6 +178,16 @@ export const EVAL_GATE = 0.8;
  * clean; employees salaries (4 values) have fence
  * [79,000, 107,000], clean. An outlier question over a text
  * column, or grouped by another column, abstains.
+ *
+ * duplicates — duplicates.csv: 3 exact duplicate rows (rows 3 and
+ * 6 repeat row 1, row 5 repeats row 2); per column, product has 4
+ * duplicate rows (Widget A 3, Widget B 3 — 2 values repeat) and
+ * region and units 3 each (North 3 / South 2, 12 three times /
+ * 8 twice). Sales has no exact duplicate row, but product repeats
+ * (Widget A 3, Widget B 3 — 4 duplicate rows) and region repeats
+ * (North 3, South 2, East 2 — 4 duplicate rows); units are all
+ * distinct (7 valued rows, one blank). A duplicate question over
+ * an unknown column, or grouped by another column, abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -903,6 +915,66 @@ export const GOLD_SET: EvalCase[] = [
     expect: "abstain",
     note: "an outlier question is one column, ungrouped — must not answer the whole-sheet count",
   },
+  {
+    sheet: "duplicates",
+    question: "how many duplicate rows",
+    expect: ["3 of 7 rows are exact duplicates of an earlier row", "product: 4 duplicate rows"],
+    note: "rows 3 and 6 repeat row 1, row 5 repeats row 2 — 3 exact duplicates; product leads the column report",
+  },
+  {
+    sheet: "duplicates",
+    question: "how many duplicate products",
+    expect: ["4 of 7 rows are duplicates in product (57.14%)", "2 values appear more than once"],
+    note: "Widget A 3 times and Widget B 3 times: 2 + 2 = 4 duplicate rows over 2 repeated values",
+  },
+  {
+    sheet: "duplicates",
+    question: "how many duplicate regions",
+    expect: ["3 of 7 rows are duplicates in region (42.86%)"],
+    note: "North 3 times and South twice: 2 + 1 = 3 duplicate rows",
+  },
+  {
+    sheet: "duplicates",
+    question: "show duplicate rows",
+    expect: ["3 rows that are exact duplicates of an earlier row", "North | Widget A | 12"],
+    note: "the three exact duplicate rows, in sheet order — row 3 repeats row 1",
+  },
+  {
+    sheet: "duplicates",
+    question: "show duplicates in product",
+    expect: ["4 rows that are duplicates in product", "West | Widget B | 3"],
+    note: "rows 3, 5, 6 and 7 are duplicates in product — the West row is the second Widget B repeat",
+  },
+  {
+    sheet: "duplicates",
+    question: "which columns have duplicates",
+    expect: ["Duplicates by column", "units: 3 duplicate rows"],
+    note: "the whole-sheet report lists every column, most duplicates first",
+  },
+  {
+    sheet: "sales",
+    question: "how many duplicate rows",
+    expect: ["No exact duplicate rows", "product: 4 duplicate rows", "region: 4 duplicate rows"],
+    note: "sales has no exact duplicate row, but Widget A/Widget B repeat (4 rows) and North/South/East repeat (4 rows)",
+  },
+  {
+    sheet: "sales",
+    question: "how many duplicate units",
+    expect: ["No duplicates in units — every value appears once (7 of 8 had a value)"],
+    note: "units 12, 8, 3, 20, 5, 15, 9 are all distinct; one row is blank",
+  },
+  {
+    sheet: "duplicates",
+    question: "how many duplicate products by region",
+    expect: "abstain",
+    note: "a duplicate question is one column, ungrouped — must not answer the whole-sheet count",
+  },
+  {
+    sheet: "duplicates",
+    question: "how many duplicate profit",
+    expect: "abstain",
+    note: "no profit column",
+  },
 ];
 
 export interface CaseResult {
@@ -964,6 +1036,7 @@ const SHEET_FILES: Record<SheetName, string> = {
   employees: "employees.csv",
   monthly: "monthly-sales.csv",
   scores: "scores.csv",
+  duplicates: "duplicates.csv",
 };
 
 export function loadSheet(name: SheetName): ReturnType<typeof parseCsv> {

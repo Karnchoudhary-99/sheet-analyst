@@ -1284,3 +1284,130 @@ describe("executeQuery outliers", () => {
     }
   });
 });
+
+// North/Widget A/12 appears 3 times, South/Widget B/8 twice:
+// 3 exact duplicate rows; product has 4 duplicate rows over 2
+// repeated values, region and units 3 each.
+const DUPS = parseCsv(
+  "region,product,units\n" +
+    "North,Widget A,12\n" +
+    "South,Widget B,8\n" +
+    "North,Widget A,12\n" +
+    "East,Widget C,5\n" +
+    "South,Widget B,8\n" +
+    "North,Widget A,12\n" +
+    "West,Widget B,3\n",
+);
+
+describe("executeQuery duplicates", () => {
+  it("counts the duplicates of one column, with the repeated values", () => {
+    const r = ask("how many duplicate products", DUPS);
+    expect(r).toEqual({
+      kind: "duplicates",
+      column: "product",
+      duplicateRows: 3,
+      entries: [{ column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 }],
+      headers: ["region", "product", "units"],
+      rows: [],
+      totalMatched: 0,
+      limitedTo: undefined,
+      listRows: false,
+      rowsMatched: 7,
+    });
+  });
+
+  it("reports every column, worst first, plus the exact duplicate rows", () => {
+    const r = ask("how many duplicate rows", DUPS);
+    expect(r.kind).toBe("duplicates");
+    if (r.kind === "duplicates") {
+      expect(r.column).toBeNull();
+      expect(r.duplicateRows).toBe(3);
+      expect(r.entries).toEqual([
+        { column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 },
+        { column: "region", duplicates: 3, total: 7, valuesWithDuplicates: 2 },
+        { column: "units", duplicates: 3, total: 7, valuesWithDuplicates: 2 },
+      ]);
+      expect(r.rowsMatched).toBe(7);
+    }
+  });
+
+  it("lists the exact duplicate rows, in sheet order", () => {
+    const r = ask("show duplicate rows", DUPS);
+    expect(r.kind).toBe("duplicates");
+    if (r.kind === "duplicates") {
+      expect(r.listRows).toBe(true);
+      expect(r.totalMatched).toBe(3);
+      expect(r.rows).toEqual([
+        { region: "North", product: "Widget A", units: "12" },
+        { region: "South", product: "Widget B", units: "8" },
+        { region: "North", product: "Widget A", units: "12" },
+      ]);
+    }
+  });
+
+  it("lists the rows that are duplicates in one column", () => {
+    const r = ask("show duplicates in product", DUPS);
+    expect(r.kind).toBe("duplicates");
+    if (r.kind === "duplicates") {
+      expect(r.listRows).toBe(true);
+      expect(r.totalMatched).toBe(4);
+      expect(r.rows).toEqual([
+        { region: "North", product: "Widget A", units: "12" },
+        { region: "South", product: "Widget B", units: "8" },
+        { region: "North", product: "Widget A", units: "12" },
+        { region: "West", product: "Widget B", units: "3" },
+      ]);
+    }
+  });
+
+  it("lists nothing when no row is a duplicate", () => {
+    const r = ask("show duplicates in units");
+    expect(r.kind).toBe("duplicates");
+    if (r.kind === "duplicates") {
+      expect(r.totalMatched).toBe(0);
+      expect(r.rows).toEqual([]);
+    }
+  });
+
+  it("counts over the filtered rows only — the duplicates move with the filter", () => {
+    const r = ask("how many duplicates in product in North", DUPS);
+    expect(r.kind).toBe("duplicates");
+    if (r.kind === "duplicates") {
+      // North rows are all Widget A: 2 duplicates over 1 repeated
+      // value; the three North rows are exact duplicates too.
+      expect(r.entries).toEqual([
+        { column: "product", duplicates: 2, total: 3, valuesWithDuplicates: 1 },
+      ]);
+      expect(r.duplicateRows).toBe(2);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("does not count a blank cell as a duplicate — it is no value", () => {
+    const sheet = parseCsv("a,b\n1,\n2,\n3,5\n");
+    const parsed = parseQuestion("how many duplicates in b", sheet);
+    if (!parsed.ok) throw new Error(`abstained: ${parsed.reason}`);
+    const r = executeQuery(parsed.query, sheet);
+    expect(r.kind).toBe("duplicates");
+    if (r.kind === "duplicates") {
+      expect(r.entries).toEqual([
+        { column: "b", duplicates: 0, total: 1, valuesWithDuplicates: 0 },
+      ]);
+    }
+  });
+
+  it("treats different spellings as different values", () => {
+    const sheet = parseCsv("x\nNorth\nnorth\nNorth\n");
+    const parsed = parseQuestion("how many duplicates in x", sheet);
+    if (!parsed.ok) throw new Error(`abstained: ${parsed.reason}`);
+    const r = executeQuery(parsed.query, sheet);
+    expect(r.kind).toBe("duplicates");
+    if (r.kind === "duplicates") {
+      // "North" twice is one duplicate; "north" is a different
+      // spelling, not a repeat of it.
+      expect(r.entries).toEqual([
+        { column: "x", duplicates: 1, total: 3, valuesWithDuplicates: 1 },
+      ]);
+    }
+  });
+});

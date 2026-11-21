@@ -216,6 +216,22 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters)}`,
       ];
     }
+    case "duplicates": {
+      const what = query.listRows
+        ? query.column
+          ? `rows that are duplicates in ${query.column}`
+          : "rows that duplicate an earlier row"
+        : query.column
+          ? `duplicates in ${query.column}`
+          : "duplicates by column";
+      return [
+        what,
+        "operation: duplicates",
+        ...(query.column ? [`column: ${query.column}`] : []),
+        ...(query.listRows ? ["list rows: true"] : []),
+        `filters: ${describeFilters(query.filters)}`,
+      ];
+    }
   }
 }
 

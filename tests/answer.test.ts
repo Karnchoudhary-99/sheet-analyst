@@ -719,3 +719,109 @@ describe("composeAnswer outliers", () => {
     );
   });
 });
+
+// North/Widget A/12 appears 3 times, South/Widget B/8 twice:
+// 3 exact duplicate rows; product has 4 duplicate rows over 2
+// repeated values, region and units 3 each.
+const DUPS = parseCsv(
+  "region,product,units\n" +
+    "North,Widget A,12\n" +
+    "South,Widget B,8\n" +
+    "North,Widget A,12\n" +
+    "East,Widget C,5\n" +
+    "South,Widget B,8\n" +
+    "North,Widget A,12\n" +
+    "West,Widget B,3\n",
+);
+
+describe("composeAnswer duplicates", () => {
+  it("counts one column's duplicates with a percentage and the repeated values", () => {
+    expect(answerQuestion("how many duplicate products", DUPS)).toBe(
+      "4 of 7 rows are duplicates in product (57.14%) — 2 values appear more than once.",
+    );
+  });
+
+  it("uses the singular form for one duplicate", () => {
+    const sheet = parseCsv("x\nA\nB\nA\n");
+    expect(answerQuestion("how many duplicates in x", sheet)).toBe(
+      "1 of 3 rows is a duplicate in x (33.33%) — 1 value appears more than once.",
+    );
+  });
+
+  it("says so when a column has no duplicates, naming the blank rows", () => {
+    expect(answerQuestion("how many duplicate units", SALES)).toBe(
+      "No duplicates in units — every value appears once (5 of 6 had a value).",
+    );
+  });
+
+  it("says so when a column has no usable value at all", () => {
+    const sheet = parseCsv("x,y\n,1\n,2\n");
+    expect(answerQuestion("how many duplicates in x", sheet)).toBe(
+      "I could not check duplicates in x — none of the 2 matching rows has a value.",
+    );
+  });
+
+  it("reports the exact duplicate rows and every column, worst first", () => {
+    expect(answerQuestion("how many duplicate rows", DUPS)).toBe(
+      "3 of 7 rows are exact duplicates of an earlier row.\n" +
+        "Duplicates by column:\n" +
+        "- product: 4 duplicate rows (2 values appear more than once)\n" +
+        "- region: 3 duplicate rows (2 values appear more than once)\n" +
+        "- units: 3 duplicate rows (2 values appear more than once)",
+    );
+  });
+
+  it("says so plainly when a sheet has no duplicates at all", () => {
+    const sheet = parseCsv("x,y\n1,a\n2,b\n3,c\n");
+    expect(answerQuestion("how many duplicate rows", sheet)).toBe(
+      "No duplicates — every row is unique and every value appears once in each column.",
+    );
+  });
+
+  it("names the clean columns when only some columns repeat", () => {
+    expect(answerQuestion("how many duplicate rows", SALES)).toBe(
+      "No exact duplicate rows.\n" +
+        "Duplicates by column:\n" +
+        "- product: 3 duplicate rows (2 values appear more than once)\n" +
+        "- region: 2 duplicate rows (1 value appears more than once)\n" +
+        "- date: 0 duplicates\n" +
+        "- revenue: 0 duplicates\n" +
+        "- units: 0 duplicates",
+    );
+  });
+
+  it("lists the exact duplicate rows as a table", () => {
+    expect(answerQuestion("show duplicate rows", DUPS)).toBe(
+      "3 rows that are exact duplicates of an earlier row:\n" +
+        "| region | product | units |\n" +
+        "| --- | --- | --- |\n" +
+        "| North | Widget A | 12 |\n" +
+        "| South | Widget B | 8 |\n" +
+        "| North | Widget A | 12 |",
+    );
+  });
+
+  it("lists the rows that are duplicates in one column", () => {
+    expect(answerQuestion("show duplicates in product", DUPS)).toBe(
+      "4 rows that are duplicates in product:\n" +
+        "| region | product | units |\n" +
+        "| --- | --- | --- |\n" +
+        "| North | Widget A | 12 |\n" +
+        "| South | Widget B | 8 |\n" +
+        "| North | Widget A | 12 |\n" +
+        "| West | Widget B | 3 |",
+    );
+  });
+
+  it("says so when no row is a duplicate in the listed column", () => {
+    expect(answerQuestion("show duplicates in units", SALES)).toBe(
+      "No rows are duplicates in units.",
+    );
+  });
+
+  it("says so when no row is an exact duplicate", () => {
+    expect(answerQuestion("show duplicate rows", SALES)).toBe(
+      "No rows are exact duplicates of an earlier row.",
+    );
+  });
+});
