@@ -506,14 +506,14 @@ function composeDuplicates(
       return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
     }
     if (entry.duplicates === 0) {
-      return `No duplicates in ${result.column} — every value appears once.${coverage}`;
+      return `No duplicates in ${result.column} — every value appears once${coverage}.`;
     }
     const verb = entry.duplicates === 1 ? "is" : "are";
     const noun = entry.duplicates === 1 ? "a duplicate" : "duplicates";
     return (
       `${entry.duplicates} of ${entry.total} ${plural(entry.total, "row")} ${verb} ` +
       `${noun} in ${result.column} (${pct(entry.duplicates, entry.total)}) — ` +
-      `${valueWord(entry.valuesWithDuplicates)}.${coverage}`
+      `${valueWord(entry.valuesWithDuplicates)}${coverage}.`
     );
   }
   // The whole-sheet report: the exact duplicate rows first, then

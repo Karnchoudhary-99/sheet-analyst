@@ -1671,12 +1671,20 @@ function tryParseDuplicates(
   const column = distinct[0] ?? null;
   if (column) {
     // Anything left after removing the column name is a word the
-    // sheet does not explain — refuse rather than dropping it.
+    // sheet does not explain — refuse rather than dropping it. The
+    // plural form is removed first: "duplicate products" names the
+    // product column, and removing "product" from "products" would
+    // otherwise leave a stray "s" behind.
     const colName = normalize(column.name);
     const colNameSingular = colName.split(" ").map(singular).join(" ");
     let rest = cleaned;
     for (const name of [colName, colNameSingular]) {
-      rest = rest.replace(name, " ").replace(/\s+/g, " ").trim();
+      const pluralName = name.endsWith("s") ? name : `${name}s`;
+      rest = rest
+        .replace(pluralName, " ")
+        .replace(name, " ")
+        .replace(/\s+/g, " ")
+        .trim();
     }
     if (rest !== "") {
       return {
