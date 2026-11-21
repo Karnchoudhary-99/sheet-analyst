@@ -497,6 +497,12 @@ export const GOLD_SET: EvalCase[] = [
   },
   {
     sheet: "sales",
+    question: "what share of revenues is North",
+    expect: ["21.79%", "389.97", "1,789.6"],
+    note: "same share as the singular phrasing — plural column names are tolerated",
+  },
+  {
+    sheet: "sales",
     question: "what percentage of rows are in North",
     expect: ["3 of 8 rows", "37.5%"],
     note: "3 of the 8 sales rows are North: 3/8 = 37.5%",
@@ -827,6 +833,12 @@ export const GOLD_SET: EvalCase[] = [
   },
   {
     sheet: "employees",
+    question: "how many rows are missing salaries",
+    expect: ["1 of 5 rows is missing salary", "20%"],
+    note: "same count as the singular phrasing — '-ies' plurals resolve to the column",
+  },
+  {
+    sheet: "employees",
     question: "show rows missing salary",
     expect: ["1 row missing salary", "Edsger Dijkstra"],
     note: "his is the only row with an NA salary",
@@ -893,6 +905,12 @@ export const GOLD_SET: EvalCase[] = [
   },
   {
     sheet: "sales",
+    question: "how many outliers in revenues",
+    expect: ["No outliers in revenue", "[-136.35, 593.81]"],
+    note: "same fence as the singular phrasing — plural column names are tolerated",
+  },
+  {
+    sheet: "sales",
     question: "which columns have outliers",
     expect: ["No outliers — every numeric value in the 8 rows is inside its fence."],
     note: "units (fence [-10, 30]) and revenue are both clean; text columns never appear",
@@ -902,6 +920,12 @@ export const GOLD_SET: EvalCase[] = [
     question: "how many outliers in salary",
     expect: ["No outliers in salary", "[79,000, 107,000]"],
     note: "salaries 88,000, 91,000, 95,000, 98,000 (NA skipped): Q1 = 89,500, Q3 = 96,500, fence [79,000, 107,000]",
+  },
+  {
+    sheet: "employees",
+    question: "how many outliers in salaries",
+    expect: ["No outliers in salary", "[79,000, 107,000]"],
+    note: "same fence as the singular phrasing — '-ies' plurals resolve to the column",
   },
   {
     sheet: "sales",
