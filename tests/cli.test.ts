@@ -634,6 +634,42 @@ describe("runCli ask --out", () => {
     }
   });
 
+  it("writes a rank answer as CSV and still prints it", async () => {
+    const tmp = join(root, "examples", ".cli-out-rank.csv");
+    try {
+      const c = capture();
+      expect(
+        await runCli(["ask", staffPath, "second highest salary", "--out", tmp], c.out),
+      ).toBe(0);
+      expect(c.stdout.join("")).toContain("The 2nd highest salary is 95,000");
+      expect(c.stdout.join("")).toContain(`Wrote ${tmp}`);
+      const written = readFileSync(tmp, "utf8");
+      expect(written).toBe(
+        "label,value,rows_at_value,distinct_values,rows_matched,values_used\n2nd highest salary,95000,1,4,5,4",
+      );
+    } finally {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+  });
+
+  it("writes a rank answer as JSON with --json --out", async () => {
+    const tmp = join(root, "examples", ".cli-out-rank.json");
+    try {
+      const c = capture();
+      expect(
+        await runCli(["ask", staffPath, "second highest salary", "--json", "--out", tmp], c.out),
+      ).toBe(0);
+      const written = JSON.parse(readFileSync(tmp, "utf8"));
+      expect(written.question).toBe("second highest salary");
+      expect(written.result.kind).toBe("rank");
+      expect(written.result.value).toBe(95000);
+      expect(written.result.rowsAtValue).toBe(1);
+      expect(written.result.totalDistinct).toBe(4);
+    } finally {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+  });
+
   it("exports an abstention as a question/answer CSV row", async () => {
     const tmp = join(root, "examples", ".cli-out-abstain.csv");
     try {
