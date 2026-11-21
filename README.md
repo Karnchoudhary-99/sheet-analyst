@@ -38,6 +38,7 @@ top-N) directly from the spreadsheet.
 - [x] Outlier questions ("how many outliers in score", "which columns have outliers" — a count per column or a whole-sheet report over numeric columns, worst first; "show outliers in score" lists the rows; Tukey IQR fence, the same fence the data-quality profile reports)
 - [x] Duplicate questions ("how many duplicate rows", "which columns have duplicates" — a count per column or a whole-sheet report over every column, worst first, plus the exact duplicate rows; "show duplicate rows" / "show duplicates in product" lists the rows; a repeated value is counted from its second occurrence, blanks never count as duplicates)
 - [x] Ordinal-rank questions ("second highest salary", "3rd lowest revenue" — the nth distinct value from the top or the bottom of one numeric column; ties share the rank, so the answer also says how many rows hold that value; a rank past the end says so instead of falling back to the last value)
+- [x] Compound filters ("total revenue where region is North and product is Widget A", "how many rows where revenue > 100 and units < 10" — every condition must hold; a between-range keeps its own "and"; an unknown column in any condition abstains naming it; an "and" inside a value is left alone)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -151,7 +152,10 @@ top 1) and bottom-N ("bottom 3 products by revenue", "bottom 2 months
 by revenue", "bottom revenue" = the single lowest row — the same
 ranking, smallest first, headed "Bottom N of M" instead of "Top N"), filters
 ("total revenue where region is North", "average salary where salary >
-90000", "sales in North"), row queries ("show rows where region is
+90000", "sales in North"), compound filters ("total revenue where region
+is North and product is Widget A", "how many rows where revenue > 100 and
+units < 10" — every condition must hold; a between-range keeps its own
+"and", and an "and" inside a value is left alone), row queries ("show rows where region is
 North"), sorted row listings ("show rows sorted by revenue
 descending", "list employees sorted by salary ascending" — the sort
 runs before the limit, so the first N rows are the sorted top N),
