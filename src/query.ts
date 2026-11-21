@@ -385,6 +385,69 @@ function stripColumnName(cleaned: string, column: ColumnInfo): string {
 }
 
 /**
+ * Edit distance between two words, for "did you mean" hints on
+ * abstentions ("revnue" is one edit from "revenue"). Classic
+ * dynamic programming with one row of state.
+ */
+function levenshtein(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j]!;
+      prev[j] = Math.min(
+        prev[j]! + 1,
+        prev[j - 1]! + 1,
+        diag + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      diag = tmp;
+    }
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * Closest column names to the words of a phrase the parser could
+ * not match. A word suggests a column when it is within edit
+ * distance 2 of the column name (or one of its words), or a prefix
+ * of it ("rev" for "revenue"). Returns at most `max` distinct
+ * names, best first. Short words (under 3 letters) never suggest —
+ * "in" is not a typo of anything.
+ */
+function suggestColumns(phrase: string, columns: ColumnInfo[], max = 2): string[] {
+  const words = normalize(phrase)
+    .split(" ")
+    .filter((w) => w !== "" && w.length >= 3);
+  const scored: { name: string; dist: number }[] = [];
+  for (const col of columns) {
+    const name = normalize(col.name);
+    const nameWords = name.split(" ");
+    let best = Infinity;
+    for (const w of words) {
+      for (const nw of [name, ...nameWords]) {
+        if (nw.startsWith(w) || w.startsWith(nw)) {
+          best = Math.min(best, 0);
+        } else {
+          best = Math.min(best, levenshtein(w, nw));
+        }
+      }
+    }
+    if (best <= 2) scored.push({ name: col.name, dist: best });
+  }
+  scored.sort((a, b) => a.dist - b.dist);
+  return [...new Set(scored.map((s) => s.name))].slice(0, max);
+}
+
+/** " — did you mean \"revenue\"?" (or "" when nothing is close). */
+function didYouMean(phrase: string, columns: ColumnInfo[]): string {
+  const suggestions = suggestColumns(phrase, columns);
+  if (suggestions.length === 0) return "";
+  if (suggestions.length === 1) return ` — did you mean "${suggestions[0]}"?`;
+  return ` — did you mean "${suggestions[0]}" or "${suggestions[1]}"?`;
+}
+
+/**
  * All columns whose normalized name appears in the normalized phrase,
  * allowing a trailing-s difference on either side. Sorted by name
  * length (longest first) so "start date" wins over "date".
@@ -563,7 +626,26 @@ function extractGroupBy(
     const idx = m.index;
     const tail = norm.slice(idx + m[0].length).trim();
     const kept = matchColumnsInOrder(tail, columns);
-    if (kept.length === 0) continue;
+    if (kept.length === 0) {
+      // A "by <word>" clause that names no column is a typo'd
+      // group-by, not something to silently drop — "total revenue
+      // by regoin" must not answer the plain total. (Time buckets
+      // were already stripped by extractTimeBucket, and top-N
+      // questions return before this runs, so a leftover "by" can
+      // only be a group-by.)
+      if (tail === "") {
+        return {
+          groupBy: [],
+          rest: text,
+          error: `nothing follows "${marker}" — name a column to group by, e.g. "by region"`,
+        };
+      }
+      return {
+        groupBy: [],
+        rest: text,
+        error: `could not find a column to group by in "${marker} ${tail}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(tail, columns)}`,
+      };
+    }
     if (kept.length > 3) {
       return {
         groupBy: [],
@@ -587,7 +669,7 @@ function extractGroupBy(
       return {
         groupBy: [],
         rest: text,
-        error: `could not find a column named "${stray.join(" ")}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        error: `could not find a column named "${stray.join(" ")}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(stray.join(" "), columns)}`,
       };
     }
     const before = norm.slice(0, idx).trim();
@@ -800,7 +882,7 @@ function parseWhereCondition(
     const hits = findColumns(between[1], columns);
     if (hits.length === 0) {
       return {
-        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(between[1], columns)}`,
         soft: false,
       };
     }
@@ -860,7 +942,7 @@ function parseWhereCondition(
     const hits = findColumns(m[1], columns);
     if (hits.length === 0) {
       return {
-        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(m[1], columns)}`,
         soft: false,
       };
     }
@@ -3272,7 +3354,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   if (candidates.length === 0) {
     return {
       ok: false,
-      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(text, columns)}`,
     };
   }
   if (candidates.length > 1) {

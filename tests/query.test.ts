@@ -1224,6 +1224,50 @@ describe("parseQuestion abstention", () => {
   });
 });
 
+describe("parseQuestion did-you-mean suggestions", () => {
+  it("suggests the column for a one-letter typo", () => {
+    const r = parseQuestion("total revnue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "revenue"/);
+  });
+
+  it("suggests the column for a typo in a where clause", () => {
+    const r = parseQuestion("total revenue where revnue > 100", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "revenue"/);
+  });
+
+  it("suggests the column for a typo in a group-by", () => {
+    const r = parseQuestion("total revenue by regoin", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "region"/);
+  });
+
+  it("suggests the column for a typo among several group-by words", () => {
+    const r = parseQuestion("total revenue by region and revenu", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "revenue"/);
+  });
+
+  it("suggests nothing when no column is close", () => {
+    const r = parseQuestion("total profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).not.toMatch(/did you mean/);
+  });
+
+  it("suggests nothing for a far-off group-by word", () => {
+    const r = parseQuestion("total revenue by frobnicate", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).not.toMatch(/did you mean/);
+  });
+
+  it("refuses a group-by that names no column instead of dropping it", () => {
+    const r = parseQuestion("total revenue by regoin", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find a column to group by/);
+  });
+});
+
 describe("parseQuestion correlation", () => {
   it("parses 'correlation between X and Y'", () => {
     const r = parseQuestion("correlation between revenue and units", SALES);
