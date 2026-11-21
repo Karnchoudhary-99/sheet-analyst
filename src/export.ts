@@ -43,9 +43,13 @@
  *   (`(full rows),duplicate_rows,total_rows,percent_duplicates,`
  *   with no values-with-duplicates — a full row is not a value);
  *   a single-column question exports just that column's row.
+ *   A rank becomes one row of
+ *   `label,value,rows_at_value,distinct_values,rows_matched,values_used`
+ *   (empty value when fewer than n distinct values exist).
  */
 
 import type { QueryResult } from "./engine.js";
+import { ordinal } from "./stats.js";
 
 /** RFC 4180 field escaping: quote when the value needs it. */
 export function csvCell(value: string): string {
@@ -75,6 +79,18 @@ export function resultToCsv(
         csvRow([
           result.label,
           result.value === null ? "" : String(result.value),
+          String(result.rowsMatched),
+          String(result.valuesUsed),
+        ]),
+      ].join("\n");
+    case "rank":
+      return [
+        csvRow(["label", "value", "rows_at_value", "distinct_values", "rows_matched", "values_used"]),
+        csvRow([
+          `${ordinal(result.n)} ${result.direction} ${result.column}`,
+          result.value === null ? "" : String(result.value),
+          String(result.rowsAtValue),
+          String(result.totalDistinct),
           String(result.rowsMatched),
           String(result.valuesUsed),
         ]),
