@@ -649,3 +649,73 @@ describe("composeAnswer missing values", () => {
     );
   });
 });
+
+// Same scores fixture as the engine tests: the Tukey fence for
+// score is [2.75, 20.75] and only Tim's 1000 is an outlier.
+const SCORES = parseCsv(
+  "student,subject,score,hours\n" +
+    "Ada,Math,12,5\n" +
+    "Grace,Math,8,7\n" +
+    "Alan,Science,15,6\n" +
+    "Katherine,Science,11,8\n" +
+    "Edsger,Math,9,4\n" +
+    "Linus,Science,13,9\n" +
+    "Margaret,Math,10,6\n" +
+    "Tim,Science,1000,7\n",
+);
+
+describe("composeAnswer outliers", () => {
+  it("counts one column's outliers with a percentage and the fence", () => {
+    expect(answerQuestion("how many outliers in score", SCORES)).toBe(
+      "1 of 8 rows is an outlier in score (12.5%) outside [2.75, 20.75] (seen 1,000).",
+    );
+  });
+
+  it("says so with the fence when a column has no outliers", () => {
+    expect(answerQuestion("how many outliers in revenue", SALES)).toBe(
+      "No outliers in revenue — every value is inside [-47.62, 412.58].",
+    );
+  });
+
+  it("reports every numeric column, worst first", () => {
+    expect(answerQuestion("which columns have outliers", SCORES)).toBe(
+      "Outliers (8 rows):\n" +
+        "- score: 1 outlier outside [2.75, 20.75] (seen 1,000)\n" +
+        "- hours: 0 outliers (inside [2.5, 10.5])",
+    );
+  });
+
+  it("says so plainly when a sheet has no outliers at all", () => {
+    expect(answerQuestion("which columns have outliers", SALES)).toBe(
+      "No outliers — every numeric value in the 6 rows is inside its fence.",
+    );
+  });
+
+  it("lists the outlier rows as a table", () => {
+    expect(answerQuestion("show outliers in score", SCORES)).toBe(
+      "1 row that is an outlier in score:\n" +
+        "| student | subject | score | hours |\n" +
+        "| --- | --- | --- | --- |\n" +
+        "| Tim | Science | 1,000 | 7 |",
+    );
+  });
+
+  it("says so when no row is an outlier in the listed column", () => {
+    expect(answerQuestion("show outliers in revenue", SALES)).toBe(
+      "No rows are outliers in revenue.",
+    );
+  });
+
+  it("says so when there are too few values for a fence", () => {
+    const sheet = parseCsv("x,y\n1,10\n2,20\n3,1000\n");
+    expect(answerQuestion("how many outliers in y", sheet)).toBe(
+      "Too few values to judge outliers in y — only 3 of 3 rows have a value (at least 4 needed).",
+    );
+  });
+
+  it("counts over the filtered rows only — the fence moves with the filter", () => {
+    expect(answerQuestion("how many outliers in score in Math", SCORES)).toBe(
+      "No outliers in score — every value is inside [4.75, 14.75].",
+    );
+  });
+});

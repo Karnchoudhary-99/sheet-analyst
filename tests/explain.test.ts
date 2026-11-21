@@ -440,3 +440,40 @@ describe("describeQuery missing values", () => {
     expect(lines).not.toContain("column: salary");
   });
 });
+
+describe("describeQuery outliers", () => {
+  it("describes a single-column count", () => {
+    const lines = describeQuery({
+      kind: "outliers",
+      column: "score",
+      filters: [],
+      listRows: false,
+    });
+    expect(lines[0]).toBe("outliers in score");
+    expect(lines).toContain("operation: outliers");
+    expect(lines).toContain("column: score");
+  });
+
+  it("describes a row listing", () => {
+    const lines = describeQuery({
+      kind: "outliers",
+      column: "score",
+      filters: [],
+      listRows: true,
+    });
+    expect(lines[0]).toBe("rows that are outliers in score");
+    expect(lines).toContain("list rows: true");
+  });
+
+  it("describes a whole-sheet report with no column line", () => {
+    const lines = describeQuery({
+      kind: "outliers",
+      column: null,
+      filters: [],
+      listRows: false,
+    });
+    expect(lines[0]).toBe("outliers by column");
+    expect(lines).toContain("operation: outliers");
+    expect(lines).not.toContain("column: score");
+  });
+});

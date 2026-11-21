@@ -31,6 +31,11 @@
  *   `column,missing_rows,total_rows,percent_missing` (the fraction,
  *   0.125 for 12.5%); a single-column question exports just that
  *   column's row.
+ *   Outliers become one row per column of
+ *   `column,outliers,total_rows,percent_outliers,low_bound,high_bound`
+ *   (the fraction, 0.125 for 12.5%; empty bounds when fewer than 4
+ *   usable values, so no fence exists); a single-column question
+ *   exports just that column's row.
  */
 
 import type { QueryResult } from "./engine.js";
@@ -178,6 +183,24 @@ export function resultToCsv(
             String(e.missing),
             String(e.total),
             e.total === 0 ? "" : String(e.missing / e.total),
+          ]),
+        );
+      }
+      return lines.join("\n");
+    }
+    case "outliers": {
+      const lines = [
+        csvRow(["column", "outliers", "total_rows", "percent_outliers", "low_bound", "high_bound"]),
+      ];
+      for (const e of result.entries) {
+        lines.push(
+          csvRow([
+            e.column,
+            String(e.outliers),
+            String(e.total),
+            e.total === 0 ? "" : String(e.outliers / e.total),
+            e.lowBound === null ? "" : String(e.lowBound),
+            e.highBound === null ? "" : String(e.highBound),
           ]),
         );
       }
