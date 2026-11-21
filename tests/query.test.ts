@@ -373,6 +373,182 @@ describe("parseQuestion filters", () => {
   });
 });
 
+describe("parseQuestion compound filters", () => {
+  it("parses two equality conditions joined by and", () => {
+    const r = parseQuestion(
+      "total revenue where region is North and product is Widget A",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "=", value: "North" },
+        { column: "product", op: "=", value: "Widget A" },
+      ]);
+    }
+  });
+
+  it("parses mixed operators across conditions", () => {
+    const r = parseQuestion(
+      "average salary where salary > 90000 and department is Engineering",
+      STAFF,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "salary", op: ">", value: "90000" },
+        { column: "department", op: "=", value: "Engineering" },
+      ]);
+    }
+  });
+
+  it("parses two conditions on the same column", () => {
+    const r = parseQuestion(
+      "how many rows where revenue > 100 and revenue < 200",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.filters).toEqual([
+        { column: "revenue", op: ">", value: "100" },
+        { column: "revenue", op: "<", value: "200" },
+      ]);
+    }
+  });
+
+  it("parses three conditions", () => {
+    const r = parseQuestion(
+      "how many rows where region is North and product is Widget A and units > 10",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "=", value: "North" },
+        { column: "product", op: "=", value: "Widget A" },
+        { column: "units", op: ">", value: "10" },
+      ]);
+    }
+  });
+
+  it("keeps a between-range's own and when a second condition follows", () => {
+    const r = parseQuestion(
+      "total revenue where revenue between 100 and 200 and region is North",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "revenue", op: ">=", value: "100" },
+        { column: "revenue", op: "<=", value: "200" },
+        { column: "region", op: "=", value: "North" },
+      ]);
+    }
+  });
+
+  it("keeps a between-range over dates when a second condition follows", () => {
+    const r = parseQuestion(
+      "how many rows where date between 2026-01-05 and 2026-01-06 and region is North",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.filters).toEqual([
+        { column: "date", op: ">=", value: "2026-01-05" },
+        { column: "date", op: "<=", value: "2026-01-06" },
+        { column: "region", op: "=", value: "North" },
+      ]);
+    }
+  });
+
+  it("parses an is-not condition alongside an equality condition", () => {
+    const r = parseQuestion(
+      "how many rows where region is not South and product is Widget B",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "!=", value: "South" },
+        { column: "product", op: "=", value: "Widget B" },
+      ]);
+    }
+  });
+
+  it("carries compound filters into a rows question", () => {
+    const r = parseQuestion(
+      "show rows where region is North and product is Widget A",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "rows") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "=", value: "North" },
+        { column: "product", op: "=", value: "Widget A" },
+      ]);
+    }
+  });
+
+  it("carries compound filters into a group-by question", () => {
+    const r = parseQuestion(
+      "total revenue by region where product is Widget A and units > 10",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "group") {
+      expect(r.query.groupBy).toEqual(["region"]);
+      expect(r.query.filters).toEqual([
+        { column: "product", op: "=", value: "Widget A" },
+        { column: "units", op: ">", value: "10" },
+      ]);
+    }
+  });
+
+  it("does not split an and inside a quoted value", () => {
+    const r = parseQuestion(
+      'total revenue where product is "Widget A and B"',
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "product", op: "=", value: "Widget A and B" },
+      ]);
+    }
+  });
+
+  it("reads an unquoted value containing and as one filter", () => {
+    const r = parseQuestion(
+      "total revenue where product is Salt and Pepper",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "product", op: "=", value: "Salt and Pepper" },
+      ]);
+    }
+  });
+
+  it("abstains naming the unknown column in the second condition", () => {
+    const r = parseQuestion(
+      "total revenue where region is North and frobnicate is X",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/frobnicate is X/);
+  });
+
+  it("abstains on a reversed between-range inside a compound", () => {
+    const r = parseQuestion(
+      "total revenue where revenue between 200 and 100 and region is North",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/smaller value first/);
+  });
+});
+
 describe("parseQuestion sorted rows", () => {
   it("parses 'sorted by' with an explicit descending direction", () => {
     const r = parseQuestion("show rows sorted by revenue descending", SALES);
