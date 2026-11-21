@@ -42,6 +42,11 @@
  *   recent "=" filter — "region is North or South" reads as region
  *   is North or region is South; quote a value that contains "or",
  *   e.g. product is "Salt or Pepper")
+ * - exclusion: "total revenue excluding North", "total revenue
+ *   except Widget A" (the complement of "in" — a "!=" filter on
+ *   the owning column; several values exclude several; an unknown
+ *   or multi-column value abstains; "excluding" inside a where
+ *   clause is refused with a pointer to "is not")
  * - rows: "show rows where region is North", "list employees in Data"
  * - sorted rows: "show rows sorted by revenue descending",
  *   "list employees sorted by salary ascending" (numbers sort
@@ -1006,6 +1011,15 @@ function parseOrBranch(
     if (!parsed.soft) return { error: parsed.error };
     if (lastEquals) {
       const value = parts[0].trim().replace(/^["']|["']$/g, "");
+      // "excluding" cannot hide inside an inherited value ("South
+      // excluding East" is not a region) — it belongs outside the
+      // where clause, or as an explicit "is not".
+      const exclusion = /\b(?:excluding|except)\s+(.+)$/i.exec(value);
+      if (exclusion) {
+        return {
+          error: `could not understand "excluding ${exclusion[1]}" inside a where clause — try "where ${lastEquals.column} is not ${exclusion[1]}"`,
+        };
+      }
       const inherited: Filter = { column: lastEquals.column, op: "=", value };
       return { filters: [inherited], lastEquals: inherited };
     }
@@ -1054,6 +1068,12 @@ function parseOrBranch(
       if (!parsed.soft) return { error: parsed.error };
       if (!retryLastEquals) return { error: whole.error };
       const value = part.trim().replace(/^["']|["']$/g, "");
+      const exclusion = /\b(?:excluding|except)\s+(.+)$/i.exec(value);
+      if (exclusion) {
+        return {
+          error: `could not understand "excluding ${exclusion[1]}" inside a where clause — try "where ${retryLastEquals.column} is not ${exclusion[1]}"`,
+        };
+      }
       const inherited: Filter = { column: retryLastEquals.column, op: "=", value };
       retry.push(inherited);
       retryLastEquals = inherited;
@@ -1089,6 +1109,139 @@ function parseOrClause(
     lastEquals = parsed.lastEquals;
   }
   return { groups };
+}
+
+/**
+ * Columns whose known text/boolean values include `value`
+ * (case-insensitive). Shared by the "in"/"for", "excluding" and
+ * share-subset resolvers — a value that belongs to several columns
+ * never silently picks one.
+ */
+function valueOwners(
+  value: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): ColumnInfo[] {
+  return columns.filter((col, idx) => {
+    if (col.type !== "text" && col.type !== "boolean") return false;
+    return distinctValues(parsed, idx).has(value.toLowerCase());
+  });
+}
+
+/**
+ * The value's spelling as it appears in the sheet ("North", not
+ * the lowercased "north" the parser matched on), so answers read
+ * naturally.
+ */
+function sheetSpelling(
+  value: string,
+  column: ColumnInfo,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): string {
+  const idx = columns.indexOf(column);
+  for (const row of parsed.rows) {
+    const cell = (row[idx] ?? "").trim();
+    if (cell.toLowerCase() === value.toLowerCase()) return cell;
+  }
+  return value;
+}
+
+/**
+ * Find a trailing "excluding <value>" / "except <value>" outside
+ * quotes — the marker word must not sit inside a quoted value
+ * ("product is \"Salt excluding Pepper\"" is one value, not an
+ * exclusion). The last marker wins. Returns the text before the
+ * marker and the value, or null.
+ */
+function findTrailingExclusion(
+  rest: string,
+): { prefix: string; value: string } | null {
+  let found: { index: number; length: number } | null = null;
+  let quote: string | null = null;
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    const m = /^(excluding|except)(?![a-z])/i.exec(rest.slice(i));
+    if (m && (i === 0 || /[\s,;]/.test(rest[i - 1]!))) {
+      found = { index: i, length: m[0].length };
+      i += m[0].length - 1;
+    }
+  }
+  if (!found) return null;
+  const value = rest
+    .slice(found.index + found.length)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  if (value === "") return null;
+  return { prefix: rest.slice(0, found.index).trim(), value };
+}
+
+/**
+ * Resolve an exclusion value to "!=" filters. One value is one
+ * filter; several ("excluding North and South") are several — the
+ * complement of a list is every item excluded. A value in no
+ * column, or in several, is an error: "excluding" is unambiguous
+ * filter intent, so there is nothing to leave alone.
+ */
+function resolveExclusionValues(
+  value: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): { filters: Filter[] } | { error: string } {
+  const firstText = columns.find((c) => c.type === "text")?.name ?? "region";
+  const whole = valueOwners(value, columns, parsed);
+  if (whole.length === 1) {
+    return {
+      filters: [
+        {
+          column: whole[0].name,
+          op: "!=",
+          value: sheetSpelling(value, whole[0], columns, parsed),
+        },
+      ],
+    };
+  }
+  if (whole.length > 1) {
+    return {
+      error: `"${value}" appears in several columns (${whole.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${whole[0].name} is not ${value}"`,
+    };
+  }
+  const parts = value.split(/\s+(?:and|or)\s+/i);
+  if (parts.length > 1) {
+    const filters: Filter[] = [];
+    let owner: string | null = null;
+    for (const part of parts) {
+      const owners = valueOwners(part, columns, parsed);
+      if (owners.length !== 1) {
+        return {
+          error: `could not find "${part}" in any column — say which rows to leave out, e.g. "where ${firstText} is not ${part}"`,
+        };
+      }
+      if (owner === null) owner = owners[0].name;
+      if (owners[0].name !== owner) {
+        return {
+          error: `"${part}" is in ${owners[0].name} but the other values are in ${owner} — an exclusion needs one column`,
+        };
+      }
+      filters.push({
+        column: owners[0].name,
+        op: "!=",
+        value: sheetSpelling(part, owners[0], columns, parsed),
+      });
+    }
+    return { filters };
+  }
+  return {
+    error: `could not find "${value}" in any column — say which rows to leave out, e.g. "where ${firstText} is not ${value}"`,
+  };
 }
 
 function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
@@ -1150,6 +1303,23 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
         rest = rest.slice(0, where.index).trim();
       }
     }
+  }
+
+  // Trailing "excluding <value>" / "except <value>": the complement
+  // of the "in" form — "total revenue excluding North" is region !=
+  // North. It runs before the "in"/"for" loop so the two compose
+  // ("for North excluding South" is North and not South), and an
+  // exclusion placed before "where" still works, because the where
+  // extractor only strips from "where" onward ("total revenue
+  // excluding East where region is North or South").
+  const exclusion = findTrailingExclusion(rest);
+  if (exclusion) {
+    const resolved = resolveExclusionValues(exclusion.value, columns, parsed);
+    if ("error" in resolved) {
+      return { filters, orGroups, rest, error: resolved.error };
+    }
+    filters.push(...resolved.filters);
+    rest = exclusion.prefix;
   }
 
   // Trailing "in <value>" / "for <value>" with a known categorical value.
