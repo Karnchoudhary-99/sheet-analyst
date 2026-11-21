@@ -645,7 +645,7 @@ describe("runCli ask --out", () => {
       expect(c.stdout.join("")).toContain(`Wrote ${tmp}`);
       const written = readFileSync(tmp, "utf8");
       expect(written).toBe(
-        "label,value,rows_at_value,distinct_values,rows_matched,values_used\n2nd highest salary,95000,1,4,5,4",
+        "label,value,rows_at_value,distinct_values,rows_matched,values_used\n2nd highest salary,95000,1,4,5,4\n",
       );
     } finally {
       if (existsSync(tmp)) unlinkSync(tmp);
