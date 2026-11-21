@@ -42,6 +42,11 @@
  *   recent "=" filter — "region is North or South" reads as region
  *   is North or region is South; quote a value that contains "or",
  *   e.g. product is "Salt or Pepper")
+ * - exclusion: "total revenue excluding North", "total revenue
+ *   except Widget A" (the complement of "in" — a "!=" filter on
+ *   the owning column; several values exclude several; an unknown
+ *   or multi-column value abstains; "excluding" inside a where
+ *   clause is refused with a pointer to "is not")
  * - rows: "show rows where region is North", "list employees in Data"
  * - sorted rows: "show rows sorted by revenue descending",
  *   "list employees sorted by salary ascending" (numbers sort
@@ -380,6 +385,69 @@ function stripColumnName(cleaned: string, column: ColumnInfo): string {
 }
 
 /**
+ * Edit distance between two words, for "did you mean" hints on
+ * abstentions ("revnue" is one edit from "revenue"). Classic
+ * dynamic programming with one row of state.
+ */
+function levenshtein(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j]!;
+      prev[j] = Math.min(
+        prev[j]! + 1,
+        prev[j - 1]! + 1,
+        diag + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      diag = tmp;
+    }
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * Closest column names to the words of a phrase the parser could
+ * not match. A word suggests a column when it is within edit
+ * distance 2 of the column name (or one of its words), or a prefix
+ * of it ("rev" for "revenue"). Returns at most `max` distinct
+ * names, best first. Short words (under 3 letters) never suggest —
+ * "in" is not a typo of anything.
+ */
+function suggestColumns(phrase: string, columns: ColumnInfo[], max = 2): string[] {
+  const words = normalize(phrase)
+    .split(" ")
+    .filter((w) => w !== "" && w.length >= 3);
+  const scored: { name: string; dist: number }[] = [];
+  for (const col of columns) {
+    const name = normalize(col.name);
+    const nameWords = name.split(" ");
+    let best = Infinity;
+    for (const w of words) {
+      for (const nw of [name, ...nameWords]) {
+        if (nw.startsWith(w) || w.startsWith(nw)) {
+          best = Math.min(best, 0);
+        } else {
+          best = Math.min(best, levenshtein(w, nw));
+        }
+      }
+    }
+    if (best <= 2) scored.push({ name: col.name, dist: best });
+  }
+  scored.sort((a, b) => a.dist - b.dist);
+  return [...new Set(scored.map((s) => s.name))].slice(0, max);
+}
+
+/** " — did you mean \"revenue\"?" (or "" when nothing is close). */
+function didYouMean(phrase: string, columns: ColumnInfo[]): string {
+  const suggestions = suggestColumns(phrase, columns);
+  if (suggestions.length === 0) return "";
+  if (suggestions.length === 1) return ` — did you mean "${suggestions[0]}"?`;
+  return ` — did you mean "${suggestions[0]}" or "${suggestions[1]}"?`;
+}
+
+/**
  * All columns whose normalized name appears in the normalized phrase,
  * allowing a trailing-s difference on either side. Sorted by name
  * length (longest first) so "start date" wins over "date".
@@ -558,7 +626,26 @@ function extractGroupBy(
     const idx = m.index;
     const tail = norm.slice(idx + m[0].length).trim();
     const kept = matchColumnsInOrder(tail, columns);
-    if (kept.length === 0) continue;
+    if (kept.length === 0) {
+      // A "by <word>" clause that names no column is a typo'd
+      // group-by, not something to silently drop — "total revenue
+      // by regoin" must not answer the plain total. (Time buckets
+      // were already stripped by extractTimeBucket, and top-N
+      // questions return before this runs, so a leftover "by" can
+      // only be a group-by.)
+      if (tail === "") {
+        return {
+          groupBy: [],
+          rest: text,
+          error: `nothing follows "${marker}" — name a column to group by, e.g. "by region"`,
+        };
+      }
+      return {
+        groupBy: [],
+        rest: text,
+        error: `could not find a column to group by in "${marker} ${tail}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(tail, columns)}`,
+      };
+    }
     if (kept.length > 3) {
       return {
         groupBy: [],
@@ -582,7 +669,7 @@ function extractGroupBy(
       return {
         groupBy: [],
         rest: text,
-        error: `could not find a column named "${stray.join(" ")}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        error: `could not find a column named "${stray.join(" ")}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(stray.join(" "), columns)}`,
       };
     }
     const before = norm.slice(0, idx).trim();
@@ -728,7 +815,11 @@ interface FilterExtraction {
  * - a trailing "in <value>" / "for <value>" where the value is a known
  *   categorical value of exactly one column ("sales in North").
  * A bare value that belongs to several columns abstains — guessing
- * the column would answer a different question.
+ * the column would answer a different question. A trailing list
+ * ("in North and South", "in North or South") resolves to OR groups
+ * instead of being silently dropped, and a single unknown trailing
+ * value ("in 2024") abstains — answering the whole sheet would
+ * answer a different question than the one asked.
  */
 /**
  * The column phrase of a where condition must be the column name
@@ -791,7 +882,7 @@ function parseWhereCondition(
     const hits = findColumns(between[1], columns);
     if (hits.length === 0) {
       return {
-        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(between[1], columns)}`,
         soft: false,
       };
     }
@@ -851,7 +942,7 @@ function parseWhereCondition(
     const hits = findColumns(m[1], columns);
     if (hits.length === 0) {
       return {
-        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(m[1], columns)}`,
         soft: false,
       };
     }
@@ -1006,6 +1097,15 @@ function parseOrBranch(
     if (!parsed.soft) return { error: parsed.error };
     if (lastEquals) {
       const value = parts[0].trim().replace(/^["']|["']$/g, "");
+      // "excluding" cannot hide inside an inherited value ("South
+      // excluding East" is not a region) — it belongs outside the
+      // where clause, or as an explicit "is not".
+      const exclusion = /\b(?:excluding|except)\s+(.+)$/i.exec(value);
+      if (exclusion) {
+        return {
+          error: `could not understand "excluding ${exclusion[1]}" inside a where clause — try "where ${lastEquals.column} is not ${exclusion[1]}"`,
+        };
+      }
       const inherited: Filter = { column: lastEquals.column, op: "=", value };
       return { filters: [inherited], lastEquals: inherited };
     }
@@ -1054,6 +1154,12 @@ function parseOrBranch(
       if (!parsed.soft) return { error: parsed.error };
       if (!retryLastEquals) return { error: whole.error };
       const value = part.trim().replace(/^["']|["']$/g, "");
+      const exclusion = /\b(?:excluding|except)\s+(.+)$/i.exec(value);
+      if (exclusion) {
+        return {
+          error: `could not understand "excluding ${exclusion[1]}" inside a where clause — try "where ${retryLastEquals.column} is not ${exclusion[1]}"`,
+        };
+      }
       const inherited: Filter = { column: retryLastEquals.column, op: "=", value };
       retry.push(inherited);
       retryLastEquals = inherited;
@@ -1089,6 +1195,206 @@ function parseOrClause(
     lastEquals = parsed.lastEquals;
   }
   return { groups };
+}
+
+/**
+ * Columns whose known text/boolean values include `value`
+ * (case-insensitive). Shared by the "in"/"for", "excluding" and
+ * share-subset resolvers — a value that belongs to several columns
+ * never silently picks one.
+ */
+function valueOwners(
+  value: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): ColumnInfo[] {
+  return columns.filter((col, idx) => {
+    if (col.type !== "text" && col.type !== "boolean") return false;
+    return distinctValues(parsed, idx).has(value.toLowerCase());
+  });
+}
+
+/**
+ * The value's spelling as it appears in the sheet ("North", not
+ * the lowercased "north" the parser matched on), so answers read
+ * naturally.
+ */
+function sheetSpelling(
+  value: string,
+  column: ColumnInfo,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): string {
+  const idx = columns.indexOf(column);
+  for (const row of parsed.rows) {
+    const cell = (row[idx] ?? "").trim();
+    if (cell.toLowerCase() === value.toLowerCase()) return cell;
+  }
+  return value;
+}
+
+/**
+ * Find a trailing "excluding <value>" / "except <value>" outside
+ * quotes — the marker word must not sit inside a quoted value
+ * ("product is \"Salt excluding Pepper\"" is one value, not an
+ * exclusion). The last marker wins. Returns the text before the
+ * marker and the value, or null.
+ */
+function findTrailingExclusion(
+  rest: string,
+): { prefix: string; value: string } | null {
+  let found: { index: number; length: number } | null = null;
+  let quote: string | null = null;
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    const m = /^(excluding|except)(?![a-z])/i.exec(rest.slice(i));
+    if (m && (i === 0 || /[\s,;]/.test(rest[i - 1]!))) {
+      found = { index: i, length: m[0].length };
+      i += m[0].length - 1;
+    }
+  }
+  if (!found) return null;
+  const value = rest
+    .slice(found.index + found.length)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  if (value === "") return null;
+  return { prefix: rest.slice(0, found.index).trim(), value };
+}
+
+/**
+ * Resolve an exclusion value to "!=" filters. One value is one
+ * filter; several ("excluding North and South") are several — the
+ * complement of a list is every item excluded. A value in no
+ * column, or in several, is an error: "excluding" is unambiguous
+ * filter intent, so there is nothing to leave alone.
+ */
+function resolveExclusionValues(
+  value: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): { filters: Filter[] } | { error: string } {
+  const firstText = columns.find((c) => c.type === "text")?.name ?? "region";
+  const whole = valueOwners(value, columns, parsed);
+  if (whole.length === 1) {
+    return {
+      filters: [
+        {
+          column: whole[0].name,
+          op: "!=",
+          value: sheetSpelling(value, whole[0], columns, parsed),
+        },
+      ],
+    };
+  }
+  if (whole.length > 1) {
+    return {
+      error: `"${value}" appears in several columns (${whole.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${whole[0].name} is not ${value}"`,
+    };
+  }
+  const parts = value.split(/\s+(?:and|or)\s+/i);
+  if (parts.length > 1) {
+    const filters: Filter[] = [];
+    let owner: string | null = null;
+    for (const part of parts) {
+      const owners = valueOwners(part, columns, parsed);
+      if (owners.length !== 1) {
+        return {
+          error: `could not find "${part}" in any column — say which rows to leave out, e.g. "where ${firstText} is not ${part}"`,
+        };
+      }
+      if (owner === null) owner = owners[0].name;
+      if (owners[0].name !== owner) {
+        return {
+          error: `"${part}" is in ${owners[0].name} but the other values are in ${owner} — an exclusion needs one column`,
+        };
+      }
+      filters.push({
+        column: owners[0].name,
+        op: "!=",
+        value: sheetSpelling(part, owners[0], columns, parsed),
+      });
+    }
+    return { filters };
+  }
+  return {
+    error: `could not find "${value}" in any column — say which rows to leave out, e.g. "where ${firstText} is not ${value}"`,
+  };
+}
+
+/**
+ * Resolve a trailing "in"/"for" value that lists several values
+ * ("North and South", "North or South") into OR groups. The whole
+ * value is tried first by the caller; this only runs when it has no
+ * single owner. Returns null when the value is not a list (the
+ * caller leaves it alone — "for each department", or a column name
+ * like "salary" in "outliers in salary"), an error when it looks
+ * like a list but cannot be resolved, and the groups otherwise. A
+ * quoted value is never split: it was one value the sheet simply
+ * does not have.
+ */
+function resolveInValueList(
+  value: string,
+  quoted: boolean,
+  before: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+): { orGroups: Filter[][] } | { error: string } | null {
+  // A column name as the value ("outliers in salary") is the column
+  // being asked about, not a filter — leave it for the question parser.
+  if (findColumns(value, columns).length > 0) return null;
+  // "for each department" is the group-by phrase.
+  if (/^each\b/i.test(value)) return null;
+  // "compare rows in Jan vs Feb": the "in" belongs to the
+  // comparison's period phrasing, not to a filter.
+  if (/\bvs\b/i.test(value)) return null;
+  // "how many outliers in profit", "how many duplicates in profit":
+  // the "in" names the subject column those questions read — a word
+  // that is not a column is their "no column named" abstention, not
+  // a filter to resolve here.
+  if (/\b(outlier|duplicate)s?\b/i.test(before)) return null;
+  const firstText = columns.find((c) => c.type === "text")?.name ?? "region";
+  const parts = quoted ? [value] : value.split(/\s+(?:and|or)\s+/i);
+  if (parts.length === 1) {
+    // A single unknown value: refuse rather than silently dropping
+    // the filter — "total revenue in 2024" must not answer the
+    // whole-sheet total as if nothing had been asked.
+    return {
+      error: `could not find "${value}" in any column — say which rows, e.g. "where ${firstText} is ${value}"`,
+    };
+  }
+  const groups: Filter[][] = [];
+  let owner: string | null = null;
+  for (const part of parts) {
+    const owners = valueOwners(part, columns, parsed);
+    if (owners.length !== 1) {
+      return {
+        error: `could not find "${part}" in any column — say which rows, e.g. "where ${firstText} is ${part}"`,
+      };
+    }
+    if (owner === null) owner = owners[0].name;
+    if (owners[0].name !== owner) {
+      return {
+        error: `"${part}" is in ${owners[0].name} but the other values are in ${owner} — a list after "in" needs one column`,
+      };
+    }
+    groups.push([
+      {
+        column: owners[0].name,
+        op: "=",
+        value: sheetSpelling(part, owners[0], columns, parsed),
+      },
+    ]);
+  }
+  return { orGroups: groups };
 }
 
 function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
@@ -1152,6 +1458,23 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
     }
   }
 
+  // Trailing "excluding <value>" / "except <value>": the complement
+  // of the "in" form — "total revenue excluding North" is region !=
+  // North. It runs before the "in"/"for" loop so the two compose
+  // ("for North excluding South" is North and not South), and an
+  // exclusion placed before "where" still works, because the where
+  // extractor only strips from "where" onward ("total revenue
+  // excluding East where region is North or South").
+  const exclusion = findTrailingExclusion(rest);
+  if (exclusion) {
+    const resolved = resolveExclusionValues(exclusion.value, columns, parsed);
+    if ("error" in resolved) {
+      return { filters, orGroups, rest, error: resolved.error };
+    }
+    filters.push(...resolved.filters);
+    rest = exclusion.prefix;
+  }
+
   // Trailing "in <value>" / "for <value>" with a known categorical value.
   // The LAST marker wins: "outliers in salary in Engineering" filters
   // on Engineering, not on "salary in Engineering" — the first "in"
@@ -1176,8 +1499,24 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
         rest,
         error: `"${value}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0].name} is ${value}"`,
       };
+    } else {
+      // No owner: usually not a filter ("for each department", a
+      // column name like "salary" in "outliers in salary") — but a
+      // list of values ("in North and South") is a filter the old
+      // code silently dropped, answering the whole sheet as if
+      // nothing had been asked. Resolve the list, or refuse.
+      const quoted = /^["'].*["']$/.test(m[2].trim());
+      const list = resolveInValueList(value, quoted, m[1], columns, parsed);
+      if (list && "error" in list) {
+        return { filters, orGroups, rest, error: list.error };
+      }
+      if (list) {
+        orGroups.push(...list.orGroups);
+        rest = rest.slice(0, m[1].length).trim();
+      }
+      // Otherwise leave it: "for each", a column name, or a value
+      // no other rule covers.
     }
-    // No owner: not a filter (e.g. "for each department"); leave it.
   }
 
   return { filters, orGroups, rest };
@@ -3015,7 +3354,7 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   if (candidates.length === 0) {
     return {
       ok: false,
-      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(text, columns)}`,
     };
   }
   if (candidates.length > 1) {

@@ -711,6 +711,142 @@ describe("parseQuestion or filters", () => {
   });
 });
 
+describe("parseQuestion excluding filters", () => {
+  it("parses excluding as a not-equal filter", () => {
+    const r = parseQuestion("total revenue excluding North", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([{ column: "region", op: "!=", value: "North" }]);
+    }
+  });
+
+  it("parses except as the same filter", () => {
+    const r = parseQuestion("total revenue except Widget A", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "product", op: "!=", value: "Widget A" },
+      ]);
+    }
+  });
+
+  it("parses several excluded values as several filters", () => {
+    const r = parseQuestion("total revenue excluding North and South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "!=", value: "North" },
+        { column: "region", op: "!=", value: "South" },
+      ]);
+    }
+  });
+
+  it("composes with an in filter", () => {
+    const r = parseQuestion("total revenue for North excluding South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "!=", value: "South" },
+        { column: "region", op: "=", value: "North" },
+      ]);
+    }
+  });
+
+  it("works placed before a where clause with or", () => {
+    const r = parseQuestion(
+      "total revenue excluding Widget C where region is North or South",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "product", op: "!=", value: "Widget C" },
+      ]);
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "region", op: "=", value: "South" }],
+      ]);
+    }
+  });
+
+  it("abstains on an unknown excluded value", () => {
+    const r = parseQuestion("total revenue excluding Frobnicate", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "Frobnicate"/);
+  });
+
+  it("refuses excluding inside a where clause", () => {
+    const r = parseQuestion(
+      "total revenue where region is North or South excluding East",
+      SALES,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/inside a where clause/);
+  });
+
+  it("does not treat excluding inside a quoted value as an exclusion", () => {
+    const r = parseQuestion(
+      'total revenue where product is "Salt excluding Pepper"',
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "product", op: "=", value: "Salt excluding Pepper" },
+      ]);
+    }
+  });
+});
+
+describe("parseQuestion trailing in/for lists", () => {
+  it("resolves a list after in to or groups", () => {
+    const r = parseQuestion("total revenue in North and South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([]);
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "region", op: "=", value: "South" }],
+      ]);
+    }
+  });
+
+  it("resolves a list after for with or", () => {
+    const r = parseQuestion("total revenue for North or South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.orGroups).toEqual([
+        [{ column: "region", op: "=", value: "North" }],
+        [{ column: "region", op: "=", value: "South" }],
+      ]);
+    }
+  });
+
+  it("abstains on a single unknown trailing value instead of dropping it", () => {
+    const r = parseQuestion("total revenue in 2024", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "2024"/);
+  });
+
+  it("abstains on an unknown trailing word", () => {
+    const r = parseQuestion("total revenue in Frobnicate", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "Frobnicate"/);
+  });
+
+  it("leaves an outliers subject column for the outliers parser", () => {
+    const r = parseQuestion("how many outliers in profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("does not split a quoted list value", () => {
+    const r = parseQuestion('total revenue in "North and South"', SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find "North and South"/);
+  });
+});
+
 describe("parseQuestion distribution", () => {
   it("parses a distribution question", () => {
     const r = parseQuestion("distribution of salary", STAFF);
@@ -1085,6 +1221,50 @@ describe("parseQuestion abstention", () => {
     const r = parseQuestion("total revenue where region frobnicate North", SALES);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/could not understand the filter/);
+  });
+});
+
+describe("parseQuestion did-you-mean suggestions", () => {
+  it("suggests the column for a one-letter typo", () => {
+    const r = parseQuestion("total revnue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "revenue"/);
+  });
+
+  it("suggests the column for a typo in a where clause", () => {
+    const r = parseQuestion("total revenue where revnue > 100", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "revenue"/);
+  });
+
+  it("suggests the column for a typo in a group-by", () => {
+    const r = parseQuestion("total revenue by regoin", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "region"/);
+  });
+
+  it("suggests the column for a typo among several group-by words", () => {
+    const r = parseQuestion("total revenue by region and revenu", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean "revenue"/);
+  });
+
+  it("suggests nothing when no column is close", () => {
+    const r = parseQuestion("total profit", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).not.toMatch(/did you mean/);
+  });
+
+  it("suggests nothing for a far-off group-by word", () => {
+    const r = parseQuestion("total revenue by frobnicate", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).not.toMatch(/did you mean/);
+  });
+
+  it("refuses a group-by that names no column instead of dropping it", () => {
+    const r = parseQuestion("total revenue by regoin", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find a column to group by/);
   });
 });
 

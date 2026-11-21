@@ -259,6 +259,54 @@ describe("executeQuery or filters", () => {
   });
 });
 
+describe("executeQuery excluding filters", () => {
+  it("excludes one value", () => {
+    const r = ask("total revenue excluding North");
+    if (r.kind === "scalar") {
+      // Everything but North: 1,114.84 - 389.97.
+      expect(r.value).toBeCloseTo(724.87, 2);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("excludes several values", () => {
+    const r = ask("total revenue excluding North and South");
+    if (r.kind === "scalar") {
+      // East 400 + West 124.95.
+      expect(r.value).toBeCloseTo(524.95, 2);
+      expect(r.rowsMatched).toBe(2);
+    }
+  });
+
+  it("shares out the complement", () => {
+    const r = ask("what share of revenue excluding North");
+    expect(r.kind).toBe("share");
+    if (r.kind === "share") {
+      expect(r.share).toBeCloseTo(0.6502, 4);
+      expect(r.subsetRows).toBe(3);
+    }
+  });
+});
+
+describe("executeQuery trailing in/for lists", () => {
+  it("unions a list after for", () => {
+    const r = ask("total revenue for North and South");
+    if (r.kind === "scalar") {
+      // North 389.97 + South 199.92; East and West are cut.
+      expect(r.value).toBeCloseTo(589.89, 2);
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+
+  it("unions a list after in with or", () => {
+    const r = ask("total revenue in North or South");
+    if (r.kind === "scalar") {
+      expect(r.value).toBeCloseTo(589.89, 2);
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+});
+
 describe("executeQuery distribution", () => {
   it("bins values into at most 10 equal-width bins", () => {
     const r = ask("distribution of revenue");
