@@ -50,6 +50,10 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["how many duplicate rows", duplicates],
   ["how many duplicate products", duplicates],
   ["show duplicate rows", duplicates],
+  ["second highest salary", staff],
+  ["3rd lowest revenue", sales],
+  ["3rd highest hours", scores],
+  ["5th highest salary", staff],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

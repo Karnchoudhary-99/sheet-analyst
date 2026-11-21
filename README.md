@@ -37,6 +37,7 @@ top-N) directly from the spreadsheet.
 - [x] Missing-values questions ("how many rows are missing salary", "which columns have missing values" — a count per column or a whole-sheet report, worst first; "show rows missing revenue" lists the rows; empty and NA markers count as missing, a zero never does)
 - [x] Outlier questions ("how many outliers in score", "which columns have outliers" — a count per column or a whole-sheet report over numeric columns, worst first; "show outliers in score" lists the rows; Tukey IQR fence, the same fence the data-quality profile reports)
 - [x] Duplicate questions ("how many duplicate rows", "which columns have duplicates" — a count per column or a whole-sheet report over every column, worst first, plus the exact duplicate rows; "show duplicate rows" / "show duplicates in product" lists the rows; a repeated value is counted from its second occurrence, blanks never count as duplicates)
+- [x] Ordinal-rank questions ("second highest salary", "3rd lowest revenue" — the nth distinct value from the top or the bottom of one numeric column; ties share the rank, so the answer also says how many rows hold that value; a rank past the end says so instead of falling back to the last value)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -169,7 +170,10 @@ distinct count ("how many distinct regions", "count distinct
 products"), percentile ("90th percentile of salary", "p90 revenue")
 and range filters ("total revenue where revenue between 100 and
 200" — inclusive on both ends, the smaller value first; a reversed
-range abstains instead of answering "no rows"), and trend
+range abstains instead of answering "no rows"), rank ("second
+highest salary", "3rd lowest revenue" — the nth distinct value from
+the top or the bottom of one numeric column; ties share the rank),
+and trend
 ("revenue trend by month", "average salary trend by year" — the
 least-squares slope of the per-period aggregate, so "trended up by
 about 84.95 per month"; a trend needs a period and one numeric
@@ -193,7 +197,16 @@ cells are never counted as values. A percentile answer interpolates
 linearly between the two nearest ranks (the numpy default, the same
 method as the quartiles in `describe`): "90th percentile of salary
 is 97,100 (across 5 rows, 4 of 5 had a value)"; p = 0 and p = 100
-are just the minimum and maximum, so only 1–99 are accepted. A multi-column group-by answer lists one line per
+are just the minimum and maximum, so only 1–99 are accepted. A rank
+answer names the nth distinct value from the top or the bottom of
+one numeric column ("second highest salary", "3rd lowest revenue");
+ties share the rank, so the answer also says how many rows hold the
+value ("The 2nd highest salary is 95,000 (1 row holds it, out of 4
+distinct values)"), and a rank past the end says so instead of
+falling back to the last value ("The 5th highest salary does not
+exist — there are only 4 distinct salary values"). A rank is one
+column, ungrouped ("second highest salary by department" abstains).
+A multi-column group-by answer lists one line per
 combination ("North · Widget A: 240 (2 rows)"), largest first, and a
 blank cell in any group column shows as "(blank)" rather than being
 dropped. A time bucket plus a second group column ("by region and
