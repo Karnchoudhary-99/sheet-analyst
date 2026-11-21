@@ -10,7 +10,7 @@
 
 import type { ParsedCsv } from "./csv.js";
 import { executeQuery, type QueryResult } from "./engine.js";
-import { parseQuestion } from "./query.js";
+import { parseQuestion, type Filter } from "./query.js";
 import { inferSchema } from "./schema.js";
 import { ordinal } from "./stats.js";
 
@@ -206,11 +206,24 @@ function composeComparison(
   );
 }
 
+/** Render one filter in words: "region is North", "revenue is greater than 100". */
+function describeFilter(filter: Filter): string {
+  const opWord: Record<Filter["op"], string> = {
+    "=": "is",
+    "!=": "is not",
+    ">": "is greater than",
+    ">=": "is at least",
+    "<": "is less than",
+    "<=": "is at most",
+    contains: "contains",
+  };
+  return `${filter.column} ${opWord[filter.op]} ${filter.value}`;
+}
+
 function composeShare(result: Extract<QueryResult, { kind: "share" }>): string {
-  // Filters are described plainly here: "region is North".
-  const filterDesc = result.filters
-    .map((f) => `${f.column} is ${f.value}`)
-    .join(" and ");
+  // Filters are described plainly here, with their operators:
+  // "region is North and revenue is greater than 100".
+  const filterDesc = result.filters.map(describeFilter).join(" and ");
   // A share needs a non-zero total to divide by; a zero total means
   // the whole sheet has nothing to share out, not a 0% share.
   if (result.share === null) {
