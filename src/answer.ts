@@ -470,6 +470,89 @@ function composeOutliers(
   );
 }
 
+function composeDuplicates(
+  result: Extract<QueryResult, { kind: "duplicates" }>,
+  parsed?: ParsedCsv,
+): string {
+  const pct = (duplicates: number, total: number): string =>
+    total === 0 ? "0%" : `${formatNumber((duplicates / total) * 100)}%`;
+  const valueWord = (n: number): string =>
+    `${n} ${n === 1 ? "value appears" : "values appear"} more than once`;
+  // A single column: a count, or the duplicate rows themselves.
+  if (result.column !== null) {
+    const entry = result.entries[0]!;
+    if (entry.total === 0) {
+      return (
+        `I could not check duplicates in ${result.column} — none of the ` +
+        `${result.rowsMatched} matching ${plural(result.rowsMatched, "row")} has a value.`
+      );
+    }
+    // Flag rows with no value, so a duplicate count over 6 values is
+    // never presented as a count over 8 rows.
+    const coverage =
+      entry.total < result.rowsMatched
+        ? ` (${entry.total} of ${result.rowsMatched} had a value)`
+        : "";
+    if (result.listRows) {
+      if (result.totalMatched === 0) {
+        return `No rows are duplicates in ${result.column}.`;
+      }
+      const scope =
+        result.limitedTo !== undefined
+          ? `Showing ${result.rows.length} of ${result.totalMatched} rows that are duplicates in ${result.column}`
+          : result.totalMatched === 1
+            ? `1 row that is a duplicate in ${result.column}`
+            : `${result.totalMatched} rows that are duplicates in ${result.column}`;
+      return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
+    }
+    if (entry.duplicates === 0) {
+      return `No duplicates in ${result.column} — every value appears once.${coverage}`;
+    }
+    const verb = entry.duplicates === 1 ? "is" : "are";
+    const noun = entry.duplicates === 1 ? "a duplicate" : "duplicates";
+    return (
+      `${entry.duplicates} of ${entry.total} ${plural(entry.total, "row")} ${verb} ` +
+      `${noun} in ${result.column} (${pct(entry.duplicates, entry.total)}) — ` +
+      `${valueWord(entry.valuesWithDuplicates)}.${coverage}`
+    );
+  }
+  // The whole-sheet report: the exact duplicate rows first, then
+  // the per-column counts, most duplicates first — so a clean
+  // column reads as "0 duplicates" instead of being silently
+  // absent from the report.
+  if (result.listRows) {
+    if (result.totalMatched === 0) {
+      return "No rows are exact duplicates of an earlier row.";
+    }
+    const scope =
+      result.limitedTo !== undefined
+        ? `Showing ${result.rows.length} of ${result.totalMatched} rows that are exact duplicates of an earlier row`
+        : result.totalMatched === 1
+          ? "1 row that is an exact duplicate of an earlier row"
+          : `${result.totalMatched} rows that are exact duplicates of an earlier row`;
+    return `${scope}:\n${renderRowTable(result.headers, result.rows, parsed)}`;
+  }
+  if (result.rowsMatched === 0) return "No rows match.";
+  if (result.duplicateRows === 0 && result.entries.every((e) => e.duplicates === 0)) {
+    return (
+      `No duplicates — every row is unique and every value appears ` +
+      `once in each column.`
+    );
+  }
+  const headline =
+    result.duplicateRows === 0
+      ? "No exact duplicate rows."
+      : result.duplicateRows === 1
+        ? `1 of ${result.rowsMatched} ${plural(result.rowsMatched, "row")} is an exact duplicate of an earlier row.`
+        : `${result.duplicateRows} of ${result.rowsMatched} ${plural(result.rowsMatched, "row")} are exact duplicates of an earlier row.`;
+  const lines = result.entries.map((e) =>
+    e.duplicates === 0
+      ? `- ${e.column}: 0 duplicates`
+      : `- ${e.column}: ${e.duplicates} duplicate ${plural(e.duplicates, "row")} (${valueWord(e.valuesWithDuplicates)})`,
+  );
+  return `${headline}\nDuplicates by column:\n${lines.join("\n")}`;
+}
+
 function composeAboveBelow(
   result: Extract<QueryResult, { kind: "aboveBelow" }>,
   parsed?: ParsedCsv,
@@ -517,6 +600,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeMissing(result, parsed);
     case "outliers":
       return composeOutliers(result, parsed);
+    case "duplicates":
+      return composeDuplicates(result, parsed);
   }
 }
 
