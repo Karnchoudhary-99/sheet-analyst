@@ -1132,3 +1132,155 @@ describe("executeQuery missing values", () => {
     }
   });
 });
+
+// Scores 12, 8, 15, 11, 9, 13, 10, 1000: Q1 = 9.5, Q3 = 14, so the
+// Tukey fence is [2.75, 20.75] and only Tim's 1000 is an outlier.
+// Hours 5, 7, 6, 8, 4, 9, 6, 7 has no outlier (fence [2.5, 10.5]).
+const SCORES = parseCsv(
+  "student,subject,score,hours\n" +
+    "Ada,Math,12,5\n" +
+    "Grace,Math,8,7\n" +
+    "Alan,Science,15,6\n" +
+    "Katherine,Science,11,8\n" +
+    "Edsger,Math,9,4\n" +
+    "Linus,Science,13,9\n" +
+    "Margaret,Math,10,6\n" +
+    "Tim,Science,1000,7\n",
+);
+
+describe("executeQuery outliers", () => {
+  it("counts the outliers of one column, with the fence", () => {
+    const r = ask("how many outliers in score", SCORES);
+    expect(r).toEqual({
+      kind: "outliers",
+      column: "score",
+      entries: [
+        {
+          column: "score",
+          total: 8,
+          outliers: 1,
+          lowBound: 2.75,
+          highBound: 20.75,
+          low: 1000,
+          high: 1000,
+        },
+      ],
+      headers: ["student", "subject", "score", "hours"],
+      rows: [],
+      totalMatched: 0,
+      limitedTo: undefined,
+      listRows: false,
+      rowsMatched: 8,
+    });
+  });
+
+  it("reports no outliers with the fence when every value is inside it", () => {
+    const r = ask("how many outliers in revenue");
+    expect(r.kind).toBe("outliers");
+    if (r.kind === "outliers") {
+      expect(r.entries).toHaveLength(1);
+      // Revenue 0, 124.95, 149.97, 199.92, 240, 400: Q1 = 124.95,
+      // Q3 = 240, IQR = 115.05, fence [-47.625, 412.575].
+      expect(r.entries[0]!.outliers).toBe(0);
+      expect(r.entries[0]!.total).toBe(6);
+      expect(r.entries[0]!.lowBound).toBeCloseTo(-47.625, 3);
+      expect(r.entries[0]!.highBound).toBeCloseTo(412.575, 3);
+      expect(r.entries[0]!.low).toBeNull();
+      expect(r.entries[0]!.high).toBeNull();
+    }
+  });
+
+  it("reports every numeric column, worst first, and never a text column", () => {
+    const r = ask("which columns have outliers", SCORES);
+    expect(r.kind).toBe("outliers");
+    if (r.kind === "outliers") {
+      expect(r.column).toBeNull();
+      expect(r.entries).toEqual([
+        {
+          column: "score",
+          total: 8,
+          outliers: 1,
+          lowBound: 2.75,
+          highBound: 20.75,
+          low: 1000,
+          high: 1000,
+        },
+        {
+          column: "hours",
+          total: 8,
+          outliers: 0,
+          lowBound: 2.5,
+          highBound: 10.5,
+          low: null,
+          high: null,
+        },
+      ]);
+      expect(r.rowsMatched).toBe(8);
+    }
+  });
+
+  it("lists the outlier rows, in sheet order", () => {
+    const r = ask("show outliers in score", SCORES);
+    expect(r.kind).toBe("outliers");
+    if (r.kind === "outliers") {
+      expect(r.listRows).toBe(true);
+      expect(r.totalMatched).toBe(1);
+      expect(r.rows).toEqual([
+        { student: "Tim", subject: "Science", score: "1000", hours: "7" },
+      ]);
+    }
+  });
+
+  it("lists nothing when no row is an outlier", () => {
+    const r = ask("show outliers in revenue");
+    expect(r.kind).toBe("outliers");
+    if (r.kind === "outliers") {
+      expect(r.totalMatched).toBe(0);
+      expect(r.rows).toEqual([]);
+    }
+  });
+
+  it("has no fence below 4 usable values", () => {
+    const sheet = parseCsv("x,y\n1,10\n2,20\n3,1000\n");
+    const parsed = parseQuestion("how many outliers in y", sheet);
+    if (!parsed.ok) throw new Error(`abstained: ${parsed.reason}`);
+    const r = executeQuery(parsed.query, sheet);
+    expect(r.kind).toBe("outliers");
+    if (r.kind === "outliers") {
+      expect(r.entries).toEqual([
+        {
+          column: "y",
+          total: 3,
+          outliers: 0,
+          lowBound: null,
+          highBound: null,
+          low: null,
+          high: null,
+        },
+      ]);
+    }
+  });
+
+  it("counts over the filtered rows only — the fence moves with the filter", () => {
+    const r = ask("how many outliers in score in Math", SCORES);
+    expect(r.kind).toBe("outliers");
+    if (r.kind === "outliers") {
+      // Math scores 12, 8, 9, 10: fence [4.75, 14.75], no outliers.
+      expect(r.entries[0]!.outliers).toBe(0);
+      expect(r.entries[0]!.total).toBe(4);
+      expect(r.entries[0]!.lowBound).toBeCloseTo(4.75, 3);
+      expect(r.entries[0]!.highBound).toBeCloseTo(14.75, 3);
+      expect(r.rowsMatched).toBe(4);
+    }
+  });
+
+  it("does not count a blank cell as an outlier — it is no value", () => {
+    const r = ask("how many outliers in units");
+    expect(r.kind).toBe("outliers");
+    if (r.kind === "outliers") {
+      // Units 12, 8, 3, 20, 5 (one blank): fence [-14, 34].
+      expect(r.entries[0]!.total).toBe(5);
+      expect(r.entries[0]!.outliers).toBe(0);
+    }
+  });
+});
