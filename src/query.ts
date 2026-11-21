@@ -52,6 +52,10 @@
  *   products" (how many different values a column has, blanks excluded)
  * - percentile: "90th percentile of salary", "p90 revenue" (linear
  *   interpolation, the same method as the quartiles in describe)
+ * - rank: "second highest salary", "3rd lowest revenue" (the nth
+ *   distinct value from the top or the bottom of one numeric column;
+ *   ties share the rank, so the answer also says how many rows hold
+ *   that value)
  * - range filter: "where revenue between 100 and 200" (inclusive on
  *   both ends; the smaller value must come first)
  * - trend: "revenue trend by month", "average salary trend by year"
@@ -183,6 +187,16 @@ export type Query =
       column: string;
       /** 1–99: "90th percentile" is p = 90. */
       p: number;
+      filters: Filter[];
+    }
+  | {
+      kind: "rank";
+      /** The column the rank is read from. */
+      column: string;
+      /** 1-based: "second highest" is n = 2. */
+      n: number;
+      /** Which end of the ranking the rank is counted from. */
+      direction: "highest" | "lowest";
       filters: Filter[];
     }
   | {
@@ -1794,6 +1808,144 @@ function tryParsePercentile(
   };
 }
 
+/** Ordinal words ("first" … "twentieth") and their ranks. */
+const WORD_ORDINALS: Record<string, number> = {
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
+  eleventh: 11,
+  twelfth: 12,
+  thirteenth: 13,
+  fourteenth: 14,
+  fifteenth: 15,
+  sixteenth: 16,
+  seventeenth: 17,
+  eighteenth: 18,
+  nineteenth: 19,
+  twentieth: 20,
+};
+
+/**
+ * Try to read an ordinal-rank question ("second highest salary",
+ * "3rd lowest revenue", "what is the 2nd largest sale"). Returns
+ * null when the question shows no rank intent; otherwise a rank
+ * query, or an abstention when the rank or the column cannot be
+ * pinned down. A rank is one numeric column, ungrouped — "second
+ * highest salary by department" is a per-group question the engine
+ * does not answer.
+ *
+ * The rank counts distinct values, not rows: with salaries 98,000 /
+ * 95,000 / 95,000 / 91,000 the 2nd highest salary is 95,000 and the
+ * answer says 2 rows hold it. Counting rows would make the rank
+ * depend on which tied row the sort happened to put first, so a
+ * tie would give a different answer for the same question. A rank
+ * past the end ("5th highest" with only 4 distinct values) is
+ * answered by the engine, not the parser — the parser cannot know
+ * how many distinct values the sheet holds.
+ *
+ * This is checked before the generic aggregate fallback, which
+ * would otherwise read "second highest salary" as a plain maximum
+ * and silently answer with the highest row — the exact wrong
+ * answer this question kind exists to avoid.
+ */
+function tryParseRank(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+): ParseResult | null {
+  const norm = normalize(text);
+  const direction = /\b(highest|largest|biggest|greatest|maximum)\b/.test(norm)
+    ? "highest"
+    : /\b(lowest|smallest|least|minimum)\b/.test(norm)
+      ? "lowest"
+      : null;
+  if (direction === null) return null;
+  const numeric = /(\d{1,3})(?:st|nd|rd|th)\b/.exec(norm);
+  const word = Object.keys(WORD_ORDINALS).find((w) => new RegExp(`\\b${w}\\b`).test(norm));
+  const n = numeric ? Number(numeric[1]) : word ? WORD_ORDINALS[word]! : null;
+  if (n === null) return null;
+  if (n < 1) {
+    return {
+      ok: false,
+      reason: `a rank starts at 1 — try e.g. 'second highest salary'`,
+    };
+  }
+  if (/\bby\b|\bper\b|\bgroup\b/.test(norm)) {
+    return {
+      ok: false,
+      reason:
+        "a rank question asks about one column — try e.g. 'second highest salary'",
+    };
+  }
+
+  const filler = new Set([
+    "what",
+    "is",
+    "the",
+    "of",
+    "for",
+    "show",
+    "find",
+    "me",
+    "highest",
+    "largest",
+    "biggest",
+    "greatest",
+    "maximum",
+    "lowest",
+    "smallest",
+    "least",
+    "minimum",
+    ...Object.keys(WORD_ORDINALS),
+  ]);
+  const cleaned = norm
+    .replace(/\b\d{1,3}(?:st|nd|rd|th)\b/g, " ")
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const hits = findColumns(cleaned, columns);
+  const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+  if (distinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (distinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to rank — matches ${distinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = distinct[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a rank needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  // Anything left after removing the column name is a word the
+  // sheet does not explain — refuse rather than dropping it.
+  const rest = stripColumnName(cleaned, column);
+  if (rest !== "") {
+    return {
+      ok: false,
+      reason: `could not understand "${rest}" in the question — try e.g. 'second highest ${column.name}'`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "rank", column: column.name, n, direction, filters },
+  };
+}
+
 /**
  * Try to read a trend question ("revenue trend by month", "average
  * salary trend by year", "is revenue trending up"). Returns null
@@ -2021,6 +2173,22 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return percentile;
+  }
+
+  // Rank: one column's nth distinct value from the top or the
+  // bottom ("second highest salary", "3rd lowest revenue").
+  // Checked before the generic aggregate fallback, which would
+  // otherwise read "second highest salary" as a plain maximum and
+  // answer with the highest row — silently wrong.
+  const rank = tryParseRank(timeBucket.rest, columns, filters);
+  if (rank) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a rank can't be grouped by a time period — ask about the whole sheet, e.g. 'second highest salary'",
+      };
+    }
+    return rank;
   }
 
   // Above/below average: rows on one side of a column's own mean or
