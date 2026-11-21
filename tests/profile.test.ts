@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCsv } from "../src/csv.js";
-import { iqrOutliers, profileColumn, profileSheet } from "../src/profile.js";
+import { iqrOutliers, outlierFence, profileColumn, profileSheet } from "../src/profile.js";
 
 const MESSY = `id,name,region,score,note
 1,Alice,Paris,10,ok
@@ -15,6 +15,28 @@ const MESSY = `id,name,region,score,note
 ,,
 9,Ivan,Paris,,ok
 `;
+
+describe("outlierFence", () => {
+  it("returns the fence even when nothing is outside it", () => {
+    // Q1 = 3, Q3 = 9, IQR = 6, fence [-6, 18] — same fence iqrOutliers uses.
+    expect(outlierFence([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1000])).toEqual({
+      lowBound: -6,
+      highBound: 18,
+    });
+  });
+
+  it("returns null below 4 values — a fence needs quartiles", () => {
+    expect(outlierFence([1, 2, 1000])).toBeNull();
+  });
+
+  it("agrees with the profile's fence for the messy sheet's scores", () => {
+    // Scores 10, 11, 11, 12, 12, 13, 14, 15, 1000: Q1 = 11, Q3 = 14.5.
+    expect(outlierFence([10, 11, 12, 12, 13, 14, 15, 1000, 11])).toEqual({
+      lowBound: 5.75,
+      highBound: 19.75,
+    });
+  });
+});
 
 describe("iqrOutliers", () => {
   it("finds a single far value outside the Tukey fence", () => {
