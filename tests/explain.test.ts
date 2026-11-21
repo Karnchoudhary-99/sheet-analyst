@@ -477,3 +477,72 @@ describe("describeQuery outliers", () => {
     expect(lines).not.toContain("column: score");
   });
 });
+
+describe("describeQuery duplicates", () => {
+  it("describes a single-column count", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: "product",
+      duplicateRows: 3,
+      entries: [{ column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 }],
+      headers: ["region", "product", "units"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 7,
+    });
+    expect(lines[0]).toBe("duplicates in product");
+    expect(lines).toContain("operation: duplicates");
+    expect(lines).toContain("column: product");
+  });
+
+  it("describes a row listing in one column", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: "product",
+      duplicateRows: 3,
+      entries: [{ column: "product", duplicates: 4, total: 7, valuesWithDuplicates: 2 }],
+      headers: ["region", "product", "units"],
+      rows: [],
+      totalMatched: 4,
+      listRows: true,
+      rowsMatched: 7,
+    });
+    expect(lines[0]).toBe("rows that are duplicates in product");
+    expect(lines).toContain("list rows: true");
+  });
+
+  it("describes an exact-duplicate-row listing with no column", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: null,
+      duplicateRows: 3,
+      entries: [],
+      headers: ["region", "product", "units"],
+      rows: [],
+      totalMatched: 3,
+      listRows: true,
+      rowsMatched: 7,
+    });
+    expect(lines[0]).toBe("rows that duplicate an earlier row");
+    expect(lines).toContain("operation: duplicates");
+    expect(lines).not.toContain("column: product");
+  });
+
+  it("describes a whole-sheet report with no column line", () => {
+    const lines = describeQuery({
+      kind: "duplicates",
+      column: null,
+      duplicateRows: 3,
+      entries: [],
+      headers: ["region", "product", "units"],
+      rows: [],
+      totalMatched: 0,
+      listRows: false,
+      rowsMatched: 7,
+    });
+    expect(lines[0]).toBe("duplicates by column");
+    expect(lines).toContain("operation: duplicates");
+    expect(lines).not.toContain("column: product");
+  });
+});
