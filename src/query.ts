@@ -29,6 +29,12 @@
  *   actually say)
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
+ * - compound filters: "total revenue where region is North and
+ *   product is Widget A", "how many rows where revenue > 100 and
+ *   units < 10" (every condition must hold; a between-range keeps
+ *   its own "and" — "where revenue between 100 and 200 and region
+ *   is North" — and an "and" inside a value is left alone:
+ *   "where product is Salt and Pepper" still reads as one filter)
  * - rows: "show rows where region is North", "list employees in Data"
  * - sorted rows: "show rows sorted by revenue descending",
  *   "list employees sorted by salary ascending" (numbers sort
@@ -683,6 +689,158 @@ interface FilterExtraction {
  * A bare value that belongs to several columns abstains — guessing
  * the column would answer a different question.
  */
+/**
+ * Parse one `where` condition — "region is North", "revenue > 100",
+ * "revenue between 100 and 200" — into its filters. A condition that
+ * matches no operator pattern at all ("Pepper", a bare word) is a
+ * *soft* failure: it is not shaped like a condition, so the caller
+ * may fall back to treating a longer clause as one condition (a value
+ * containing "and", e.g. "product is Salt and Pepper"). Every other
+ * failure — an unknown column, an ambiguous column, a reversed range —
+ * is hard: the condition was understood well enough to know it is
+ * wrong, and falling back would only hide that.
+ */
+function parseWhereCondition(
+  condition: string,
+  columns: ColumnInfo[],
+): { filters: Filter[] } | { error: string; soft: boolean } {
+  // "between A and B" is two filters, not one: an inclusive
+  // range on both ends. It is checked before the single-operator
+  // patterns, which would otherwise read "between" as noise.
+  const between = /^(.+?)\s+between\s+(.+?)\s+and\s+(.+)$/i.exec(condition);
+  if (between) {
+    const hits = findColumns(between[1], columns);
+    if (hits.length === 0) {
+      return {
+        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        soft: false,
+      };
+    }
+    if (hits.length > 1) {
+      return {
+        error: `could not tell which column "where ${condition}" means — matches ${hits.map((c) => c.name).join(", ")}`,
+        soft: false,
+      };
+    }
+    const lo = between[2].trim().replace(/^["']|["']$/g, "");
+    const hi = between[3].trim().replace(/^["']|["']$/g, "");
+    // A reversed range ("between 200 and 100") matches nothing
+    // by construction — refuse it instead of answering "no rows".
+    const loNum = Number(lo.replace(/,/g, ""));
+    const hiNum = Number(hi.replace(/,/g, ""));
+    const loDate = parseDate(lo);
+    const hiDate = parseDate(hi);
+    const reversed =
+      (Number.isFinite(loNum) && Number.isFinite(hiNum) && loNum > hiNum) ||
+      (loDate !== null &&
+        hiDate !== null &&
+        Date.UTC(loDate.year, loDate.month - 1, loDate.day) >
+          Date.UTC(hiDate.year, hiDate.month - 1, hiDate.day));
+    if (reversed) {
+      return {
+        error: `"between" needs the smaller value first — try e.g. "where ${hits[0].name} between ${hi} and ${lo}"`,
+        soft: false,
+      };
+    }
+    return {
+      filters: [
+        { column: hits[0].name, op: ">=", value: lo },
+        { column: hits[0].name, op: "<=", value: hi },
+      ],
+    };
+  }
+
+  const opPatterns: { op: FilterOp; re: RegExp }[] = [
+    { op: "!=", re: /^(.*?)\s+(?:is not|isn't|!=|not)\s+(.+)$/i },
+    { op: ">=", re: /^(.*?)\s+(?:at least|>=)\s+(.+)$/i },
+    { op: "<=", re: /^(.*?)\s+(?:at most|<=)\s+(.+)$/i },
+    { op: ">", re: /^(.*?)\s+(?:greater than|more than|after|since|>)\s+(.+)$/i },
+    { op: "<", re: /^(.*?)\s+(?:less than|fewer than|before|until|<)\s+(.+)$/i },
+    { op: "contains", re: /^(.*?)\s+contains\s+(.+)$/i },
+    { op: "=", re: /^(.*?)\s+(?:is|=|==|equals?)\s+(.+)$/i },
+  ];
+  for (const { op, re } of opPatterns) {
+    const m = re.exec(condition);
+    if (!m) continue;
+    const hits = findColumns(m[1], columns);
+    if (hits.length === 0) {
+      return {
+        error: `could not find a column in "where ${condition}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
+        soft: false,
+      };
+    }
+    if (hits.length > 1) {
+      return {
+        error: `could not tell which column "where ${condition}" means — matches ${hits.map((c) => c.name).join(", ")}`,
+        soft: false,
+      };
+    }
+    const value = m[2].trim().replace(/^["']|["']$/g, "");
+    return { filters: [{ column: hits[0].name, op, value }] };
+  }
+  return {
+    error: `could not understand the filter in "where ${condition}" — try e.g. "where region is North" or "where revenue > 100"`,
+    soft: true,
+  };
+}
+
+/**
+ * Split a `where` clause on top-level " and " — an "and" outside
+ * quotes, surrounded by whitespace — so "region is North and product
+ * is Widget A" becomes two conditions. An "and" inside a quoted
+ * value ("product is \"Salt and Pepper\"") is not a separator, and
+ * neither is one glued to a word ("Android" stays whole).
+ */
+function splitTopLevelAnd(clause: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quote: string | null = null;
+  let i = 0;
+  while (i < clause.length) {
+    const ch = clause[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      i += 1;
+      continue;
+    }
+    const sep = /^\s+and\s+/i.exec(clause.slice(i));
+    if (sep) {
+      parts.push(clause.slice(start, i).trim());
+      i += sep[0].length;
+      start = i;
+      continue;
+    }
+    i += 1;
+  }
+  parts.push(clause.slice(start).trim());
+  return parts;
+}
+
+/**
+ * A naive " and " split breaks a between-range: "revenue between 100
+ * and 200 and region is North" splits into ["revenue between 100",
+ * "200", "region is North"]. A part that ends with "between <value>"
+ * swallowed the range's own "and", so merge it back with the next
+ * part before the pieces are parsed as conditions.
+ */
+function mergeBetweenFragments(parts: string[]): string[] {
+  const merged: string[] = [];
+  for (const part of parts) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && /\bbetween\s+\S+\s*$/i.test(last)) {
+      merged[merged.length - 1] = `${last} and ${part}`;
+    } else {
+      merged.push(part);
+    }
+  }
+  return merged;
+}
+
 function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const columns = inferSchema(parsed);
   let rest = question;
@@ -691,92 +849,43 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const where = /\bwhere\b/i.exec(rest);
   if (where) {
     const clause = rest.slice(where.index + where[0].length).trim();
-    // "between A and B" is two filters, not one: an inclusive
-    // range on both ends. It is checked before the single-operator
-    // patterns, which would otherwise read "between" as noise.
-    const between = /^(.+?)\s+between\s+(.+?)\s+and\s+(.+)$/i.exec(clause);
-    if (between) {
-      const hits = findColumns(between[1], columns);
-      if (hits.length === 0) {
-        return {
-          filters,
-          rest,
-          error: `could not find a column in "where ${clause}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
-        };
+    const parts = mergeBetweenFragments(splitTopLevelAnd(clause));
+    let handled = false;
+    if (parts.length > 1) {
+      // Compound: "where region is North and product is Widget A".
+      // Every part must parse as a condition; a hard failure (an
+      // unknown column, a reversed range) is reported as-is, while
+      // a soft failure (a bare word) means the "and" may sit inside
+      // a value — "where product is Salt and Pepper" — so fall back
+      // to reading the whole clause as one condition.
+      const compound: Filter[] = [];
+      let hardError: string | null = null;
+      let softFailed = false;
+      for (const part of parts) {
+        const parsedCondition = parseWhereCondition(part, columns);
+        if ("error" in parsedCondition) {
+          if (parsedCondition.soft) softFailed = true;
+          else hardError = parsedCondition.error;
+          break;
+        }
+        compound.push(...parsedCondition.filters);
       }
-      if (hits.length > 1) {
-        return {
-          filters,
-          rest,
-          error: `could not tell which column "where ${clause}" means — matches ${hits.map((c) => c.name).join(", ")}`,
-        };
+      if (hardError !== null) {
+        return { filters, rest, error: hardError };
       }
-      const lo = between[2].trim().replace(/^["']|["']$/g, "");
-      const hi = between[3].trim().replace(/^["']|["']$/g, "");
-      // A reversed range ("between 200 and 100") matches nothing
-      // by construction — refuse it instead of answering "no rows".
-      const loNum = Number(lo.replace(/,/g, ""));
-      const hiNum = Number(hi.replace(/,/g, ""));
-      const loDate = parseDate(lo);
-      const hiDate = parseDate(hi);
-      const reversed =
-        (Number.isFinite(loNum) && Number.isFinite(hiNum) && loNum > hiNum) ||
-        (loDate !== null &&
-          hiDate !== null &&
-          Date.UTC(loDate.year, loDate.month - 1, loDate.day) >
-            Date.UTC(hiDate.year, hiDate.month - 1, hiDate.day));
-      if (reversed) {
-        return {
-          filters,
-          rest,
-          error: `"between" needs the smaller value first — try e.g. "where ${hits[0].name} between ${hi} and ${lo}"`,
-        };
+      if (!softFailed) {
+        filters.push(...compound);
+        rest = rest.slice(0, where.index).trim();
+        handled = true;
       }
-      filters.push({ column: hits[0].name, op: ">=", value: lo });
-      filters.push({ column: hits[0].name, op: "<=", value: hi });
+    }
+    if (!handled) {
+      const parsed = parseWhereCondition(clause, columns);
+      if ("error" in parsed) {
+        return { filters, rest, error: parsed.error };
+      }
+      filters.push(...parsed.filters);
       rest = rest.slice(0, where.index).trim();
-    } else {
-    const opPatterns: { op: FilterOp; re: RegExp }[] = [
-      { op: "!=", re: /^(.*?)\s+(?:is not|isn't|!=|not)\s+(.+)$/i },
-      { op: ">=", re: /^(.*?)\s+(?:at least|>=)\s+(.+)$/i },
-      { op: "<=", re: /^(.*?)\s+(?:at most|<=)\s+(.+)$/i },
-      { op: ">", re: /^(.*?)\s+(?:greater than|more than|after|since|>)\s+(.+)$/i },
-      { op: "<", re: /^(.*?)\s+(?:less than|fewer than|before|until|<)\s+(.+)$/i },
-      { op: "contains", re: /^(.*?)\s+contains\s+(.+)$/i },
-      { op: "=", re: /^(.*?)\s+(?:is|=|==|equals?)\s+(.+)$/i },
-    ];
-    let matched = false;
-    for (const { op, re } of opPatterns) {
-      const m = re.exec(clause);
-      if (!m) continue;
-      matched = true;
-      const hits = findColumns(m[1], columns);
-      if (hits.length === 0) {
-        return {
-          filters,
-          rest,
-          error: `could not find a column in "where ${clause}" — columns are: ${columns.map((c) => c.name).join(", ")}`,
-        };
-      }
-      if (hits.length > 1) {
-        return {
-          filters,
-          rest,
-          error: `could not tell which column "where ${clause}" means — matches ${hits.map((c) => c.name).join(", ")}`,
-        };
-      }
-      const value = m[2].trim().replace(/^["']|["']$/g, "");
-      filters.push({ column: hits[0].name, op, value });
-      break;
-    }
-    if (!matched) {
-      return {
-        filters,
-        rest,
-        error: `could not understand the filter in "where ${clause}" — try e.g. "where region is North" or "where revenue > 100"`,
-      };
-    }
-    rest = rest.slice(0, where.index).trim();
     }
   }
 

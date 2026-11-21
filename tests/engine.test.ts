@@ -120,6 +120,69 @@ describe("executeQuery filters", () => {
   });
 });
 
+describe("executeQuery compound filters", () => {
+  it("ANDs two equality conditions", () => {
+    const r = ask("total revenue where region is North and product is Widget A");
+    if (r.kind === "scalar") {
+      // North + Widget A: 240.00 + 0.00 (the blank-units row).
+      expect(r.value).toBeCloseTo(240, 2);
+      expect(r.rowsMatched).toBe(2);
+      expect(r.valuesUsed).toBe(2);
+    }
+  });
+
+  it("ANDs an equality with a numeric comparison", () => {
+    const r = ask("how many rows where region is North and revenue > 100");
+    if (r.kind === "scalar") expect(r.value).toBe(2);
+    const total = ask("total revenue where region is North and revenue > 100");
+    if (total.kind === "scalar") {
+      // 240.00 + 149.97; the 0.00 row is not above 100.
+      expect(total.value).toBeCloseTo(389.97, 2);
+    }
+  });
+
+  it("ANDs a between-range with a second condition", () => {
+    const r = ask(
+      "total revenue where revenue between 100 and 200 and region is North",
+    );
+    if (r.kind === "scalar") {
+      // Only the 149.97 row is both in range and North.
+      expect(r.value).toBeCloseTo(149.97, 2);
+      expect(r.rowsMatched).toBe(1);
+    }
+  });
+
+  it("averages over the intersection, skipping nulls", () => {
+    const r = ask("average units where region is North and product is Widget A");
+    if (r.kind === "scalar") {
+      // 12 valued, one blank — the mean is over 1 value, not 2 rows.
+      expect(r.value).toBeCloseTo(12, 5);
+      expect(r.rowsMatched).toBe(2);
+      expect(r.valuesUsed).toBe(1);
+    }
+  });
+
+  it("groups the intersection", () => {
+    const r = ask("total revenue by region where product is Widget A and units > 10");
+    expect(r.kind).toBe("groups");
+    if (r.kind === "groups") {
+      // North 240.00 (12 units), East 400.00 (20 units).
+      expect(r.groups).toEqual([
+        { key: "East", keys: ["East"], value: 400, count: 1 },
+        { key: "North", keys: ["North"], value: 240, count: 1 },
+      ]);
+    }
+  });
+
+  it("returns null over an empty intersection, not zero", () => {
+    const r = ask("total revenue where region is North and product is Widget B");
+    if (r.kind === "scalar") {
+      expect(r.value).toBeNull();
+      expect(r.rowsMatched).toBe(0);
+    }
+  });
+});
+
 describe("executeQuery sorted rows", () => {
   it("sorts numerically, highest first when descending", () => {
     const r = ask("show rows sorted by revenue descending");
