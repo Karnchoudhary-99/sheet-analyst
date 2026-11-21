@@ -255,6 +255,45 @@ describe("runCli end-to-end", () => {
     expect(c.stdout.join("")).toContain("1 of 5 rows is missing salary");
   });
 
+  it("answers a compound where filter end to end", async () => {
+    const text = capture();
+    expect(
+      await runCli(
+        ["ask", salesPath, "total revenue where region is North and product is Widget A"],
+        text.out,
+      ),
+    ).toBe(0);
+    // North + Widget A over examples/sales.csv: 240.00 + 0.00.
+    expect(text.stdout.join("")).toContain("Total revenue is 240 (across 2 rows).");
+
+    const json = capture();
+    expect(
+      await runCli(
+        [
+          "ask",
+          salesPath,
+          "how many rows where region is North and revenue > 100",
+          "--json",
+        ],
+        json.out,
+      ),
+    ).toBe(0);
+    const out = JSON.parse(json.stdout.join(""));
+    expect(out.result.kind).toBe("scalar");
+    expect(out.result.value).toBe(2);
+  });
+
+  it("explains a compound where filter end to end", async () => {
+    const c = capture();
+    expect(
+      await runCli(
+        ["explain", salesPath, "total revenue where region is North and product is Widget A"],
+        c.out,
+      ),
+    ).toBe(0);
+    expect(c.stdout.join("")).toContain("filters: region = North, product = Widget A");
+  });
+
   it("answers an abstention honestly with exit 0", async () => {
     const c = capture();
     expect(await runCli(["ask", salesPath, "total profit"], c.out)).toBe(0);
