@@ -60,6 +60,7 @@ describe("runEval", () => {
     expect(loadSheet("sales").headers).toEqual(["date", "region", "product", "units", "revenue"]);
     expect(loadSheet("employees").rows).toHaveLength(5);
     expect(loadSheet("monthly").rows).toHaveLength(12);
+    expect(loadSheet("scores").rows).toHaveLength(8);
     const report = runEval();
     expect(report.cases).toHaveLength(GOLD_SET.length);
     expect(report.answerable).toBe(GOLD_SET.filter((c) => c.expect !== "abstain").length);

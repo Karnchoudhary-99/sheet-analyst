@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { answerQuestion } from "./answer.js";
 import { parseCsv } from "./csv.js";
 
-export type SheetName = "sales" | "employees" | "monthly";
+export type SheetName = "sales" | "employees" | "monthly" | "scores";
 
 /**
  * One gold case. `expect` is either the substrings a correct answer
@@ -44,8 +44,10 @@ export const EVAL_GATE = 0.8;
 
 /**
  * Gold set over examples/sales.csv (8 rows),
- * examples/employees.csv (5 rows) and examples/monthly-sales.csv
- * (12 rows, Jan–Mar 2026). Expected figures hand-computed:
+ * examples/employees.csv (5 rows), examples/monthly-sales.csv
+ * (12 rows, Jan–Mar 2026) and examples/scores.csv (8 rows, one
+ * planted outlier — Tim's score of 1000 among scores of 8–15).
+ * Expected figures hand-computed:
  *
  * sales — revenue total 1,789.60; units total 72 over 7 valued rows
  * (one blank) so average units is 10.29; revenue by region:
@@ -164,6 +166,16 @@ export const EVAL_GATE = 0.8;
  * column, worst first. "show rows missing salary" lists his row.
  * A missing question naming no column, or grouped by another
  * column, abstains.
+ *
+ * outliers — scores: 12, 8, 15, 11, 9, 13, 10, 1000, so Q1 = 9.5,
+ * Q3 = 14 and the Tukey fence is [2.75, 20.75]; only Tim's 1000 is
+ * outside it (1 of 8, 12.5%). Hours 5, 7, 6, 8, 4, 9, 6, 7 has no
+ * outlier (fence [2.5, 10.5]). The Math-filtered fence is
+ * [4.75, 14.75] with no outlier. Sales revenue (8 values) has
+ * fence [-136.35, 593.81] and units (7 values) [-10, 30], both
+ * clean; employees salaries (4 values) have fence
+ * [79,000, 107,000], clean. An outlier question over a text
+ * column, or grouped by another column, abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -831,6 +843,66 @@ export const GOLD_SET: EvalCase[] = [
     expect: "abstain",
     note: "listing missing rows needs one column named",
   },
+  {
+    sheet: "scores",
+    question: "how many outliers in score",
+    expect: ["1 of 8 rows is an outlier in score", "12.5%", "outside [2.75, 20.75]"],
+    note: "scores 12, 8, 15, 11, 9, 13, 10, 1000: Q1 = 9.5, Q3 = 14, fence [2.75, 20.75]; only Tim's 1000 is outside it",
+  },
+  {
+    sheet: "scores",
+    question: "show outliers in score",
+    expect: ["1 row that is an outlier in score", "Tim", "1,000"],
+    note: "Tim is the only outlier row; the table formats his score with a thousands separator",
+  },
+  {
+    sheet: "scores",
+    question: "which columns have outliers",
+    expect: ["score: 1 outlier outside [2.75, 20.75]", "hours: 0 outliers"],
+    note: "score has the one outlier; hours (fence [2.5, 10.5]) has none; text columns never appear in the report",
+  },
+  {
+    sheet: "scores",
+    question: "how many outliers in score in Math",
+    expect: ["No outliers in score", "[4.75, 14.75]"],
+    note: "Math scores 12, 8, 9, 10: fence [4.75, 14.75] — the fence moves with the filter, and nothing is outside it",
+  },
+  {
+    sheet: "scores",
+    question: "how many outliers in hours",
+    expect: ["No outliers in hours", "[2.5, 10.5]"],
+    note: "hours 5, 7, 6, 8, 4, 9, 6, 7: Q1 = 5.5, Q3 = 7.5, fence [2.5, 10.5]",
+  },
+  {
+    sheet: "sales",
+    question: "how many outliers in revenue",
+    expect: ["No outliers in revenue", "[-136.35, 593.81]"],
+    note: "revenue 0, 124.95, 149.97, 199.92, 224.91, 240, 400, 449.85: Q1 = 137.46, Q3 = 320, fence [-136.35, 593.81]",
+  },
+  {
+    sheet: "sales",
+    question: "which columns have outliers",
+    expect: ["No outliers — every numeric value in the 8 rows is inside its fence."],
+    note: "units (fence [-10, 30]) and revenue are both clean; text columns never appear",
+  },
+  {
+    sheet: "employees",
+    question: "how many outliers in salary",
+    expect: ["No outliers in salary", "[79,000, 107,000]"],
+    note: "salaries 88,000, 91,000, 95,000, 98,000 (NA skipped): Q1 = 89,500, Q3 = 96,500, fence [79,000, 107,000]",
+  },
+  {
+    sheet: "sales",
+    question: "how many outliers in region",
+    expect: "abstain",
+    note: "outliers need a numeric column — region is text",
+  },
+  {
+    sheet: "scores",
+    question: "how many outliers in score by subject",
+    expect: "abstain",
+    note: "an outlier question is one column, ungrouped — must not answer the whole-sheet count",
+  },
 ];
 
 export interface CaseResult {
@@ -891,6 +963,7 @@ const SHEET_FILES: Record<SheetName, string> = {
   sales: "sales.csv",
   employees: "employees.csv",
   monthly: "monthly-sales.csv",
+  scores: "scores.csv",
 };
 
 export function loadSheet(name: SheetName): ReturnType<typeof parseCsv> {
