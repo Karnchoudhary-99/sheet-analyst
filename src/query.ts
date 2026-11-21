@@ -35,6 +35,13 @@
  *   its own "and" — "where revenue between 100 and 200 and region
  *   is North" — and an "and" inside a value is left alone:
  *   "where product is Salt and Pepper" still reads as one filter)
+ * - or filters: "total revenue where region is North or South",
+ *   "how many rows where revenue > 100 or revenue < 10" (at least
+ *   one branch must hold; AND binds tighter, so "a and b or c" is
+ *   (a and b) or c; a bare value inherits the column of the most
+ *   recent "=" filter — "region is North or South" reads as region
+ *   is North or region is South; quote a value that contains "or",
+ *   e.g. product is "Salt or Pepper")
  * - rows: "show rows where region is North", "list employees in Data"
  * - sorted rows: "show rows sorted by revenue descending",
  *   "list employees sorted by salary ascending" (numbers sort
@@ -724,6 +731,44 @@ interface FilterExtraction {
  * the column would answer a different question.
  */
 /**
+ * The column phrase of a where condition must be the column name
+ * (plus harmless filler: "the", "a", "an", the "is" of "is greater
+ * than", an aggregate word like "total"). Anything else is a word
+ * the question meant as something else, and silently dropping it
+ * would answer a different question — "South and product is
+ * Widget A" must not parse as product is Widget A with "South"
+ * discarded. Returns the stray words, or null when the phrase is
+ * clean.
+ */
+function checkColumnPhrase(phrase: string, column: ColumnInfo): string | null {
+  const allowed = new Set([
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "was",
+    "were",
+    ...AGGREGATE_WORDS.flatMap((a) => a.words),
+  ]);
+  // Match the column name word by word (singular/plural tolerant),
+  // so "start dates" still names "start date" — but never
+  // singularise the filler words themselves ("is" would become "i").
+  const words = normalize(phrase)
+    .split(" ")
+    .filter((w) => w !== "");
+  const remaining = [...words];
+  for (const nw of normalize(column.name)
+    .split(" ")
+    .filter((w) => w !== "")) {
+    const idx = remaining.findIndex((w) => w === nw || singular(w) === singular(nw));
+    if (idx >= 0) remaining.splice(idx, 1);
+  }
+  const stray = remaining.filter((w) => !allowed.has(w));
+  return stray.length === 0 ? null : stray.join(" ");
+}
+
+/**
  * Parse one `where` condition — "region is North", "revenue > 100",
  * "revenue between 100 and 200" — into its filters. A condition that
  * matches no operator pattern at all ("Pepper", a bare word) is a
@@ -753,6 +798,13 @@ function parseWhereCondition(
     if (hits.length > 1) {
       return {
         error: `could not tell which column "where ${condition}" means — matches ${hits.map((c) => c.name).join(", ")}`,
+        soft: false,
+      };
+    }
+    const strayBetween = checkColumnPhrase(between[1], hits[0]);
+    if (strayBetween !== null) {
+      return {
+        error: `could not understand "where ${condition}" — "${strayBetween}" is not part of a column name`,
         soft: false,
       };
     }
@@ -806,6 +858,13 @@ function parseWhereCondition(
     if (hits.length > 1) {
       return {
         error: `could not tell which column "where ${condition}" means — matches ${hits.map((c) => c.name).join(", ")}`,
+        soft: false,
+      };
+    }
+    const stray = checkColumnPhrase(m[1], hits[0]);
+    if (stray !== null) {
+      return {
+        error: `could not understand "where ${condition}" — "${stray}" is not part of a column name`,
         soft: false,
       };
     }
@@ -875,6 +934,163 @@ function mergeBetweenFragments(parts: string[]): string[] {
   return merged;
 }
 
+/**
+ * Split a `where` clause on top-level " or " — an "or" outside
+ * quotes, surrounded by whitespace — so "region is North or South"
+ * becomes two branches. An "or" inside a quoted value ("product is
+ * \"Salt or Pepper\"") is not a separator, and neither is one glued
+ * to a word ("Color" stays whole).
+ */
+function splitTopLevelOr(clause: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quote: string | null = null;
+  let i = 0;
+  while (i < clause.length) {
+    const ch = clause[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      i += 1;
+      continue;
+    }
+    const sep = /^\s+or\s+/i.exec(clause.slice(i));
+    if (sep) {
+      parts.push(clause.slice(start, i).trim());
+      i += sep[0].length;
+      start = i;
+      continue;
+    }
+    i += 1;
+  }
+  parts.push(clause.slice(start).trim());
+  return parts;
+}
+
+/**
+ * Parse one branch of an OR clause — "region is North", "region is
+ * North and revenue > 100", or a bare value ("South") that inherits
+ * the column and operator of the most recent single "=" filter.
+ * `lastEquals` is that filter from the branches before this one
+ * (null when there is none, or when the most recent branch was not
+ * a single "=" filter). Returns the branch's filters plus the
+ * updated most-recent "=" filter, or an error.
+ *
+ * A branch with several "and" parts is tried three ways, in order:
+ * every part as a condition; the whole branch as one condition (a
+ * value containing "and", e.g. "product is Salt and Pepper"); then
+ * bare-value inheritance for the parts that did not parse ("South
+ * and product is Widget A" after "region is North").
+ */
+function parseOrBranch(
+  branch: string,
+  columns: ColumnInfo[],
+  lastEquals: Filter | null,
+): { filters: Filter[]; lastEquals: Filter | null } | { error: string } {
+  const parts = mergeBetweenFragments(splitTopLevelAnd(branch));
+  if (parts.length === 1) {
+    const parsed = parseWhereCondition(parts[0], columns);
+    if (!("error" in parsed)) {
+      return {
+        filters: parsed.filters,
+        lastEquals:
+          parsed.filters.length === 1 && parsed.filters[0].op === "="
+            ? parsed.filters[0]
+            : null,
+      };
+    }
+    if (!parsed.soft) return { error: parsed.error };
+    if (lastEquals) {
+      const value = parts[0].trim().replace(/^["']|["']$/g, "");
+      const inherited: Filter = { column: lastEquals.column, op: "=", value };
+      return { filters: [inherited], lastEquals: inherited };
+    }
+    const firstText = columns.find((c) => c.type === "text");
+    return {
+      error: `could not tell what "${parts[0].trim()}" means — say the full condition, e.g. "where ${firstText?.name ?? "region"} is ${parts[0].trim()}"`,
+    };
+  }
+
+  const branchFilters: Filter[] = [];
+  let branchLastEquals: Filter | null = lastEquals;
+  let softFailed = false;
+  let hardError: string | null = null;
+  for (const part of parts) {
+    const parsed = parseWhereCondition(part, columns);
+    if ("error" in parsed) {
+      if (parsed.soft) softFailed = true;
+      else hardError = parsed.error;
+      break;
+    }
+    branchFilters.push(...parsed.filters);
+    branchLastEquals =
+      parsed.filters.length === 1 && parsed.filters[0].op === "="
+        ? parsed.filters[0]
+        : null;
+  }
+  if (hardError !== null) return { error: hardError };
+  if (!softFailed) {
+    return { filters: branchFilters, lastEquals: branchLastEquals };
+  }
+  // The "and" may sit inside a value — try the whole branch as one
+  // condition before falling back to inheritance.
+  const whole = parseWhereCondition(branch, columns);
+  if (!("error" in whole)) {
+    return {
+      filters: whole.filters,
+      lastEquals:
+        whole.filters.length === 1 && whole.filters[0].op === "=" ? whole.filters[0] : null,
+    };
+  }
+  const retry: Filter[] = [];
+  let retryLastEquals: Filter | null = lastEquals;
+  for (const part of parts) {
+    const parsed = parseWhereCondition(part, columns);
+    if ("error" in parsed) {
+      if (!parsed.soft) return { error: parsed.error };
+      if (!retryLastEquals) return { error: whole.error };
+      const value = part.trim().replace(/^["']|["']$/g, "");
+      const inherited: Filter = { column: retryLastEquals.column, op: "=", value };
+      retry.push(inherited);
+      retryLastEquals = inherited;
+      continue;
+    }
+    retry.push(...parsed.filters);
+    retryLastEquals =
+      parsed.filters.length === 1 && parsed.filters[0].op === "="
+        ? parsed.filters[0]
+        : null;
+  }
+  return { filters: retry, lastEquals: retryLastEquals };
+}
+
+/**
+ * Parse a where clause that contains a top-level "or" into OR
+ * groups (AND binds tighter, so "a and b or c" is (a and b) or c).
+ * Returns null when there is no top-level "or" — the caller uses
+ * the AND path instead.
+ */
+function parseOrClause(
+  clause: string,
+  columns: ColumnInfo[],
+): { groups: Filter[][] } | { error: string } | null {
+  const branches = splitTopLevelOr(clause);
+  if (branches.length === 1) return null;
+  const groups: Filter[][] = [];
+  let lastEquals: Filter | null = null;
+  for (const branch of branches) {
+    const parsed = parseOrBranch(branch, columns, lastEquals);
+    if ("error" in parsed) return { error: parsed.error };
+    groups.push(parsed.filters);
+    lastEquals = parsed.lastEquals;
+  }
+  return { groups };
+}
+
 function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const columns = inferSchema(parsed);
   let rest = question;
@@ -884,43 +1100,55 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const where = /\bwhere\b/i.exec(rest);
   if (where) {
     const clause = rest.slice(where.index + where[0].length).trim();
-    const parts = mergeBetweenFragments(splitTopLevelAnd(clause));
-    let handled = false;
-    if (parts.length > 1) {
-      // Compound: "where region is North and product is Widget A".
-      // Every part must parse as a condition; a hard failure (an
-      // unknown column, a reversed range) is reported as-is, while
-      // a soft failure (a bare word) means the "and" may sit inside
-      // a value — "where product is Salt and Pepper" — so fall back
-      // to reading the whole clause as one condition.
-      const compound: Filter[] = [];
-      let hardError: string | null = null;
-      let softFailed = false;
-      for (const part of parts) {
-        const parsedCondition = parseWhereCondition(part, columns);
-        if ("error" in parsedCondition) {
-          if (parsedCondition.soft) softFailed = true;
-          else hardError = parsedCondition.error;
-          break;
-        }
-        compound.push(...parsedCondition.filters);
-      }
-      if (hardError !== null) {
-        return { filters, orGroups, rest, error: hardError };
-      }
-      if (!softFailed) {
-        filters.push(...compound);
-        rest = rest.slice(0, where.index).trim();
-        handled = true;
-      }
+    // An "or" changes the shape before any "and" parsing: AND
+    // binds tighter, so "a and b or c" is (a and b) or c, and a
+    // bare value inherits the most recent "=" filter.
+    const orParsed = parseOrClause(clause, columns);
+    if (orParsed && "error" in orParsed) {
+      return { filters, orGroups, rest, error: orParsed.error };
     }
-    if (!handled) {
-      const parsed = parseWhereCondition(clause, columns);
-      if ("error" in parsed) {
-        return { filters, orGroups, rest, error: parsed.error };
-      }
-      filters.push(...parsed.filters);
+    if (orParsed) {
+      orGroups.push(...orParsed.groups);
       rest = rest.slice(0, where.index).trim();
+    } else {
+      const parts = mergeBetweenFragments(splitTopLevelAnd(clause));
+      let handled = false;
+      if (parts.length > 1) {
+        // Compound: "where region is North and product is Widget A".
+        // Every part must parse as a condition; a hard failure (an
+        // unknown column, a reversed range) is reported as-is, while
+        // a soft failure (a bare word) means the "and" may sit inside
+        // a value — "where product is Salt and Pepper" — so fall back
+        // to reading the whole clause as one condition.
+        const compound: Filter[] = [];
+        let hardError: string | null = null;
+        let softFailed = false;
+        for (const part of parts) {
+          const parsedCondition = parseWhereCondition(part, columns);
+          if ("error" in parsedCondition) {
+            if (parsedCondition.soft) softFailed = true;
+            else hardError = parsedCondition.error;
+            break;
+          }
+          compound.push(...parsedCondition.filters);
+        }
+        if (hardError !== null) {
+          return { filters, orGroups, rest, error: hardError };
+        }
+        if (!softFailed) {
+          filters.push(...compound);
+          rest = rest.slice(0, where.index).trim();
+          handled = true;
+        }
+      }
+      if (!handled) {
+        const parsed = parseWhereCondition(clause, columns);
+        if ("error" in parsed) {
+          return { filters, orGroups, rest, error: parsed.error };
+        }
+        filters.push(...parsed.filters);
+        rest = rest.slice(0, where.index).trim();
+      }
     }
   }
 
