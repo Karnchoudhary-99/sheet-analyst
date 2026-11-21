@@ -183,6 +183,66 @@ describe("executeQuery compound filters", () => {
   });
 });
 
+describe("executeQuery distribution", () => {
+  it("bins values into at most 10 equal-width bins", () => {
+    const r = ask("distribution of revenue");
+    expect(r.kind).toBe("distribution");
+    if (r.kind === "distribution") {
+      // 0 / 124.95 / 149.97 / 199.92 / 240 / 400 over 6 bins of width 66.67.
+      expect(r.rowsMatched).toBe(6);
+      expect(r.valuesUsed).toBe(6);
+      expect(r.bins.map((b) => b.count)).toEqual([1, 1, 2, 1, 0, 1]);
+      expect(r.bins[0].from).toBeCloseTo(0, 5);
+      expect(r.bins[5].to).toBeCloseTo(400, 5);
+      expect(r.bins.reduce((n, b) => n + b.count, 0)).toBe(6);
+    }
+  });
+
+  it("never uses more bins than distinct values", () => {
+    const r = ask("distribution of salary", STAFF);
+    expect(r.kind).toBe("distribution");
+    if (r.kind === "distribution") {
+      // 88,000 / 95,000 / 98,000 over 3 bins of width 3,333.33.
+      expect(r.bins).toHaveLength(3);
+      expect(r.bins.map((b) => b.count)).toEqual([1, 0, 2]);
+      expect(r.valuesUsed).toBe(3);
+    }
+  });
+
+  it("bins the filtered rows", () => {
+    const r = ask("distribution of revenue where region is North");
+    expect(r.kind).toBe("distribution");
+    if (r.kind === "distribution") {
+      // North revenue 0 / 149.97 / 240 over 3 bins of width 80.
+      expect(r.rowsMatched).toBe(3);
+      expect(r.bins.map((b) => b.count)).toEqual([1, 1, 1]);
+    }
+  });
+
+  it("collapses a single distinct value into one bin", () => {
+    const r = ask("distribution of units where region is West");
+    expect(r.kind).toBe("distribution");
+    if (r.kind === "distribution") {
+      expect(r.bins).toEqual([{ from: 5, to: 5, count: 1 }]);
+      expect(r.valuesUsed).toBe(1);
+    }
+  });
+
+  it("returns no bins when a column has no usable values", () => {
+    const sheet = parseCsv("x,y\n,1\n,2\n");
+    const r = executeQuery(
+      { kind: "distribution", column: "x", filters: [] },
+      sheet,
+    );
+    expect(r.kind).toBe("distribution");
+    if (r.kind === "distribution") {
+      expect(r.bins).toEqual([]);
+      expect(r.valuesUsed).toBe(0);
+      expect(r.rowsMatched).toBe(2);
+    }
+  });
+});
+
 describe("executeQuery sorted rows", () => {
   it("sorts numerically, highest first when descending", () => {
     const r = ask("show rows sorted by revenue descending");
