@@ -221,10 +221,35 @@ function describeFilter(filter: Filter): string {
   return `${filter.column} ${opWord[filter.op]} ${filter.value}`;
 }
 
+/**
+ * Render a query's filters in words. OR groups are alternatives:
+ * "region is North or region is South"; a multi-filter group is
+ * parenthesised — "region is North or (region is South and product
+ * is Widget A)". Plain filters join with "and", and an OR set next
+ * to plain filters is parenthesised so the precedence is visible:
+ * "revenue is greater than 100 and (region is North or region is
+ * South)".
+ */
+function describeFilterSet(filters: Filter[], orGroups?: Filter[][]): string {
+  const plain = filters.map(describeFilter);
+  const groups = (orGroups ?? []).map((g) => {
+    const inner = g.map(describeFilter).join(" and ");
+    return g.length > 1 ? `(${inner})` : inner;
+  });
+  if (groups.length === 0) return plain.join(" and ");
+  const orPart =
+    plain.length === 0
+      ? groups.join(" or ")
+      : groups.length > 1
+        ? `(${groups.join(" or ")})`
+        : groups[0]!;
+  return plain.length === 0 ? orPart : `${plain.join(" and ")} and ${orPart}`;
+}
+
 function composeShare(result: Extract<QueryResult, { kind: "share" }>): string {
   // Filters are described plainly here, with their operators:
   // "region is North and revenue is greater than 100".
-  const filterDesc = result.filters.map(describeFilter).join(" and ");
+  const filterDesc = describeFilterSet(result.filters, result.orGroups);
   // A share needs a non-zero total to divide by; a zero total means
   // the whole sheet has nothing to share out, not a 0% share.
   if (result.share === null) {
