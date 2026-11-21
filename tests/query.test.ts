@@ -1172,6 +1172,90 @@ describe("parseQuestion percentile", () => {
   });
 });
 
+describe("parseQuestion rank", () => {
+  it("parses 'second highest salary'", () => {
+    expect(parseQuestion("second highest salary", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "rank", column: "salary", n: 2, direction: "highest", filters: [] },
+    });
+  });
+
+  it("parses '3rd lowest revenue'", () => {
+    expect(parseQuestion("3rd lowest revenue", SALES)).toEqual({
+      ok: true,
+      query: { kind: "rank", column: "revenue", n: 3, direction: "lowest", filters: [] },
+    });
+  });
+
+  it("parses word and numeric ordinals with every direction word", () => {
+    expect(parseQuestion("what is the 2nd largest revenue", SALES)).toEqual({
+      ok: true,
+      query: { kind: "rank", column: "revenue", n: 2, direction: "highest", filters: [] },
+    });
+    expect(parseQuestion("first smallest salary", STAFF)).toEqual({
+      ok: true,
+      query: { kind: "rank", column: "salary", n: 1, direction: "lowest", filters: [] },
+    });
+  });
+
+  it("keeps a filter on a rank question", () => {
+    expect(parseQuestion("second highest revenue in North", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "rank",
+        column: "revenue",
+        n: 2,
+        direction: "highest",
+        filters: [{ column: "region", op: "=", value: "North" }],
+      },
+    });
+  });
+
+  it("does not let 'second highest' fall through to the maximum", () => {
+    // Before ranks existed this parsed as a plain max and answered
+    // with the highest row — the silently wrong answer.
+    const r = parseQuestion("second highest salary", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.query.kind).toBe("rank");
+  });
+
+  it("abstains on a text column", () => {
+    const r = parseQuestion("second highest region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a numeric column/);
+  });
+
+  it("abstains when no column is named", () => {
+    const r = parseQuestion("second highest", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains when the rank is zero", () => {
+    const r = parseQuestion("0th highest revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/starts at 1/);
+  });
+
+  it("abstains on an unknown word instead of dropping it", () => {
+    const r = parseQuestion("second highest frobnicate revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not understand "frobnicate"/);
+  });
+
+  it("abstains on a grouped rank instead of answering the whole-sheet one", () => {
+    const r = parseQuestion("second highest revenue by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one column/);
+  });
+
+  it("abstains on a time-grouped rank question", () => {
+    const r = parseQuestion("second highest revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+});
+
 describe("parseQuestion trend", () => {
   const NODATES = parseCsv(
     "region,product,revenue\n" +

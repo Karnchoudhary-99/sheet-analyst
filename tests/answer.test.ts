@@ -281,6 +281,46 @@ describe("answerQuestion end to end", () => {
     );
   });
 
+  it("answers a rank question with the value and how many rows hold it", () => {
+    expect(answerQuestion("second highest revenue", SALES)).toBe(
+      "The 2nd highest revenue is 240 (1 row holds it, out of 6 distinct values).",
+    );
+  });
+
+  it("says how many rows share a tied rank value", () => {
+    const tied = parseCsv("x,y\n1,10\n2,10\n3,20\n4,20\n5,20\n6,30\n");
+    expect(answerQuestion("second highest y", tied)).toBe(
+      "The 2nd highest y is 20 (3 rows hold it, out of 3 distinct values).",
+    );
+  });
+
+  it("says plainly when a rank runs past the end", () => {
+    expect(answerQuestion("7th highest revenue", SALES)).toBe(
+      "The 7th highest revenue does not exist — there are only 6 distinct revenue values in the 6 matching rows.",
+    );
+  });
+
+  it("says plainly when a rank has no usable values", () => {
+    const sparse = parseCsv("a,b\n1,10\n2,NA\n3,30\n");
+    expect(answerQuestion("2nd highest b where a is 2", sparse)).toBe(
+      "I could not find the 2nd highest b — the column has no usable values in the 1 matching row.",
+    );
+  });
+
+  it("names the coverage when some rows had no usable value", () => {
+    const staff = parseCsv(
+      "id,name,department,salary,start_date,remote\n" +
+        "1,Ada,Engineering,95000,2024-03-01,true\n" +
+        "2,Grace,Engineering,98000,2023-07-15,true\n" +
+        "3,Alan,Data,88000,2025-01-20,false\n" +
+        "4,Katherine,Data,91000,2024-11-04,true\n" +
+        "5,Edsger,Engineering,NA,2022-05-30,false\n",
+    );
+    expect(answerQuestion("second highest salary", staff)).toBe(
+      "The 2nd highest salary is 95,000 (1 row holds it, out of 4 distinct values; 4 of 5 had a value).",
+    );
+  });
+
   it("answers a between-range total", () => {
     expect(answerQuestion("total revenue where revenue between 100 and 200", SALES)).toBe(
       "Total revenue is 474.84 (across 3 rows).",

@@ -370,6 +370,25 @@ describe("describeQuery percentile", () => {
   });
 });
 
+describe("describeQuery rank", () => {
+  it("describes the rank, column and direction", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n2026-01-05,North,Widget A,12,240.00\n",
+    );
+    const explained = explainQuestion("second highest revenue in North", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "2nd highest value of revenue",
+      "operation: rank",
+      "column: revenue",
+      "rank: 2",
+      "direction: highest",
+      "filters: region = North",
+    ]);
+  });
+});
+
 describe("describeQuery trend", () => {
   it("describes the column, date column, bucket and filters", () => {
     const monthly = parseCsv(
