@@ -700,18 +700,22 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   }
 
   // Trailing "in <value>" / "for <value>" with a known categorical value.
+  // The LAST marker wins: "outliers in salary in Engineering" filters
+  // on Engineering, not on "salary in Engineering" — the first "in"
+  // belongs to the column phrase ("outliers in salary"), the filter
+  // is the trailing one.
   for (const marker of ["in", "for"]) {
-    const re = new RegExp(`\\b${marker}\\s+([^,;]+?)\\s*$`, "i");
+    const re = new RegExp(`^(.*)\\b${marker}\\s+([^,;]+?)\\s*$`, "i");
     const m = re.exec(rest);
     if (!m) continue;
-    const value = m[1].trim().replace(/^["']|["']$/g, "");
+    const value = m[2].trim().replace(/^["']|["']$/g, "");
     const owners = columns.filter((col, idx) => {
       if (col.type !== "text" && col.type !== "boolean") return false;
       return distinctValues(parsed, idx).has(value.toLowerCase());
     });
     if (owners.length === 1) {
       filters.push({ column: owners[0].name, op: "=", value });
-      rest = rest.slice(0, m.index).trim();
+      rest = rest.slice(0, m[1].length).trim();
     } else if (owners.length > 1) {
       return {
         filters,
