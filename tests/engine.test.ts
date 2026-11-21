@@ -952,6 +952,83 @@ describe("executeQuery percentile", () => {
   });
 });
 
+describe("executeQuery rank", () => {
+  it("returns the nth distinct value from the top", () => {
+    const r = ask("second highest revenue");
+    expect(r).toEqual({
+      kind: "rank",
+      column: "revenue",
+      n: 2,
+      direction: "highest",
+      // Sorted distinct revenue: 400, 240, 199.92, 149.97, 124.95, 0.
+      value: 240,
+      rowsAtValue: 1,
+      totalDistinct: 6,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    });
+  });
+
+  it("returns the nth distinct value from the bottom", () => {
+    const r = ask("3rd lowest revenue");
+    expect(r.kind).toBe("rank");
+    if (r.kind === "rank") {
+      // Ascending distinct revenue: 0, 124.95, 149.97, …
+      expect(r.value).toBe(149.97);
+      expect(r.rowsAtValue).toBe(1);
+      expect(r.totalDistinct).toBe(6);
+    }
+  });
+
+  it("counts a tie once and reports how many rows hold the value", () => {
+    const tied = parseCsv("x,y\n1,10\n2,10\n3,20\n4,20\n5,20\n6,30\n");
+    const r = ask("second highest y", tied);
+    expect(r).toEqual({
+      kind: "rank",
+      column: "y",
+      n: 2,
+      direction: "highest",
+      // Distinct y: 30, 20, 10 — the 2nd highest is 20, held by 3 rows.
+      value: 20,
+      rowsAtValue: 3,
+      totalDistinct: 3,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    });
+  });
+
+  it("reports null past the end instead of the last value", () => {
+    const r = ask("7th highest revenue");
+    expect(r).toEqual({
+      kind: "rank",
+      column: "revenue",
+      n: 7,
+      direction: "highest",
+      value: null,
+      rowsAtValue: 0,
+      totalDistinct: 6,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    });
+  });
+
+  it("respects filters and skips nulls when ranking", () => {
+    const filtered = ask("second highest revenue in North");
+    if (filtered.kind === "rank") {
+      // North revenue: 240, 149.97, 0 — the 2nd highest is 149.97.
+      expect(filtered.value).toBe(149.97);
+      expect(filtered.rowsMatched).toBe(3);
+    }
+    const units = ask("second highest units");
+    if (units.kind === "rank") {
+      // Units: 12, 8, 3, 20, 5, blank — the blank never ranks.
+      expect(units.value).toBe(12);
+      expect(units.valuesUsed).toBe(5);
+      expect(units.rowsMatched).toBe(6);
+    }
+  });
+});
+
 describe("executeQuery trend", () => {
   const TREND = parseCsv(
     "date,region,revenue\n" +

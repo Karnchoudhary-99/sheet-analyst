@@ -33,6 +33,20 @@ export type QueryResult =
       valuesUsed: number;
     }
   | {
+      kind: "rank";
+      column: string;
+      n: number;
+      direction: "highest" | "lowest";
+      /** The nth distinct value, or null when fewer than n distinct values exist. */
+      value: number | null;
+      /** Rows holding that value (0 when value is null). */
+      rowsAtValue: number;
+      /** Distinct values present in the column over the matched rows. */
+      totalDistinct: number;
+      rowsMatched: number;
+      valuesUsed: number;
+    }
+  | {
       kind: "groups";
       /** The group-by columns, in the order named in the question. */
       groupBy: string[];
@@ -818,6 +832,37 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         kind: "scalar",
         label: `${ordinal(query.p)} percentile of ${query.column}`,
         value: values.length === 0 ? null : percentile(values, query.p / 100),
+        rowsMatched: rows.length,
+        valuesUsed: values.length,
+      };
+    }
+
+    case "rank": {
+      const info = colInfo(query.column);
+      if (!info) throw new Error(`unknown column: ${query.column}`);
+      const rows = applyFilters(parsed, schema, query.filters);
+      const values = rows
+        .map((r) => r[colIndex.get(query.column)!] ?? "")
+        .filter((v) => !isNullValue(v))
+        .map(toNumber)
+        .filter((n): n is number => n !== null);
+      // Rank counts distinct values, not rows: with values
+      // 98,000 / 95,000 / 95,000 / 91,000 the 2nd highest is
+      // 95,000, held by 2 rows. Counting rows would make a tie
+      // depend on sort order, so the same question could answer
+      // differently run to run.
+      const distinct = [...new Set(values)].sort((a, b) =>
+        query.direction === "highest" ? b - a : a - b,
+      );
+      const value = query.n <= distinct.length ? distinct[query.n - 1]! : null;
+      return {
+        kind: "rank",
+        column: query.column,
+        n: query.n,
+        direction: query.direction,
+        value,
+        rowsAtValue: value === null ? 0 : values.filter((v) => v === value).length,
+        totalDistinct: distinct.length,
         rowsMatched: rows.length,
         valuesUsed: values.length,
       };

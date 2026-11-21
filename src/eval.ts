@@ -188,6 +188,17 @@ export const EVAL_GATE = 0.8;
  * (North 3, South 2, East 2 — 4 duplicate rows); units are all
  * distinct (7 valued rows, one blank). A duplicate question over
  * an unknown column, or grouped by another column, abstains.
+ *
+ * rank — employees salaries 95,000 / 98,000 / 88,000 / 91,000
+ * (one NA): distinct values 98,000, 95,000, 91,000, 88,000, so the
+ * 2nd highest is 95,000 (1 row, 4 of 5 had a value) and the 5th
+ * highest does not exist. Scores hours 5, 7, 6, 8, 4, 9, 6, 7:
+ * distinct 9, 8, 7, 6, 5, 4, so the 3rd highest is 7, held by 2
+ * rows. Sales revenue 240, 199.92, 149.97, 400, 124.95, 0, 449.85,
+ * 224.91: the 2nd highest is 400 and the 3rd lowest is 149.97;
+ * North revenue 240, 149.97, 0 has 2nd highest 149.97. A rank over
+ * a text column, an unknown column, or grouped by another column,
+ * abstains.
  */
 export const GOLD_SET: EvalCase[] = [
   {
@@ -996,6 +1007,72 @@ export const GOLD_SET: EvalCase[] = [
   {
     sheet: "duplicates",
     question: "how many duplicate profit",
+    expect: "abstain",
+    note: "no profit column",
+  },
+  {
+    sheet: "employees",
+    question: "second highest salary",
+    expect: ["The 2nd highest salary is 95,000", "1 row holds it", "out of 4 distinct values", "4 of 5 had a value"],
+    note: "distinct salaries 98,000, 95,000, 91,000, 88,000 — the 2nd highest is 95,000, the NA row never ranks",
+  },
+  {
+    sheet: "employees",
+    question: "3rd lowest salary",
+    expect: ["The 3rd lowest salary is 95,000", "1 row holds it", "out of 4 distinct values"],
+    note: "ascending distinct salaries 88,000, 91,000, 95,000, 98,000 — the 3rd lowest is 95,000",
+  },
+  {
+    sheet: "employees",
+    question: "5th highest salary",
+    expect: ["The 5th highest salary does not exist", "only 4 distinct salary values"],
+    note: "only 4 distinct salaries, so no 5th highest — must not fall back to the lowest value",
+  },
+  {
+    sheet: "scores",
+    question: "3rd highest hours",
+    expect: ["The 3rd highest hours is 7", "2 rows hold it", "out of 6 distinct values"],
+    note: "hours 5, 7, 6, 8, 4, 9, 6, 7 — distinct 9, 8, 7, 6, 5, 4; 7 is held by Grace and Tim",
+  },
+  {
+    sheet: "scores",
+    question: "second highest score",
+    expect: ["The 2nd highest score is 15", "1 row holds it", "out of 8 distinct values"],
+    note: "scores 12, 8, 15, 11, 9, 13, 10, 1000 — the 2nd highest is 15, not the 1000 outlier",
+  },
+  {
+    sheet: "sales",
+    question: "2nd highest revenue",
+    expect: ["The 2nd highest revenue is 400", "1 row holds it", "out of 8 distinct values"],
+    note: "revenue 240, 199.92, 149.97, 400, 124.95, 0, 449.85, 224.91 — the 2nd highest is 400",
+  },
+  {
+    sheet: "sales",
+    question: "3rd lowest revenue",
+    expect: ["The 3rd lowest revenue is 149.97", "1 row holds it", "out of 8 distinct values"],
+    note: "ascending revenue 0, 124.95, 149.97, … — the 3rd lowest is 149.97",
+  },
+  {
+    sheet: "sales",
+    question: "second highest revenue in North",
+    expect: ["The 2nd highest revenue is 149.97", "out of 3 distinct values"],
+    note: "North revenue 240, 149.97, 0 — the 2nd highest is 149.97",
+  },
+  {
+    sheet: "sales",
+    question: "second highest region",
+    expect: "abstain",
+    note: "a rank needs a numeric column — region is text",
+  },
+  {
+    sheet: "sales",
+    question: "second highest revenue by region",
+    expect: "abstain",
+    note: "a rank question is one column, ungrouped — must not answer the whole-sheet rank",
+  },
+  {
+    sheet: "sales",
+    question: "second highest profit",
     expect: "abstain",
     note: "no profit column",
   },

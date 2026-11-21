@@ -99,6 +99,40 @@ describe("resultToCsv", () => {
     );
   });
 
+  it("writes a rank as one label/value/rows-at-value row", () => {
+    const rankResult: QueryResult = {
+      kind: "rank",
+      column: "salary",
+      n: 2,
+      direction: "highest",
+      value: 95000,
+      rowsAtValue: 1,
+      totalDistinct: 4,
+      rowsMatched: 5,
+      valuesUsed: 4,
+    };
+    expect(resultToCsv(rankResult, "second highest salary", "")).toBe(
+      "label,value,rows_at_value,distinct_values,rows_matched,values_used\n2nd highest salary,95000,1,4,5,4",
+    );
+  });
+
+  it("leaves a past-the-end rank value blank instead of zero", () => {
+    const rankResult: QueryResult = {
+      kind: "rank",
+      column: "salary",
+      n: 5,
+      direction: "highest",
+      value: null,
+      rowsAtValue: 0,
+      totalDistinct: 4,
+      rowsMatched: 5,
+      valuesUsed: 4,
+    };
+    expect(resultToCsv(rankResult, "5th highest salary", "")).toBe(
+      "label,value,rows_at_value,distinct_values,rows_matched,values_used\n5th highest salary,,0,4,5,4",
+    );
+  });
+
   it("writes row results with their headers and escapes cells", () => {
     expect(resultToCsv(rowsResult, "show rows", "")).toBe(
       'product,region\nWidget A,North\n"Widget, B","South ""HQ"""',

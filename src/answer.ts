@@ -12,6 +12,7 @@ import type { ParsedCsv } from "./csv.js";
 import { executeQuery, type QueryResult } from "./engine.js";
 import { parseQuestion } from "./query.js";
 import { inferSchema } from "./schema.js";
+import { ordinal } from "./stats.js";
 
 /** Thousands separators, up to 2 decimals, trailing zeros trimmed. */
 export function formatNumber(n: number): string {
@@ -42,6 +43,34 @@ function composeScalar(result: Extract<QueryResult, { kind: "scalar" }>): string
       ? `, ${result.valuesUsed} of ${result.rowsMatched} had a value`
       : "";
   return `${label} is ${formatNumber(result.value)} (across ${result.rowsMatched} ${plural(result.rowsMatched, "row")}${coverage}).`;
+}
+
+function composeRank(result: Extract<QueryResult, { kind: "rank" }>): string {
+  const label = `The ${ordinal(result.n)} ${result.direction} ${result.column}`;
+  if (result.value === null) {
+    if (result.totalDistinct === 0) {
+      return (
+        `I could not find the ${ordinal(result.n)} ${result.direction} ${result.column} — ` +
+        `the column has no usable values in the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")}.`
+      );
+    }
+    return (
+      `${label} does not exist — there ${result.totalDistinct === 1 ? "is" : "are"} only ` +
+      `${result.totalDistinct} distinct ${result.column} ${plural(result.totalDistinct, "value")} ` +
+      `in the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")}.`
+    );
+  }
+  // Say so when some matching rows had no usable value, so a rank
+  // over 4 values is never presented as a rank over 5 rows.
+  const coverage =
+    result.valuesUsed < result.rowsMatched
+      ? `; ${result.valuesUsed} of ${result.rowsMatched} had a value`
+      : "";
+  return (
+    `${label} is ${formatNumber(result.value)} ` +
+    `(${result.rowsAtValue} ${plural(result.rowsAtValue, "row")} ${result.rowsAtValue === 1 ? "holds" : "hold"} it, ` +
+    `out of ${result.totalDistinct} distinct ${plural(result.totalDistinct, "value")}${coverage}).`
+  );
 }
 
 const BUCKET_PLURAL: Record<string, string> = {
@@ -578,6 +607,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
   switch (result.kind) {
     case "scalar":
       return composeScalar(result);
+    case "rank":
+      return composeRank(result);
     case "groups":
       return composeGroups(result);
     case "rows":

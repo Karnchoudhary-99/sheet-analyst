@@ -169,6 +169,15 @@ export function describeQuery(query: Query): string[] {
         `percentile: ${query.p}`,
         `filters: ${describeFilters(query.filters)}`,
       ];
+    case "rank":
+      return [
+        `${ordinal(query.n)} ${query.direction} value of ${query.column}`,
+        "operation: rank",
+        `column: ${query.column}`,
+        `rank: ${query.n}`,
+        `direction: ${query.direction}`,
+        `filters: ${describeFilters(query.filters)}`,
+      ];
     case "trend": {
       const what = `${OP_LABEL[query.op] ?? query.op} ${query.column}`;
       return [
