@@ -80,6 +80,10 @@ export function renderResultChart(
   result: QueryResult,
   options: BarChartOptions = {},
 ): string | null {
+  if (result.kind === "distribution") {
+    if (result.bins.length === 0) return null;
+    return renderHistogram(result.bins, options);
+  }
   if (result.kind === "trend") {
     const points = result.periods
       .filter(
@@ -106,6 +110,16 @@ export function renderResultChartSvg(
   result: QueryResult,
   options: SvgChartOptions = {},
 ): string | null {
+  if (result.kind === "distribution") {
+    if (result.bins.length === 0) return null;
+    return renderBarChartSvg(
+      result.bins.map((b) => ({
+        key: `${formatNumber(b.from)}–${formatNumber(b.to)}`,
+        value: b.count,
+      })),
+      options,
+    );
+  }
   if (result.kind === "trend") {
     const points = result.periods
       .filter(

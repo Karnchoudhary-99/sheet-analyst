@@ -13,6 +13,7 @@ import { executeQuery, type QueryResult } from "./engine.js";
 import { parseQuestion, type Filter } from "./query.js";
 import { inferSchema } from "./schema.js";
 import { ordinal } from "./stats.js";
+import { renderHistogram } from "./charts.js";
 
 /** Thousands separators, up to 2 decimals, trailing zeros trimmed. */
 export function formatNumber(n: number): string {
@@ -266,6 +267,21 @@ function composeValues(result: Extract<QueryResult, { kind: "values" }>): string
     (v) => `- ${v.value}: ${v.count} ${plural(v.count, "row")}`,
   );
   return `${scope}:\n${lines.join("\n")}`;
+}
+
+function composeDistribution(result: Extract<QueryResult, { kind: "distribution" }>): string {
+  if (result.valuesUsed === 0) {
+    return (
+      `I could not show the distribution of ${result.column} — ` +
+      `none of the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")} ` +
+      `has a usable value.`
+    );
+  }
+  const header =
+    `Distribution of ${result.column} ` +
+    `(${result.valuesUsed} ${plural(result.valuesUsed, "value")} across ` +
+    `${result.rowsMatched} ${plural(result.rowsMatched, "row")}):`;
+  return `${header}\n${renderHistogram(result.bins)}`;
 }
 
 function composeMode(result: Extract<QueryResult, { kind: "mode" }>): string {
@@ -638,6 +654,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeValues(result);
     case "mode":
       return composeMode(result);
+    case "distribution":
+      return composeDistribution(result);
     case "trend":
       return composeTrend(result);
     case "missing":
