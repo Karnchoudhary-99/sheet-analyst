@@ -29,6 +29,12 @@
  *   actually say)
  * - filters: "total revenue where region is North",
  *   "average salary where salary > 90000", "sales in North"
+ * - compound filters: "total revenue where region is North and
+ *   product is Widget A", "how many rows where revenue > 100 and
+ *   units < 10" (every condition must hold; a between-range keeps
+ *   its own "and" — "where revenue between 100 and 200 and region
+ *   is North" — and an "and" inside a value is left alone:
+ *   "where product is Salt and Pepper" still reads as one filter)
  * - rows: "show rows where region is North", "list employees in Data"
  * - sorted rows: "show rows sorted by revenue descending",
  *   "list employees sorted by salary ascending" (numbers sort
@@ -778,6 +784,63 @@ function parseWhereCondition(
   };
 }
 
+/**
+ * Split a `where` clause on top-level " and " — an "and" outside
+ * quotes, surrounded by whitespace — so "region is North and product
+ * is Widget A" becomes two conditions. An "and" inside a quoted
+ * value ("product is \"Salt and Pepper\"") is not a separator, and
+ * neither is one glued to a word ("Android" stays whole).
+ */
+function splitTopLevelAnd(clause: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quote: string | null = null;
+  let i = 0;
+  while (i < clause.length) {
+    const ch = clause[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      i += 1;
+      continue;
+    }
+    const sep = /^\s+and\s+/i.exec(clause.slice(i));
+    if (sep) {
+      parts.push(clause.slice(start, i).trim());
+      i += sep[0].length;
+      start = i;
+      continue;
+    }
+    i += 1;
+  }
+  parts.push(clause.slice(start).trim());
+  return parts;
+}
+
+/**
+ * A naive " and " split breaks a between-range: "revenue between 100
+ * and 200 and region is North" splits into ["revenue between 100",
+ * "200", "region is North"]. A part that ends with "between <value>"
+ * swallowed the range's own "and", so merge it back with the next
+ * part before the pieces are parsed as conditions.
+ */
+function mergeBetweenFragments(parts: string[]): string[] {
+  const merged: string[] = [];
+  for (const part of parts) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && /\bbetween\s+\S+\s*$/i.test(last)) {
+      merged[merged.length - 1] = `${last} and ${part}`;
+    } else {
+      merged.push(part);
+    }
+  }
+  return merged;
+}
+
 function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const columns = inferSchema(parsed);
   let rest = question;
@@ -786,12 +849,44 @@ function extractFilters(question: string, parsed: ParsedCsv): FilterExtraction {
   const where = /\bwhere\b/i.exec(rest);
   if (where) {
     const clause = rest.slice(where.index + where[0].length).trim();
-    const parsed = parseWhereCondition(clause, columns);
-    if ("error" in parsed) {
-      return { filters, rest, error: parsed.error };
+    const parts = mergeBetweenFragments(splitTopLevelAnd(clause));
+    let handled = false;
+    if (parts.length > 1) {
+      // Compound: "where region is North and product is Widget A".
+      // Every part must parse as a condition; a hard failure (an
+      // unknown column, a reversed range) is reported as-is, while
+      // a soft failure (a bare word) means the "and" may sit inside
+      // a value — "where product is Salt and Pepper" — so fall back
+      // to reading the whole clause as one condition.
+      const compound: Filter[] = [];
+      let hardError: string | null = null;
+      let softFailed = false;
+      for (const part of parts) {
+        const parsedCondition = parseWhereCondition(part, columns);
+        if ("error" in parsedCondition) {
+          if (parsedCondition.soft) softFailed = true;
+          else hardError = parsedCondition.error;
+          break;
+        }
+        compound.push(...parsedCondition.filters);
+      }
+      if (hardError !== null) {
+        return { filters, rest, error: hardError };
+      }
+      if (!softFailed) {
+        filters.push(...compound);
+        rest = rest.slice(0, where.index).trim();
+        handled = true;
+      }
     }
-    filters.push(...parsed.filters);
-    rest = rest.slice(0, where.index).trim();
+    if (!handled) {
+      const parsed = parseWhereCondition(clause, columns);
+      if ("error" in parsed) {
+        return { filters, rest, error: parsed.error };
+      }
+      filters.push(...parsed.filters);
+      rest = rest.slice(0, where.index).trim();
+    }
   }
 
   // Trailing "in <value>" / "for <value>" with a known categorical value.
