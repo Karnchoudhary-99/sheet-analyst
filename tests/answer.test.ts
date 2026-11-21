@@ -519,6 +519,40 @@ describe("composeAnswer share", () => {
         "(15 of 48, from 3 of 6 rows, 2 of 3 had a value).",
     );
   });
+
+  it("names both conditions of a compound filter", () => {
+    const answer = answerQuestion(
+      "what share of revenue where region is North and product is Widget A",
+      SALES,
+    );
+    // North + Widget A: 240 of 1,114.84 = 21.53%, from 2 of 6 rows.
+    expect(answer).toBe(
+      "Region is North and product is Widget A accounts for 21.53% of total revenue " +
+        "(240 of 1,114.84, from 2 of 6 rows).",
+    );
+  });
+
+  it("renders a comparison operator in words in a row-count share", () => {
+    const answer = answerQuestion(
+      "what share of rows where region is North and revenue > 100",
+      SALES,
+    );
+    expect(answer).toBe(
+      "2 of 6 rows (33.33%) match region is North and revenue is greater than 100.",
+    );
+  });
+
+  it("renders a comparison operator in words in a value share", () => {
+    const answer = answerQuestion(
+      "what share of revenue where revenue > 100 and region is North",
+      SALES,
+    );
+    // North rows above 100: 240.00 + 149.97 = 389.97 of 1,114.84 = 34.98%.
+    expect(answer).toBe(
+      "Revenue is greater than 100 and region is North accounts for 34.98% of total revenue " +
+        "(389.97 of 1,114.84, from 2 of 6 rows).",
+    );
+  });
 });
 
 describe("composeAnswer distinct values", () => {
