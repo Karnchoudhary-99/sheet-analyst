@@ -74,6 +74,9 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["compare total revenue in North vs South", sales],
   ["compare average salary in Engineering vs Data", staff],
   ["compare rows in North vs South", sales],
+  ["revenue share by region", sales],
+  ["what share of total revenue does each region contribute", sales],
+  ["salary share by department", staff],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];
