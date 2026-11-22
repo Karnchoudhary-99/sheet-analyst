@@ -171,6 +171,12 @@ export const EVAL_GATE = 0.8;
  * trend with no period, over a text column, plus a second group
  * column, or by an unsupported period abstains.
  *
+ * cumulative — monthly revenue runs 664.91 / 1,579.72 / 2,414.53;
+ * monthly units run 27 / 61 / 95; North-filtered revenue runs 200 /
+ * 499.88 / 634.85; salary by year runs null (2022 has no usable
+ * value) / 98,000 / 284,000 / 372,000. A running total with no
+ * period, of an average, or over a text column abstains.
+ *
  * missing values — sales units is blank on the 2026-01-10 row
  * only (1 of 8, 12.5%); every other sales column is complete.
  * Employees salary is NA for Edsger Dijkstra only (1 of 5, 20%);
@@ -1127,6 +1133,48 @@ export const GOLD_SET: EvalCase[] = [
     question: "revenue trend by month and region",
     expect: "abstain",
     note: "a time bucket plus a second group column is two dimensions at once",
+  },
+  {
+    sheet: "monthly",
+    question: "cumulative revenue by month",
+    expect: ["reached 2,414.53 by Mar 2026", "Jan 2026: 664.91", "Feb 2026: 1,579.72", "Mar 2026: 2,414.53"],
+    note: "monthly totals 664.91 / 914.81 / 834.81: running 664.91, 1,579.72, 2,414.53",
+  },
+  {
+    sheet: "monthly",
+    question: "running total of units by month",
+    expect: ["reached 95 by Mar 2026", "Jan 2026: 27", "Feb 2026: 61", "Mar 2026: 95"],
+    note: "monthly units 27 / 34 / 34: running 27, 61, 95",
+  },
+  {
+    sheet: "monthly",
+    question: "cumulative revenue by month where region is North",
+    expect: ["reached 634.85 by Mar 2026", "Jan 2026: 200", "Feb 2026: 499.88", "Mar 2026: 634.85"],
+    note: "North only: Jan 200, Feb 299.88, Mar 134.97 — running 200, 499.88, 634.85",
+  },
+  {
+    sheet: "employees",
+    question: "cumulative salary by year",
+    expect: ["reached 372,000 by 2025", "2022: no usable values", "2023: 98,000", "2024: 284,000", "2025: 372,000", "2022 has no usable values and adds nothing"],
+    note: "yearly totals 2022 NA (no usable value), 2023 98,000, 2024 186,000, 2025 88,000: running null, 98,000, 284,000, 372,000",
+  },
+  {
+    sheet: "monthly",
+    question: "cumulative revenue",
+    expect: "abstain",
+    note: "no period named — a running total needs one, e.g. 'by month'",
+  },
+  {
+    sheet: "monthly",
+    question: "cumulative average revenue by month",
+    expect: "abstain",
+    note: "a running total needs a total — a cumulative average has no running sum",
+  },
+  {
+    sheet: "monthly",
+    question: "cumulative region by month",
+    expect: "abstain",
+    note: "region is text — a running total needs a numeric column",
   },
   {
     sheet: "monthly",
