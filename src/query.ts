@@ -322,6 +322,19 @@ export type Query =
       orGroups?: Filter[][];
     }
   | {
+      kind: "periodchange";
+      /** The column being compared across periods. */
+      column: string;
+      /** Default sum ("revenue change" changes the total revenue). */
+      op: Exclude<AggregateOp, "count">;
+      /** The date column the periods are read from. */
+      dateColumn: string;
+      /** The period the change is measured over. */
+      bucket: TimeBucket;
+      filters: Filter[];
+      orGroups?: Filter[][];
+    }
+  | {
       kind: "aboveBelow";
       /** The numeric column compared against its own baseline. */
       column: string;
@@ -3524,6 +3537,145 @@ function tryParseCumulative(
 }
 
 /**
+ * Try to read a period-change question ("revenue change by month",
+ * "month over month change in revenue", "monthly change in revenue").
+ * Returns null when the question shows no change intent; otherwise a
+ * periodchange query, or an abstention when the period, the date
+ * column or the target column cannot be pinned down. Unlike a
+ * comparison, which names two periods ("Jan vs Feb"), this walks
+ * every period in order and reports each one's change against the
+ * previous one. A named pair of periods belongs to the comparison
+ * parser, which runs before this one.
+ */
+function tryParsePeriodChange(
+  text: string,
+  columns: ColumnInfo[],
+  bucket: TimeBucket | null,
+  filters: Filter[],
+  orGroups?: Filter[][],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\b(change|changes|growth|increase|decrease)\b/.test(norm)) return null;
+
+  // Resolve the period: the "by month" bucket the extractor already
+  // pulled out, a repeated period word ("month over month",
+  // "month to month"), or an adverb ("monthly change in revenue").
+  let resolved: TimeBucket | null = bucket;
+  if (!resolved) {
+    const periodWords = Object.keys(BUCKET_WORDS).join("|");
+    const repeated = new RegExp(
+      `\\b(${periodWords})s?\\s+(?:over|to)\\s+\\1s?\\b`,
+    ).exec(norm);
+    if (repeated) {
+      resolved =
+        BUCKET_WORDS[repeated[1]!] ?? BUCKET_WORDS[singular(repeated[1]!)];
+    }
+  }
+  if (!resolved) {
+    const adverb = /\b(daily|weekly|monthly|quarterly|yearly|annual)\b/.exec(norm);
+    if (adverb) resolved = BUCKET_WORDS[adverb[1]!];
+  }
+  if (!resolved) {
+    return {
+      ok: false,
+      reason: "a period change needs a period — try e.g. 'revenue change by month'",
+    };
+  }
+  const dates = columns.filter((c) => c.type === "date");
+  if (dates.length === 0) {
+    return {
+      ok: false,
+      reason: `a change over time needs a date column — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (dates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which date column to measure change by — matches ${dates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const dateColumn = dates[0];
+  const op = detectAggregateOp(norm) ?? "sum";
+
+  // Strip the change wording, the period word and filler, leaving
+  // the column name ("month over month change in revenue" ->
+  // "revenue"). Bucket aliases ("monthly") are stripped too, as is
+  // the repeated period word itself.
+  const filler = new Set([
+    "change",
+    "changes",
+    "growth",
+    "increase",
+    "decrease",
+    "increased",
+    "decreased",
+    "growing",
+    "over",
+    "to",
+    "by",
+    "per",
+    "of",
+    "in",
+    "the",
+    "what",
+    "how",
+    "much",
+    "did",
+    "does",
+    "do",
+    "is",
+    "a",
+    "an",
+    "each",
+    "every",
+  ]);
+  const periodWords = new Set(Object.keys(BUCKET_WORDS));
+  const cleaned = norm
+    .split(" ")
+    .filter(
+      (w) =>
+        !filler.has(w) &&
+        !periodWords.has(w) &&
+        !periodWords.has(w.endsWith("s") ? w.slice(0, -1) : w),
+    )
+    .join(" ");
+  const candidates = findColumns(cleaned, columns).filter(
+    (c) => c.name !== dateColumn.name,
+  );
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to measure — matches ${candidates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = candidates[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a change needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: {
+      kind: "periodchange",
+      column: column.name,
+      op,
+      dateColumn: dateColumn.name,
+      bucket: resolved,
+      filters,
+      orGroups,
+    },
+  };
+}
+
+/**
  * Try to read a trend question ("revenue trend by month", "average
  * salary trend by year", "is revenue trending up"). Returns null
  * when the question shows no trend intent; otherwise a trend query,
@@ -3714,6 +3866,16 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // the running total asked for.
   const cumulative = tryParseCumulative(timeBucket.rest, columns, bucket, filters, orGroups);
   if (cumulative) return cumulative;
+
+  // Period change: one column's change against the previous period,
+  // walked over every period ("revenue change by month",
+  // "month over month change in revenue"). Once the question shows
+  // change intent it is parsed here or abstained — falling through
+  // would answer the plain monthly grouping instead of the change
+  // asked for. A named pair of periods was already claimed by the
+  // comparison parser above.
+  const periodChange = tryParsePeriodChange(timeBucket.rest, columns, bucket, filters, orGroups);
+  if (periodChange) return periodChange;
 
   // Share: a filtered subset's total as a share of the whole sheet.
   // Once the question shows share intent it is parsed here or
