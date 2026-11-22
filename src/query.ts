@@ -2186,22 +2186,12 @@ function tryParseGroupShare(
   const norm = normalize(text);
   if (!/\bshare\b|\bpercent(age)?\b|%/.test(norm)) return null;
 
-  // A share is computed from totals. An explicit average/median/
-  // min/max word asks for a share of a different statistic, which
-  // is not a fraction of anything — refuse rather than answer the
-  // total. ("total"/"sum" read as sum, so they pass.)
-  const op = detectAggregateOp(norm);
-  if (op !== null && op !== "sum") {
-    return {
-      ok: false,
-      reason:
-        "a share is computed from totals — try e.g. 'revenue share by region'",
-    };
-  }
-
   // The group column: "by region" / "per region" / "for each region"
   // via the shared group-by extractor, or "each region" on its own
-  // ("what share of revenue does each region contribute").
+  // ("what share of revenue does each region contribute"). This
+  // runs before the aggregate check below: a share word with no
+  // group marker is a subset share, and tryParseShare owns its
+  // wording for those ("share questions compare totals").
   let groupBy: ColumnInfo | null = null;
   let valueText = "";
   const extracted = extractGroupBy(norm, columns);
@@ -2230,6 +2220,19 @@ function tryParseGroupShare(
     }
     groupBy = distinct[0]!;
     valueText = norm.slice(0, each.index).trim();
+  }
+
+  // A share is computed from totals. An explicit average/median/
+  // min/max word asks for a share of a different statistic, which
+  // is not a fraction of anything — refuse rather than answer the
+  // total. ("total"/"sum" read as sum, so they pass.)
+  const op = detectAggregateOp(norm);
+  if (op !== null && op !== "sum") {
+    return {
+      ok: false,
+      reason:
+        "a share is computed from totals — try e.g. 'revenue share by region'",
+    };
   }
 
   // Strip the share wording and the filler around it, leaving the
