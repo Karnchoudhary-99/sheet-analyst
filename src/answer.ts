@@ -429,6 +429,37 @@ function composeShare(result: Extract<QueryResult, { kind: "share" }>): string {
   );
 }
 
+function composeGroupShare(result: Extract<QueryResult, { kind: "groupshare" }>): string {
+  if (result.groups.length === 0) return "No rows match.";
+  if (result.total === null) {
+    return (
+      `No group had a usable value for ${result.column} — every matching row was missing it.`
+    );
+  }
+  // A share needs a non-zero total to divide by; a zero total means
+  // the whole sheet has nothing to share out, not a 0% share.
+  if (result.total === 0) {
+    return (
+      `I could not compute the share of total ${result.column} — ` +
+      `the total is 0, so there is nothing to share out.`
+    );
+  }
+  const total = result.total;
+  // Say so when some matching rows had no usable value, so a share
+  // over 2 values is never presented as a share over 3 rows.
+  const coverage =
+    result.valuesUsed < result.rowsMatched
+      ? ` (${result.valuesUsed} of ${result.rowsMatched} rows had a value)`
+      : "";
+  const head = `Share of total ${result.column} by ${result.groupBy}${coverage}:`;
+  const lines = result.groups.map((g) =>
+    g.share === null
+      ? `- ${g.key}: no usable ${result.column} (${g.count} ${plural(g.count, "row")})`
+      : `- ${g.key}: ${formatNumber(g.share * 100)}% (${formatNumber(g.value!)} of ${formatNumber(total)}, ${g.count} ${plural(g.count, "row")})`,
+  );
+  return `${head}\n${lines.join("\n")}`;
+}
+
 function composeValues(result: Extract<QueryResult, { kind: "values" }>): string {
   if (result.values.length === 0) return "No rows match.";
   const scope =
@@ -935,6 +966,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeHeadToHead(result);
     case "share":
       return composeShare(result);
+    case "groupshare":
+      return composeGroupShare(result);
     case "values":
       return composeValues(result);
     case "mode":

@@ -232,6 +232,24 @@ export function resultToCsv(
           String(result.totalRows),
         ]),
       ].join("\n");
+    case "groupshare": {
+      // One row per group, largest share first; a group with no
+      // usable value exports empty value and share cells instead
+      // of zeros.
+      const lines = [csvRow([result.groupBy, result.column, "share", "rows", "values_used"])];
+      for (const g of result.groups) {
+        lines.push(
+          csvRow([
+            g.key,
+            g.value === null ? "" : String(g.value),
+            g.share === null ? "" : String(g.share),
+            String(g.count),
+            String(g.valuesUsed),
+          ]),
+        );
+      }
+      return lines.join("\n");
+    }
     case "values": {
       const lines = [csvRow(["value", "rows"])];
       for (const v of result.values) {

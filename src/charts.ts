@@ -134,6 +134,28 @@ export function renderResultChart(
     if (points.length === 0) return null;
     return renderLineChart(points, options);
   }
+  if (result.kind === "groupshare") {
+    // A bar chart of each group's share, labelled as a percent;
+    // groups with no share have no bar to draw.
+    const bars = result.groups
+      .filter(
+        (
+          g,
+        ): g is {
+          key: string;
+          value: number | null;
+          share: number;
+          count: number;
+          valuesUsed: number;
+        } => g.share !== null,
+      )
+      .map((g) => ({ key: g.key, value: g.share }));
+    if (bars.length === 0) return null;
+    return renderBarChart(bars, {
+      ...options,
+      formatValue: (n) => `${formatNumber(n * 100)}%`,
+    });
+  }
   if (result.kind !== "groups") return null;
   if (result.bucket) return renderLineChart(result.groups, options);
   return renderBarChart(result.groups, options);
@@ -204,6 +226,26 @@ export function renderResultChartSvg(
       .map((p) => ({ key: p.label, value: p.change }));
     if (points.length === 0) return null;
     return renderLineChartSvg(points, options);
+  }
+  if (result.kind === "groupshare") {
+    const bars = result.groups
+      .filter(
+        (
+          g,
+        ): g is {
+          key: string;
+          value: number | null;
+          share: number;
+          count: number;
+          valuesUsed: number;
+        } => g.share !== null,
+      )
+      .map((g) => ({ key: g.key, value: g.share }));
+    if (bars.length === 0) return null;
+    return renderBarChartSvg(bars, {
+      ...options,
+      formatValue: (n) => `${formatNumber(n * 100)}%`,
+    });
   }
   if (result.kind !== "groups") return null;
   if (result.bucket) return renderLineChartSvg(result.groups, options);

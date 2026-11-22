@@ -1091,6 +1091,70 @@ describe("composeAnswer period change", () => {
   });
 });
 
+describe("composeAnswer group share", () => {
+  it("lists every group's share, largest first", () => {
+    expect(answerQuestion("revenue share by region", SALES)).toBe(
+      "Share of total revenue by region:\n" +
+        "- East: 35.88% (400 of 1,114.84, 1 row)\n" +
+        "- North: 34.98% (389.97 of 1,114.84, 3 rows)\n" +
+        "- South: 17.93% (199.92 of 1,114.84, 1 row)\n" +
+        "- West: 11.21% (124.95 of 1,114.84, 1 row)",
+    );
+  });
+
+  it("adds a coverage note when some rows had no usable value", () => {
+    expect(answerQuestion("units share by region", SALES)).toBe(
+      "Share of total units by region (5 of 6 rows had a value):\n" +
+        "- East: 41.67% (20 of 48, 1 row)\n" +
+        "- North: 31.25% (15 of 48, 3 rows)\n" +
+        "- South: 16.67% (8 of 48, 1 row)\n" +
+        "- West: 10.42% (5 of 48, 1 row)",
+    );
+  });
+
+  it("lists a group with no usable value instead of a 0% share", () => {
+    const sheet = parseCsv(
+      "region,revenue\n" + "North,100\n" + "South,\n",
+    );
+    expect(answerQuestion("revenue share by region", sheet)).toBe(
+      "Share of total revenue by region (1 of 2 rows had a value):\n" +
+        "- North: 100% (100 of 100, 1 row)\n" +
+        "- South: no usable revenue (1 row)",
+    );
+  });
+
+  it("says so plainly when no group has a usable value", () => {
+    // Revenue infers numeric from the South row, but the filtered
+    // rows (Widget A only) have no usable revenue at all.
+    const sheet = parseCsv(
+      "region,product,revenue\n" +
+        "North,Widget A,\n" +
+        "South,Widget B,100\n",
+    );
+    expect(
+      answerQuestion("revenue share by region where product is Widget A", sheet),
+    ).toBe(
+      "No group had a usable value for revenue — every matching row was missing it.",
+    );
+  });
+
+  it("says so plainly when the grand total is zero", () => {
+    const sheet = parseCsv(
+      "region,revenue\n" + "North,0.00\n" + "South,0.00\n",
+    );
+    expect(answerQuestion("revenue share by region", sheet)).toBe(
+      "I could not compute the share of total revenue — " +
+        "the total is 0, so there is nothing to share out.",
+    );
+  });
+
+  it("says so plainly when no rows match", () => {
+    expect(
+      answerQuestion("revenue share by region where product is Widget Z", SALES),
+    ).toBe("No rows match.");
+  });
+});
+
 describe("composeAnswer missing values", () => {
   it("counts one column's missing rows with a percentage", () => {
     expect(answerQuestion("how many rows are missing units", SALES)).toBe(

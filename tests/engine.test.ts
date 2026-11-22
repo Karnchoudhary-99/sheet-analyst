@@ -1929,6 +1929,114 @@ describe("executeQuery period change", () => {
   });
 });
 
+describe("executeQuery group share", () => {
+  it("shares out each group's total, largest share first", () => {
+    const r = ask("revenue share by region");
+    expect(r.kind).toBe("groupshare");
+    if (r.kind === "groupshare") {
+      // Region totals: East 400, North 389.97, South 199.92,
+      // West 124.95; grand total 1,114.84.
+      expect(r.total).toBeCloseTo(1114.84, 2);
+      expect(r.groups.map((g) => g.key)).toEqual(["East", "North", "South", "West"]);
+      expect(r.groups.map((g) => g.value)).toEqual([400, 389.97, 199.92, 124.95]);
+      expect(r.groups[0].share).toBeCloseTo(0.3588, 4);
+      expect(r.groups[1].share).toBeCloseTo(0.3498, 4);
+      expect(r.groups[2].share).toBeCloseTo(0.17933, 4);
+      expect(r.groups[3].share).toBeCloseTo(0.11208, 4);
+      expect(r.groups.map((g) => g.count)).toEqual([1, 3, 1, 1]);
+      expect(r.rowsMatched).toBe(6);
+      expect(r.valuesUsed).toBe(6);
+    }
+  });
+
+  it("skips blank values instead of counting them as zero", () => {
+    const r = ask("units share by region");
+    expect(r.kind).toBe("groupshare");
+    if (r.kind === "groupshare") {
+      // Units: East 20, North 15 over 2 valued rows (one blank),
+      // South 8, West 5; total 48 over 5 valued rows.
+      expect(r.total).toBe(48);
+      expect(r.groups.map((g) => g.key)).toEqual(["East", "North", "South", "West"]);
+      expect(r.groups[0].share).toBeCloseTo(20 / 48, 10);
+      expect(r.groups[1].share).toBeCloseTo(15 / 48, 10);
+      expect(r.groups[1].valuesUsed).toBe(2);
+      expect(r.groups[1].count).toBe(3);
+      expect(r.valuesUsed).toBe(5);
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("shares out only the filtered rows", () => {
+    const r = ask("revenue share by region where product is Widget A");
+    expect(r.kind).toBe("groupshare");
+    if (r.kind === "groupshare") {
+      // Widget A only: East 400, North 240 (plus a 0.00 row); total 640.
+      expect(r.total).toBe(640);
+      expect(r.groups.map((g) => g.key)).toEqual(["East", "North"]);
+      expect(r.groups[0].share).toBeCloseTo(0.625, 10);
+      expect(r.groups[1].share).toBeCloseTo(0.375, 10);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
+
+  it("breaks share ties alphabetically", () => {
+    const r = ask("revenue share by region", parseCsv(
+      "region,revenue\n" +
+        "South,100\n" +
+        "North,100\n" +
+        "East,50\n",
+    ));
+    expect(r.kind).toBe("groupshare");
+    if (r.kind === "groupshare") {
+      expect(r.groups.map((g) => g.key)).toEqual(["North", "South", "East"]);
+      expect(r.groups[0].share).toBeCloseTo(0.4, 10);
+      expect(r.groups[1].share).toBeCloseTo(0.4, 10);
+    }
+  });
+
+  it("groups blank group values under (blank)", () => {
+    const r = ask("revenue share by region", parseCsv(
+      "region,revenue\n" +
+        "North,100\n" +
+        ",200\n",
+    ));
+    expect(r.kind).toBe("groupshare");
+    if (r.kind === "groupshare") {
+      expect(r.groups.map((g) => g.key)).toEqual(["(blank)", "North"]);
+      expect(r.groups[0].share).toBeCloseTo(200 / 300, 10);
+      expect(r.total).toBe(300);
+    }
+  });
+
+  it("has no total and no shares when no group has a usable value", () => {
+    const r = executeQuery(
+      { kind: "groupshare", groupBy: "region", column: "revenue", filters: [] },
+      parseCsv("region,revenue\nNorth,\nSouth,NA\n"),
+    );
+    expect(r.kind).toBe("groupshare");
+    if (r.kind === "groupshare") {
+      expect(r.total).toBeNull();
+      expect(r.groups.map((g) => g.value)).toEqual([null, null]);
+      expect(r.groups.map((g) => g.share)).toEqual([null, null]);
+      expect(r.valuesUsed).toBe(0);
+    }
+  });
+
+  it("has no shares when the grand total is zero", () => {
+    const r = ask("revenue share by region", parseCsv(
+      "region,revenue\n" +
+        "North,0.00\n" +
+        "South,0.00\n",
+    ));
+    expect(r.kind).toBe("groupshare");
+    if (r.kind === "groupshare") {
+      expect(r.total).toBe(0);
+      expect(r.groups.map((g) => g.value)).toEqual([0, 0]);
+      expect(r.groups.map((g) => g.share)).toEqual([null, null]);
+    }
+  });
+});
+
 describe("executeQuery missing values", () => {
   it("counts the missing rows of one column", () => {
     const r = ask("how many rows are missing units");

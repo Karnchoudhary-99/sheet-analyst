@@ -180,6 +180,16 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
+    case "groupshare": {
+      const what = `share of total ${query.column}`;
+      return [
+        `${what} by ${query.groupBy}`,
+        "operation: group share",
+        `column: ${query.column}`,
+        `group by: ${query.groupBy}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
+      ];
+    }
     case "distinct":
       return [
         `distinct values of ${query.column}`,

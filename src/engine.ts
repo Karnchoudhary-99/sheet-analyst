@@ -175,6 +175,33 @@ export type QueryResult =
       totalValuesUsed: number;
     }
   | {
+      kind: "groupshare";
+      /** The column whose values are shared out. */
+      groupBy: string;
+      /** The numeric column being shared out. */
+      column: string;
+      /**
+       * Every group, largest share first. `value` is the group's
+       * total of the column (null when the group had no usable
+       * value); `share` is that total as a fraction of the whole
+       * sheet's total (null when the group had no usable value or
+       * the total is zero).
+       */
+      groups: {
+        key: string;
+        value: number | null;
+        share: number | null;
+        count: number;
+        valuesUsed: number;
+      }[];
+      /** The whole sheet's total of the column, or null when no group had a usable value. */
+      total: number | null;
+      /** Rows the filters matched. */
+      rowsMatched: number;
+      /** Rows with a usable numeric value (across all groups). */
+      valuesUsed: number;
+    }
+  | {
       kind: "values";
       /** The column whose distinct values are listed. */
       column: string;
@@ -1032,6 +1059,60 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         totalRows,
         valuesUsed: subset.used,
         totalValuesUsed: total.used,
+      };
+    }
+
+    case "groupshare": {
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
+      const gIdx = colIndex.get(query.groupBy)!;
+      const cIdx = colIndex.get(query.column)!;
+      const buckets = new Map<string, { label: string; values: number[]; count: number }>();
+      for (const row of rows) {
+        const label = groupKey(row[gIdx] ?? "", undefined).label;
+        const bucket = buckets.get(label) ?? { label, values: [], count: 0 };
+        bucket.count += 1;
+        const raw = row[cIdx] ?? "";
+        if (!isNullValue(raw)) {
+          const n = toNumber(raw);
+          if (n !== null) bucket.values.push(n);
+        }
+        buckets.set(label, bucket);
+      }
+      const totals = [...buckets.values()].map((b) => ({
+        key: b.label,
+        value: b.values.length === 0 ? null : b.values.reduce((a, v) => a + v, 0),
+        count: b.count,
+        valuesUsed: b.values.length,
+      }));
+      const total =
+        totals.length === 0
+          ? null
+          : totals.reduce<number | null>(
+              (acc, g) => (g.value === null ? acc : (acc ?? 0) + g.value),
+              null,
+            );
+      const groups = totals
+        .map((g) => ({
+          ...g,
+          share:
+            g.value === null || total === null || total === 0 ? null : g.value / total,
+        }))
+        // Largest share first; groups with no share sort last
+        // either way and never lead, alphabetical tie-break.
+        .sort((a, b) => {
+          if (a.share === null && b.share === null) return a.key.localeCompare(b.key);
+          if (a.share === null) return 1;
+          if (b.share === null) return -1;
+          return b.share - a.share || a.key.localeCompare(b.key);
+        });
+      return {
+        kind: "groupshare",
+        groupBy: query.groupBy,
+        column: query.column,
+        groups,
+        total,
+        rowsMatched: rows.length,
+        valuesUsed: totals.reduce((acc, g) => acc + g.valuesUsed, 0),
       };
     }
 

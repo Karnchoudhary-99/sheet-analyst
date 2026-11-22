@@ -734,3 +734,47 @@ describe("resultToCsv group extreme", () => {
     );
   });
 });
+
+describe("resultToCsv group share", () => {
+  it("writes one row per group, largest share first, with the raw share fraction", () => {
+    const result: QueryResult = {
+      kind: "groupshare",
+      groupBy: "region",
+      column: "revenue",
+      groups: [
+        { key: "East", value: 400, share: 0.35879588102328586, count: 1, valuesUsed: 1 },
+        { key: "North", value: 389.97, share: 0.349799074306627, count: 3, valuesUsed: 3 },
+        { key: "South", value: 199.92, share: 0.17932618133543826, count: 1, valuesUsed: 1 },
+        { key: "West", value: 124.95, share: 0.11207886333464893, count: 1, valuesUsed: 1 },
+      ],
+      total: 1114.84,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    };
+    expect(resultToCsv(result, "revenue share by region", "…")).toBe(
+      "region,revenue,share,rows,values_used\n" +
+        "East,400,0.35879588102328586,1,1\n" +
+        "North,389.97,0.349799074306627,3,3\n" +
+        "South,199.92,0.17932618133543826,1,1\n" +
+        "West,124.95,0.11207886333464893,1,1",
+    );
+  });
+
+  it("leaves the value and share cells empty for a group with no usable value", () => {
+    const result: QueryResult = {
+      kind: "groupshare",
+      groupBy: "region",
+      column: "revenue",
+      groups: [
+        { key: "North", value: 100, share: 1, count: 1, valuesUsed: 1 },
+        { key: "South", value: null, share: null, count: 1, valuesUsed: 0 },
+      ],
+      total: 100,
+      rowsMatched: 2,
+      valuesUsed: 1,
+    };
+    expect(resultToCsv(result, "revenue share by region", "…")).toBe(
+      "region,revenue,share,rows,values_used\nNorth,100,1,1,1\nSouth,,,1,0",
+    );
+  });
+});
