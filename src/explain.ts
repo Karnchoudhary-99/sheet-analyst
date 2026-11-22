@@ -31,7 +31,7 @@ const OP_LABEL: Record<string, string> = {
 };
 
 function describeFilter(filter: Filter): string {
-  return `${filter.column} ${filter.op} ${filter.value}`;
+  return `${filter.column} ${filter.op} ${filter.compareColumn ?? filter.value}`;
 }
 
 function describeFilters(filters: Filter[], orGroups?: Filter[][]): string {
