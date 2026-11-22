@@ -1814,6 +1814,121 @@ describe("executeQuery cumulative", () => {
   });
 });
 
+describe("executeQuery period change", () => {
+  const CHANGING = parseCsv(
+    "date,region,revenue\n" +
+      "2026-01-05,North,100\n" +
+      "2026-01-20,South,200\n" +
+      "2026-02-03,East,400\n" +
+      "2026-02-10,West,100\n" +
+      "2026-03-02,North,300\n" +
+      "2026-03-15,East,300\n",
+  );
+
+  it("reports each period's change against the previous one", () => {
+    const r = ask("revenue change by month", CHANGING);
+    expect(r.kind).toBe("periodchange");
+    if (r.kind === "periodchange") {
+      // Monthly totals 300, 500, 600: Feb +200 (+66.67%), Mar +100 (+20%).
+      expect(r.periods.map((p) => p.label)).toEqual([
+        "Jan 2026",
+        "Feb 2026",
+        "Mar 2026",
+      ]);
+      expect(r.periods.map((p) => p.value)).toEqual([300, 500, 600]);
+      expect(r.periods.map((p) => p.change)).toEqual([null, 200, 100]);
+      expect(r.periods[1].pctChange).toBeCloseTo(66.6667, 4);
+      expect(r.periods[2].pctChange).toBeCloseTo(20, 10);
+      expect(r.biggestRise).toEqual({
+        label: "Feb 2026",
+        change: 200,
+        pctChange: expect.closeTo(66.6667, 4),
+      });
+      expect(r.biggestFall).toBeNull();
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("names the biggest rise and the biggest fall", () => {
+    const r = ask("revenue change by month", parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,100\n" +
+        "2026-02-03,500\n" +
+        "2026-03-02,200\n" +
+        "2026-04-01,450\n",
+    ));
+    expect(r.kind).toBe("periodchange");
+    if (r.kind === "periodchange") {
+      // Totals 100, 500, 200, 450: +400, -300, +250.
+      expect(r.periods.map((p) => p.change)).toEqual([null, 400, -300, 250]);
+      expect(r.biggestRise?.label).toBe("Feb 2026");
+      expect(r.biggestRise?.change).toBe(400);
+      expect(r.biggestFall?.label).toBe("Mar 2026");
+      expect(r.biggestFall?.change).toBe(-300);
+    }
+  });
+
+  it("reads an unchanged period as zero change, not as no change", () => {
+    const r = ask("revenue change by month", parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,300\n" +
+        "2026-02-03,300\n" +
+        "2026-03-02,400\n",
+    ));
+    expect(r.kind).toBe("periodchange");
+    if (r.kind === "periodchange") {
+      expect(r.periods.map((p) => p.change)).toEqual([null, 0, 100]);
+      expect(r.periods[1].pctChange).toBeCloseTo(0, 10);
+      // Neither a rise nor a fall: the flat period is neither.
+      expect(r.biggestRise?.label).toBe("Mar 2026");
+      expect(r.biggestFall).toBeNull();
+    }
+  });
+
+  it("breaks the chain at a period with no usable values", () => {
+    const r = ask("revenue change by month", parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,300\n" +
+        "2026-02-03,NA\n" +
+        "2026-03-02,600\n",
+    ));
+    expect(r.kind).toBe("periodchange");
+    if (r.kind === "periodchange") {
+      // Feb has no usable value, so neither Feb's change nor Mar's
+      // (which would compare against a valueless Feb) exists.
+      expect(r.periods.map((p) => p.change)).toEqual([null, null, null]);
+      expect(r.biggestRise).toBeNull();
+      expect(r.biggestFall).toBeNull();
+    }
+  });
+
+  it("has no percent when the previous period's value is zero", () => {
+    const r = ask("revenue change by month", parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,0\n" +
+        "2026-02-03,500\n",
+    ));
+    expect(r.kind).toBe("periodchange");
+    if (r.kind === "periodchange") {
+      expect(r.periods[1].change).toBe(500);
+      expect(r.periods[1].pctChange).toBeNull();
+      expect(r.biggestRise?.pctChange).toBeNull();
+    }
+  });
+
+  it("measures only the filtered rows", () => {
+    const r = ask("revenue change by month where region is North", CHANGING);
+    expect(r.kind).toBe("periodchange");
+    if (r.kind === "periodchange") {
+      // North only: Jan 100, Mar 300 — Mar rose 200 (+200%) vs Jan.
+      expect(r.periods.map((p) => p.label)).toEqual(["Jan 2026", "Mar 2026"]);
+      expect(r.periods.map((p) => p.change)).toEqual([null, 200]);
+      expect(r.periods[1].pctChange).toBeCloseTo(200, 10);
+      expect(r.rowsMatched).toBe(2);
+    }
+  });
+});
+
 describe("executeQuery missing values", () => {
   it("counts the missing rows of one column", () => {
     const r = ask("how many rows are missing units");
