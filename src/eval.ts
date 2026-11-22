@@ -1330,8 +1330,62 @@ export const GOLD_SET: EvalCase[] = [
   {
     sheet: "sales",
     question: "second highest revenue by region",
+    expect: ["The 2nd highest total revenue by region is 624.91", "East holds it", "out of 4 distinct total revenue values"],
+    note: "a bare aggregate in a group rank reads as the total — region totals North 389.97 / South 649.77 / East 624.91 / West 124.95, so the 2nd highest is East's 624.91",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the second highest total revenue",
+    expect: ["The 2nd highest total revenue by region is 624.91", "East holds it"],
+    note: "the 'which group has the ...' phrasing of a group rank — same answer as the 'by region' phrasing",
+  },
+  {
+    sheet: "sales",
+    question: "second lowest total revenue by region",
+    expect: ["The 2nd lowest total revenue by region is 389.97", "North holds it", "out of 4 distinct total revenue values"],
+    note: "ascending region totals 124.95 / 389.97 / 624.91 / 649.77 — the 2nd lowest is North's 389.97",
+  },
+  {
+    sheet: "sales",
+    question: "5th highest total revenue by region",
+    expect: ["The 5th highest total revenue by region does not exist", "only 4 distinct total revenue values", "across 4 regions"],
+    note: "only 4 regions, so no 5th group rank — must not fall back to the lowest total",
+  },
+  {
+    sheet: "sales",
+    question: "second highest minimum revenue by region",
+    expect: ["The 2nd highest minimum revenue by region is 199.92", "South holds it"],
+    note: "per-region minima North 0 / South 199.92 / East 224.91 / West 124.95 — the 2nd highest minimum is South's 199.92",
+  },
+  {
+    sheet: "employees",
+    question: "second highest average salary by department",
+    expect: ["The 2nd highest average salary by department is 89,500", "Data holds it", "out of 2 distinct average salary values", "4 of 5 had a value"],
+    note: "department averages Engineering 96,500 (over 2 valued rows — the NA row never counts) / Data 89,500 — the 2nd highest is Data's 89,500",
+  },
+  {
+    sheet: "employees",
+    question: "second highest total salary by department",
+    expect: ["The 2nd highest total salary by department is 179,000", "Data holds it"],
+    note: "department totals Engineering 193,000 / Data 179,000 — the 2nd highest is Data's 179,000",
+  },
+  {
+    sheet: "sales",
+    question: "second highest total revenue by region and product",
     expect: "abstain",
-    note: "a rank question is one column, ungrouped — must not answer the whole-sheet rank",
+    note: "a group rank ranks one dimension at a time — must not answer over region alone and drop product",
+  },
+  {
+    sheet: "sales",
+    question: "second highest total profit by region",
+    expect: "abstain",
+    note: "no profit column",
+  },
+  {
+    sheet: "sales",
+    question: "second highest total region by region",
+    expect: "abstain",
+    note: "a group rank ranks one column across another — region can't group by itself",
   },
   {
     sheet: "sales",

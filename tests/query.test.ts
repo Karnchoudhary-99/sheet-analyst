@@ -1934,10 +1934,81 @@ describe("parseQuestion rank", () => {
     if (!r.ok) expect(r.reason).toMatch(/could not understand "frobnicate"/);
   });
 
-  it("abstains on a grouped rank instead of answering the whole-sheet one", () => {
+  it("parses a group rank over per-group totals", () => {
+    expect(parseQuestion("second highest total revenue by region", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "rank",
+        column: "revenue",
+        n: 2,
+        direction: "highest",
+        groupBy: "region",
+        op: "sum",
+        filters: [],
+      },
+    });
+  });
+
+  it("parses the 'which group has the ...' phrasing of a group rank", () => {
+    expect(
+      parseQuestion("which region has the second highest total revenue", SALES),
+    ).toEqual({
+      ok: true,
+      query: {
+        kind: "rank",
+        column: "revenue",
+        n: 2,
+        direction: "highest",
+        groupBy: "region",
+        op: "sum",
+        filters: [],
+      },
+    });
+  });
+
+  it("reads a bare aggregate in a group rank as the total", () => {
     const r = parseQuestion("second highest revenue by region", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "rank") expect(r.query.op).toBe("sum");
+  });
+
+  it("reads 'average' in a group rank as the mean", () => {
+    expect(parseQuestion("second highest average salary by department", STAFF)).toEqual({
+      ok: true,
+      query: {
+        kind: "rank",
+        column: "salary",
+        n: 2,
+        direction: "highest",
+        groupBy: "department",
+        op: "mean",
+        filters: [],
+      },
+    });
+  });
+
+  it("abstains on a group rank over two dimensions", () => {
+    const r = parseQuestion("second highest total revenue by region and product", SALES);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/one column/);
+    if (!r.ok) expect(r.reason).toMatch(/one dimension at a time/);
+  });
+
+  it("abstains when the group and the value column are the same", () => {
+    const r = parseQuestion("second highest total revenue by revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't group by itself/);
+  });
+
+  it("abstains on an unknown value column in a group rank", () => {
+    const r = parseQuestion("second highest total profit by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named/);
+  });
+
+  it("abstains on a time-grouped group-rank question", () => {
+    const r = parseQuestion("second highest total revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
   });
 
   it("abstains on a time-grouped rank question", () => {
