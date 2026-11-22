@@ -31,6 +31,7 @@ top-N) directly from the spreadsheet.
 - [x] Mode + distinct-count questions ("most common product", "how many distinct regions", blanks excluded, alphabetical tie-break)
 - [x] Percentile questions + `between` range filters ("90th percentile of salary", "p90 revenue", "where revenue between 100 and 200", inclusive, smaller value first)
 - [x] Trend questions ("revenue trend by month" — least-squares slope per period, up/down/roughly-flat wording, line chart, periods with no usable value named, not zero-filled)
+- [x] Cumulative questions ("cumulative revenue by month", "running total of revenue by quarter" — the running total after each period, line chart, a period with no usable values adds nothing and is named, not zero-filled; an average has no running sum and abstains)
 - [x] Bottom-N questions ("bottom 3 products by revenue", "bottom 2 months by revenue" — the low end of the top-N ranking, smallest first, headed "Bottom N of M" instead of "Top N")
 - [x] Sorted row listings ("show rows sorted by revenue descending", "list employees sorted by salary ascending" — numbers numerically, dates by day, text alphabetically; blank cells always last; the sort runs before the limit, so the first N of a sorted listing are the sorted top N)
 - [x] Above/below-average questions ("rows with revenue above average", "which employees have salary below the median" — rows strictly on one side of the column's mean or median; equal-to-baseline rows are neither; a column with no usable value has no baseline and the answer says so)
@@ -240,7 +241,13 @@ and trend
 ("revenue trend by month", "average salary trend by year" — the
 least-squares slope of the per-period aggregate, so "trended up by
 about 84.95 per month"; a trend needs a period and one numeric
-column). Missing-values questions ("how many rows are missing
+column). Cumulative questions ("cumulative revenue by month",
+"running total of revenue by quarter") keep the running total after
+each period, so "Total revenue by month reached 2,414.53 by Mar
+2026 (Jan 2026: 664.91; Feb 2026: 1,579.72; Mar 2026: 2,414.53)";
+a period with no usable values adds nothing and is named, and a
+cumulative average abstains — an average has no running sum.
+Missing-values questions ("how many rows are missing
 salary", "which columns have missing values", "show rows missing
 revenue") count empty cells and markers like NA as missing — a zero
 is a value, never a missing one. A whole-sheet report lists every
