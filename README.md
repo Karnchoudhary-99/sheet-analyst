@@ -47,6 +47,7 @@ top-N) directly from the spreadsheet.
 - [x] Distribution questions ("distribution of salary", "histogram of revenue" — values binned into an equal-width histogram, at most 10 bins and never more than the distinct-value count; a text column abstains; `sheet chart` draws it, `ask --out` exports one CSV row per bin)
 - [x] Cross-column comparisons ("how many rows where revenue is greater than units", "total score where score is greater than hours" — a where clause may compare two columns in the same row with `>`, `>=`, `<` or `<=`; both must be numbers or both dates, a blank cell on either side never matches, `=` and quoted right-hand sides stay literal)
 - [x] Group-extreme questions ("which region has the highest total revenue", "which product has the lowest average units" — one group's aggregate beats every other; a bare "highest" reads as the highest total, an explicit average/median/minimum/maximum overrides it; ties share the win, groups with no usable value never win, and a winner with blank cells says how many of its rows had a value)
+- [x] Head-to-head group comparisons ("compare total revenue in North vs South", "total revenue North vs South", "compare average salary in Engineering vs Data", "compare rows in North vs South" — both sides must be values of one text column; the answer names the higher side with both values, the difference and the percent higher; a where clause applies to both sides; ties, a side with no usable values and a zero lower side each get their own plain wording; `sheet explain` describes both sides and `ask --out` exports one row per side plus difference and percent-higher rows)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -145,6 +146,12 @@ answerQuestion("correlation between revenue and units", sales);
 // "The correlation between revenue and units is 0.90 (strong positive) across 7 paired rows."
 answerQuestion("compare revenue Jan 2026 vs Feb 2026", monthlySales);
 // "Total revenue grew from 664.91 in Jan 2026 to 914.81 in Feb 2026 (+249.9, +37.58%)."
+answerQuestion("compare total revenue in North vs South", sales);
+// "Total revenue was higher in South (649.77) than in North (389.97) by 259.8 (66.62% higher)."
+// (both sides must be values of one column; a bare "vs" works too —
+// "total revenue North vs South"; a where clause applies to both sides;
+// ties, a side with no usable values and a zero lower side each get
+// their own plain wording — "the same in North and South at 100")
 answerQuestion("what share of revenue is North", sales);
 // "Region is North accounts for 21.79% of total revenue (389.97 of 1,789.6, from 3 of 8 rows)."
 answerQuestion("what percentage of rows are in North", sales);
@@ -202,7 +209,13 @@ side of the column's mean or median),
 correlation ("correlation between revenue and units",
 "how correlated are salary and age"), period comparison
 ("compare revenue Jan 2026 vs Feb 2026", "revenue change from
-January to February", "compare rows in Jan vs Feb"), and share
+January to February", "compare rows in Jan vs Feb"), head-to-head
+group comparison ("compare total revenue in North vs South",
+"total revenue North vs South", "compare average salary in
+Engineering vs Data", "compare rows in North vs South" — both
+sides must be values of one text column, a where clause applies
+to both sides, and the answer names the higher side with the
+difference and the percent higher), and share
 ("what share of revenue is North", "what percentage of total revenue
 comes from North", "what share of rows are in North"), and distinct
 values ("list unique regions", "what are the distinct products"),
