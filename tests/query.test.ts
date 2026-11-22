@@ -2473,6 +2473,114 @@ describe("parseQuestion cumulative", () => {
   });
 });
 
+describe("parseQuestion period change", () => {
+  const NODATES = parseCsv(
+    "region,product,revenue\n" +
+      "North,Widget A,240.00\n" +
+      "South,Widget B,199.92\n",
+  );
+
+  it("parses 'revenue change by month'", () => {
+    const r = parseQuestion("revenue change by month", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "periodchange",
+        column: "revenue",
+        op: "sum",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+    });
+  });
+
+  it("parses 'month over month change in revenue'", () => {
+    const r = parseQuestion("month over month change in revenue", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "periodchange") {
+      expect(r.query.column).toBe("revenue");
+      expect(r.query.bucket).toBe("month");
+    }
+  });
+
+  it("parses 'monthly change in revenue' and 'how did revenue change month to month'", () => {
+    const a = parseQuestion("monthly change in revenue", SALES);
+    expect(a.ok).toBe(true);
+    if (a.ok && a.query.kind === "periodchange") {
+      expect(a.query.bucket).toBe("month");
+    }
+    const b = parseQuestion("how did revenue change month to month", SALES);
+    expect(b.ok).toBe(true);
+    if (b.ok && b.query.kind === "periodchange") {
+      expect(b.query.column).toBe("revenue");
+      expect(b.query.bucket).toBe("month");
+    }
+  });
+
+  it("parses an average change over years on the staff sheet", () => {
+    const r = parseQuestion("average salary change by year", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "periodchange") {
+      expect(r.query.column).toBe("salary");
+      expect(r.query.op).toBe("mean");
+      expect(r.query.dateColumn).toBe("start_date");
+      expect(r.query.bucket).toBe("year");
+    }
+  });
+
+  it("carries a where filter into the change", () => {
+    const r = parseQuestion("revenue change by month where region is North", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.query.kind).toBe("periodchange");
+      expect(r.query.filters).toEqual([{ column: "region", op: "=", value: "North" }]);
+    }
+  });
+
+  it("abstains when no period is named", () => {
+    const r = parseQuestion("how did revenue change", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a period/);
+  });
+
+  it("abstains on a non-numeric column", () => {
+    const r = parseQuestion("region change by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains when the sheet has no date column", () => {
+    const r = parseQuestion("revenue change by month", NODATES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/date column/);
+  });
+
+  it("abstains when the sheet has two date columns", () => {
+    const r = parseQuestion("revenue change by month", DATES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/which date column/);
+  });
+
+  it("leaves a named pair of periods to the comparison parser", () => {
+    // SALES has January and February 2026 rows, so the comparison
+    // resolves both periods — but it must be the comparison that
+    // answers, never the period-change walk.
+    const r = parseQuestion("revenue change from January to February", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.query.kind).toBe("comparison");
+  });
+
+  it("does not turn a trend or a cumulative into a period change", () => {
+    const t = parseQuestion("revenue trend by month", SALES);
+    expect(t.ok).toBe(true);
+    if (t.ok) expect(t.query.kind).toBe("trend");
+    const c = parseQuestion("cumulative revenue by month", SALES);
+    expect(c.ok).toBe(true);
+    if (c.ok) expect(c.query.kind).toBe("cumulative");
+  });
+});
+
 describe("parseQuestion missing values", () => {
   it("parses 'how many rows are missing units' as a count", () => {
     expect(parseQuestion("how many rows are missing units", SALES)).toEqual({
