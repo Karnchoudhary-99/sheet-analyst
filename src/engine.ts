@@ -45,6 +45,8 @@ export type QueryResult =
       groupBy?: string;
       op?: string;
       groupsAtValue?: string[];
+      /** Groups present among the matched rows (group rank only). */
+      totalGroups?: number;
       /** The nth distinct value, or null when fewer than n distinct values exist. */
       value: number | null;
       /** Rows holding that value (0 when value is null). For a group rank, the rows in the groups holding the value. */
@@ -1089,6 +1091,7 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
           groupBy: query.groupBy,
           op,
           groupsAtValue: holders.map((g) => g.key),
+          totalGroups: perGroup.length,
           value,
           rowsAtValue: holders.reduce((n, g) => n + g.count, 0),
           totalDistinct: distinct.length,
