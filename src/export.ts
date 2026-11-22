@@ -83,7 +83,31 @@ export function resultToCsv(
           String(result.valuesUsed),
         ]),
       ].join("\n");
-    case "rank":
+    case "rank": {
+      if (result.groupBy) {
+        // One row: the ranked aggregate, naming the group(s) that
+        // hold it instead of a row count.
+        const opLabel: Record<string, string> = {
+          sum: "total",
+          mean: "average",
+          median: "median",
+          min: "minimum",
+          max: "maximum",
+          count: "count",
+        };
+        const what = `${opLabel[result.op ?? "sum"] ?? result.op} ${result.column}`;
+        return [
+          csvRow(["label", "value", "groups_at_value", "distinct_values", "rows_matched", "values_used"]),
+          csvRow([
+            `${ordinal(result.n)} ${result.direction} ${what} by ${result.groupBy}`,
+            result.value === null ? "" : String(result.value),
+            (result.groupsAtValue ?? []).join(" and "),
+            String(result.totalDistinct),
+            String(result.rowsMatched),
+            String(result.valuesUsed),
+          ]),
+        ].join("\n");
+      }
       return [
         csvRow(["label", "value", "rows_at_value", "distinct_values", "rows_matched", "values_used"]),
         csvRow([
@@ -95,6 +119,7 @@ export function resultToCsv(
           String(result.valuesUsed),
         ]),
       ].join("\n");
+    }
     case "groups": {
       const valueHeader = result.column ?? "count";
       // One column per group-by column, so a composite group splits
