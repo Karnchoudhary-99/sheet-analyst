@@ -132,6 +132,15 @@ export interface Filter {
   op: FilterOp;
   /** Raw value as written in the question (quotes stripped). */
   value: string;
+  /**
+   * When set, the filter compares the row's `column` cell against
+   * the same row's cell in this column instead of against `value`
+   * ("where revenue is greater than units"): `value` is then "".
+   * Only ordered comparisons (>, >=, <, <=) between two numeric or
+   * two date columns ever set it — a literal that happens to spell
+   * a column name stays a literal, and text columns abstain.
+   */
+  compareColumn?: string;
 }
 
 /**
@@ -469,6 +478,44 @@ export function findColumns(phrase: string, columns: ColumnInfo[]): ColumnInfo[]
     }
   }
   return hits.sort((a, b) => b.name.length - a.name.length);
+}
+
+/**
+ * The column a whole phrase names, if it names exactly one: the
+ * normalized phrase (or its singular form) must equal the column's
+ * normalized name (or its singular form). Stricter than
+ * findColumns, which is substring-based — "units" must not resolve
+ * to a "units sold" column, and "unit" may still match "units".
+ * Used only to tell a column reference on the right-hand side of a
+ * comparison ("revenue > units") apart from a literal value that
+ * happens to spell a column name ("region is revenue").
+ */
+function resolveExactColumn(
+  value: string,
+  columns: ColumnInfo[],
+): ColumnInfo | null {
+  const text = normalize(value);
+  if (text === "") return null;
+  const textSingular = text.split(" ").map(singular).join(" ");
+  const hits = columns.filter((col) => {
+    const name = normalize(col.name);
+    const nameSingular = name.split(" ").map(singular).join(" ");
+    return (
+      text === name ||
+      text === nameSingular ||
+      textSingular === name ||
+      textSingular === nameSingular
+    );
+  });
+  return hits.length === 1 ? hits[0]! : null;
+}
+
+/** Numeric (integer/number), date, or anything else — the only two
+ * pairings a cross-column comparison is allowed to make. */
+function columnKind(type: ColumnInfo["type"]): "number" | "date" | "other" {
+  if (type === "integer" || type === "number") return "number";
+  if (type === "date") return "date";
+  return "other";
 }
 
 const AGGREGATE_WORDS: { op: Exclude<AggregateOp, "count">; words: string[] }[] = [
@@ -959,7 +1006,45 @@ function parseWhereCondition(
         soft: false,
       };
     }
-    const value = m[2].trim().replace(/^["']|["']$/g, "");
+    const rawValue = m[2].trim();
+    const quoted = /^["'].*["']$/.test(rawValue);
+    const value = rawValue.replace(/^["']|["']$/g, "");
+    // A cross-column comparison: "where revenue is greater than
+    // units" compares two columns in the same row, not a column
+    // against a literal. Only ordered comparisons take this path,
+    // and only when the right-hand side names exactly one other
+    // column of a comparable kind — "=" and "!=" keep literal
+    // semantics ("where region is revenue" means a region literally
+    // called revenue), and a quoted right-hand side is always a
+    // literal, never a column reference. Text and boolean columns
+    // abstain: an alphabetical "greater than" would be a surprise,
+    // not an answer.
+    if (!quoted && (op === ">" || op === ">=" || op === "<" || op === "<=")) {
+      const rhs = resolveExactColumn(value, columns);
+      if (rhs !== null) {
+        if (rhs.name === hits[0].name) {
+          return {
+            error: `cannot compare "${hits[0].name}" with itself — "where ${condition}" needs two different columns`,
+            soft: false,
+          };
+        }
+        const leftKind = columnKind(hits[0].type);
+        const rightKind = columnKind(rhs.type);
+        if (leftKind !== rightKind || leftKind === "other") {
+          return {
+            error:
+              `cannot compare "${hits[0].name}" (${hits[0].type}) with "${rhs.name}" (${rhs.type}) — ` +
+              `a cross-column comparison needs two numbers or two dates`,
+            soft: false,
+          };
+        }
+        return {
+          filters: [
+            { column: hits[0].name, op, value: "", compareColumn: rhs.name },
+          ],
+        };
+      }
+    }
     return { filters: [{ column: hits[0].name, op, value }] };
   }
   return {

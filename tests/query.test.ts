@@ -24,6 +24,15 @@ const DATES = parseCsv(
     "2026-01-06,2023-07-15,South,199.92\n",
 );
 
+// A sheet with two date columns whose names do not contain each
+// other, so a date-to-date comparison has nothing ambiguous to trip on.
+const EMPLOYMENT = parseCsv(
+  "name,start_date,end_date,salary\n" +
+    "Ada,2024-03-01,2025-03-01,95000\n" +
+    "Grace,2023-07-15,2024-07-15,98000\n" +
+    "Alan,2025-01-20,2025-06-20,88000\n",
+);
+
 describe("parseQuestion aggregates", () => {
   it("parses a total", () => {
     const r = parseQuestion("total revenue", SALES);
@@ -370,6 +379,110 @@ describe("parseQuestion filters", () => {
     const r = parseQuestion("total revenue where revenue between 200 and 100", SALES);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/smaller value first/);
+  });
+});
+
+describe("parseQuestion cross-column comparisons", () => {
+  it("parses 'revenue greater than units' as a column-to-column filter", () => {
+    const r = parseQuestion("total revenue where revenue is greater than units", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "revenue", op: ">", value: "", compareColumn: "units" },
+      ]);
+    }
+  });
+
+  it("parses a cross-column filter on a rows question", () => {
+    const r = parseQuestion("show rows where units are greater than revenue", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "rows") {
+      expect(r.query.filters).toEqual([
+        { column: "units", op: ">", value: "", compareColumn: "revenue" },
+      ]);
+    }
+  });
+
+  it("parses a date-to-date comparison", () => {
+    const r = parseQuestion("how many rows where end_date is after start_date", EMPLOYMENT);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.filters).toEqual([
+        { column: "end_date", op: ">", value: "", compareColumn: "start_date" },
+      ]);
+    }
+  });
+
+  it("tolerates a singular right-hand side ('unit' matches 'units')", () => {
+    const r = parseQuestion("total revenue where revenue is greater than unit", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "revenue", op: ">", value: "", compareColumn: "units" },
+      ]);
+    }
+  });
+
+  it("composes a cross-column filter with a literal filter", () => {
+    const r = parseQuestion(
+      "total revenue where region is North and revenue is greater than units",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "=", value: "North" },
+        { column: "revenue", op: ">", value: "", compareColumn: "units" },
+      ]);
+    }
+  });
+
+  it("parses a cross-column filter inside an OR branch", () => {
+    const r = parseQuestion(
+      "how many rows where revenue is greater than units or region is South",
+      SALES,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.orGroups).toEqual([
+        [{ column: "revenue", op: ">", value: "", compareColumn: "units" }],
+        [{ column: "region", op: "=", value: "South" }],
+      ]);
+    }
+  });
+
+  it("abstains on comparing a column with itself", () => {
+    const r = parseQuestion("total revenue where revenue is greater than revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/with itself/);
+  });
+
+  it("abstains on a number-to-date comparison", () => {
+    const r = parseQuestion("how many rows where salary is greater than start date", STAFF);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/two numbers or two dates/);
+  });
+
+  it("abstains on an ordered comparison between text columns", () => {
+    const r = parseQuestion("how many rows where region is greater than product", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/two numbers or two dates/);
+  });
+
+  it("keeps '=' literal when the value spells a column name", () => {
+    const r = parseQuestion("how many rows where region is revenue", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "count") {
+      expect(r.query.filters).toEqual([{ column: "region", op: "=", value: "revenue" }]);
+    }
+  });
+
+  it("keeps a quoted right-hand side literal, never a column", () => {
+    const r = parseQuestion('total revenue where revenue > "units"', SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "aggregate") {
+      expect(r.query.filters).toEqual([{ column: "revenue", op: ">", value: "units" }]);
+    }
   });
 });
 

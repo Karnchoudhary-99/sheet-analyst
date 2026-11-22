@@ -365,6 +365,36 @@ export const GOLD_SET: EvalCase[] = [
   },
   {
     sheet: "sales",
+    question: "how many rows where revenue is greater than units",
+    expect: ["7 matching rows"],
+    note: "every valued row qualifies (240>12, 199.92>8, 149.97>3, 400>20, 124.95>5, 449.85>15, 224.91>9); the blank-units row drops out",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue where revenue is greater than units",
+    expect: ["1,789.6", "7 rows"],
+    note: "the 7 matching rows sum to the whole-sheet total minus the 0-revenue row, which has blank units and drops out",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows where revenue is less than units",
+    expect: ["No rows match"],
+    note: "no row's revenue is below its units — the never-holds direction answers 'no rows', it does not abstain",
+  },
+  {
+    sheet: "sales",
+    question: "show rows where revenue is greater than units",
+    expect: ["7 matching rows", "Widget C"],
+    note: "7 of the 8 rows match and fit under the 10-row default, so the answer says '7 matching rows' (no 'Showing … of …'); Widget C (449.85) is the largest of them",
+  },
+  {
+    sheet: "sales",
+    question: "how many rows where region is greater than product",
+    expect: "abstain",
+    note: "text columns cannot be ordered — an alphabetical 'greater than' would be a surprise, not an answer",
+  },
+  {
+    sheet: "sales",
     question: "what is the weather",
     expect: "abstain",
     note: "no aggregate, no column, no filter — nothing to answer from",
@@ -410,6 +440,12 @@ export const GOLD_SET: EvalCase[] = [
     question: "average salary where department is Data",
     expect: ["89,500"],
     note: "(88,000 + 91,000) / 2 = 89,500",
+  },
+  {
+    sheet: "employees",
+    question: "how many rows where salary is greater than start date",
+    expect: "abstain",
+    note: "a number and a date cannot be compared row by row — the kinds do not match",
   },
   {
     sheet: "employees",
@@ -1100,6 +1136,24 @@ export const GOLD_SET: EvalCase[] = [
     question: "how many outliers in hours",
     expect: ["No outliers in hours", "[2.5, 10.5]"],
     note: "hours 5, 7, 6, 8, 4, 9, 6, 7: Q1 = 5.5, Q3 = 7.5, fence [2.5, 10.5]",
+  },
+  {
+    sheet: "scores",
+    question: "how many rows where score is greater than hours",
+    expect: ["8 matching rows"],
+    note: "every student scored above the hours they studied (12>5, 8>7, 15>6, 11>8, 9>4, 13>9, 10>6, 1000>7)",
+  },
+  {
+    sheet: "scores",
+    question: "total score where score is greater than hours",
+    expect: ["1,078", "8 rows"],
+    note: "12 + 8 + 15 + 11 + 9 + 13 + 10 + 1000 = 1,078 over all 8 rows",
+  },
+  {
+    sheet: "scores",
+    question: "average score where score is greater than hours",
+    expect: ["134.75"],
+    note: "1,078 / 8 = 134.75 — Tim's 1000 pulls the average far above the typical score",
   },
   {
     sheet: "sales",

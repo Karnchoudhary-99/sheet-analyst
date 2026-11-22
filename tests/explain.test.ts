@@ -87,6 +87,25 @@ describe("explainQuestion", () => {
       expect(result.reason).toMatch(/no column named/);
     }
   });
+
+  it("names the compared column in a cross-column filter", () => {
+    const result = explainQuestion("total revenue where revenue is greater than units", sales);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.query).toEqual({
+        kind: "aggregate",
+        column: "revenue",
+        op: "sum",
+        filters: [{ column: "revenue", op: ">", value: "", compareColumn: "units" }],
+      });
+      const text = formatExplainText(
+        "total revenue where revenue is greater than units",
+        result,
+        sales,
+      );
+      expect(text).toContain("filters: revenue > units");
+    }
+  });
 });
 
 describe("describeQuery", () => {

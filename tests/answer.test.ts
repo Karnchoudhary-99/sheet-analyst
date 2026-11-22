@@ -239,6 +239,19 @@ describe("answerQuestion end to end", () => {
     );
   });
 
+  it("answers a total filtered by a cross-column comparison", () => {
+    expect(answerQuestion("total revenue where revenue is greater than units", SALES)).toBe(
+      "Total revenue is 1,114.84 (across 5 rows).",
+    );
+  });
+
+  it("abstains honestly on a cross-column comparison it cannot make", () => {
+    expect(answerQuestion("how many rows where region is greater than product", SALES)).toBe(
+      "I can't answer that from this data: cannot compare \"region\" (text) with \"product\" (text) — a cross-column comparison needs two numbers or two dates. " +
+        "Columns available: date, region, product, units, revenue.",
+    );
+  });
+
   it("answers a grouped question", () => {
     const out = answerQuestion("total revenue by region", SALES);
     expect(out).toContain("Total revenue by region:");
@@ -540,6 +553,14 @@ describe("composeAnswer share", () => {
     expect(answer).toBe(
       "2 of 6 rows (33.33%) match region is North and revenue is greater than 100.",
     );
+  });
+
+  it("renders a cross-column filter in words in a row-count share", () => {
+    const answer = answerQuestion(
+      "what share of rows where revenue is greater than units",
+      SALES,
+    );
+    expect(answer).toBe("5 of 6 rows (83.33%) match revenue is greater than units.");
   });
 
   it("renders a comparison operator in words in a value share", () => {

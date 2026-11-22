@@ -120,6 +120,72 @@ describe("executeQuery filters", () => {
   });
 });
 
+describe("executeQuery cross-column comparisons", () => {
+  it("totals over rows where one column beats another", () => {
+    const r = ask("total revenue where revenue is greater than units");
+    if (r.kind === "scalar") {
+      // Every valued row qualifies (240>12, 199.92>8, 149.97>3,
+      // 400>20, 124.95>5); the blank-units row drops out.
+      expect(r.value).toBeCloseTo(1114.84, 2);
+      expect(r.rowsMatched).toBe(5);
+    }
+  });
+
+  it("counts rows where one column beats another", () => {
+    const r = ask("how many rows where revenue is greater than units");
+    if (r.kind === "scalar") expect(r.value).toBe(5);
+  });
+
+  it("finds no rows when the comparison never holds", () => {
+    const r = ask("how many rows where units are greater than revenue");
+    if (r.kind === "scalar") expect(r.value).toBe(0);
+    const r2 = ask("how many rows where revenue is less than units");
+    if (r2.kind === "scalar") expect(r2.value).toBe(0);
+  });
+
+  it("never matches a row with a blank cell on either side", () => {
+    // The last row has revenue 0 and blank units: 0 is not greater
+    // than a missing value, and a missing value is not greater than 0.
+    const r = ask("how many rows where revenue is less than or equal to units");
+    if (r.kind === "scalar") expect(r.value).toBe(0);
+    const r2 = ask("how many rows where units are greater than revenue");
+    if (r2.kind === "scalar") expect(r2.value).toBe(0);
+  });
+
+  it("lists the matching rows for a rows question", () => {
+    const r = ask("show rows where revenue is greater than units");
+    expect(r.kind).toBe("rows");
+    if (r.kind === "rows") {
+      expect(r.totalMatched).toBe(5);
+      expect(r.rows).toHaveLength(5);
+      expect(r.rows[0].product).toBe("Widget A");
+    }
+  });
+
+  it("compares two date columns row by row", () => {
+    const employment = parseCsv(
+      "name,start_date,end_date,salary\n" +
+        "Ada,2024-03-01,2025-03-01,95000\n" +
+        "Grace,2023-07-15,2024-07-15,98000\n" +
+        "Alan,2025-01-20,2025-06-20,88000\n",
+    );
+    const r = ask("how many rows where end_date is after start_date", employment);
+    if (r.kind === "scalar") expect(r.value).toBe(3);
+    const r2 = ask("how many rows where start_date is after end_date", employment);
+    if (r2.kind === "scalar") expect(r2.value).toBe(0);
+  });
+
+  it("composes a cross-column filter with a literal one", () => {
+    const r = ask("total revenue where region is North and revenue is greater than units");
+    if (r.kind === "scalar") {
+      // North rows with valued units: 240 + 149.97 (the 0-revenue
+      // row has blank units and drops out).
+      expect(r.value).toBeCloseTo(389.97, 2);
+      expect(r.rowsMatched).toBe(2);
+    }
+  });
+});
+
 describe("executeQuery compound filters", () => {
   it("ANDs two equality conditions", () => {
     const r = ask("total revenue where region is North and product is Widget A");

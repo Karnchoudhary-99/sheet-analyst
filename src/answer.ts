@@ -218,7 +218,7 @@ function describeFilter(filter: Filter): string {
     "<=": "is at most",
     contains: "contains",
   };
-  return `${filter.column} ${opWord[filter.op]} ${filter.value}`;
+  return `${filter.column} ${opWord[filter.op]} ${filter.compareColumn ?? filter.value}`;
 }
 
 /**

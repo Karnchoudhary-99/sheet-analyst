@@ -380,6 +380,57 @@ function groupKey(
   return { mapKey: "(no date)", label: "(no date)", sortKey: "\uFFFF" };
 }
 
+/**
+ * Compare two cells from the same row — the engine side of a
+ * cross-column filter ("revenue > units"). Both cells must hold a
+ * usable value: a blank or unparseable cell never matches, so a row
+ * with no units is not "revenue greater than units", it is no
+ * answer for that row. Numbers compare numerically, dates by day,
+ * text by case-insensitive equality (ordered text comparisons are
+ * refused by the parser, so they return false here too).
+ */
+function compareCells(
+  a: string,
+  infoA: ColumnInfo,
+  op: Filter["op"],
+  b: string,
+  infoB: ColumnInfo,
+): boolean {
+  if (isNullValue(a) || isNullValue(b)) return false;
+  const aNum = infoA.type === "integer" || infoA.type === "number";
+  const bNum = infoB.type === "integer" || infoB.type === "number";
+  if (aNum && bNum) {
+    const x = toNumber(a);
+    const y = toNumber(b);
+    if (x === null || y === null) return false;
+    if (op === "=") return x === y;
+    if (op === "!=") return x !== y;
+    if (op === ">") return x > y;
+    if (op === ">=") return x >= y;
+    if (op === "<") return x < y;
+    if (op === "<=") return x <= y;
+    return false;
+  }
+  if (infoA.type === "date" && infoB.type === "date") {
+    const x = toEpoch(a);
+    const y = toEpoch(b);
+    if (x === null || y === null) return false;
+    if (op === "=") return x === y;
+    if (op === "!=") return x !== y;
+    if (op === ">") return x > y;
+    if (op === ">=") return x >= y;
+    if (op === "<") return x < y;
+    if (op === "<=") return x <= y;
+    return false;
+  }
+  const x = a.trim().toLowerCase();
+  const y = b.trim().toLowerCase();
+  if (op === "=") return x === y;
+  if (op === "!=") return x !== y;
+  if (op === "contains") return x.includes(y);
+  return false;
+}
+
 function compareValues(cell: string, info: ColumnInfo, op: Filter["op"], raw: string): boolean {
   if (isNullValue(cell)) return false;
   if (info.type === "integer" || info.type === "number") {
@@ -433,6 +484,17 @@ export function applyFilters(
     fs.every((f) => {
       const idx = colIndex.get(f.column);
       if (idx === undefined) return false;
+      if (f.compareColumn !== undefined) {
+        const other = colIndex.get(f.compareColumn);
+        if (other === undefined) return false;
+        return compareCells(
+          row[idx] ?? "",
+          schema[idx],
+          f.op,
+          row[other] ?? "",
+          schema[other],
+        );
+      }
       return compareValues(row[idx] ?? "", schema[idx], f.op, f.value);
     });
   return parsed.rows.filter(
