@@ -90,6 +90,16 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
+    case "groupextreme": {
+      const what = `${OP_LABEL[query.op] ?? query.op} of ${query.column}`;
+      return [
+        `which ${query.groupBy} has the ${query.direction} ${what}`,
+        `operation: group extreme (${query.direction})`,
+        `column: ${query.column}`,
+        `group by: ${query.groupBy}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
+      ];
+    }
     case "top": {
       const bucket = query.bucket ? `, bucketed by ${query.bucket}` : "";
       const grouped = query.groupBy
