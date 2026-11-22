@@ -255,6 +255,17 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
+    case "periodchange": {
+      const what = `${OP_LABEL[query.op] ?? query.op} ${query.column}`;
+      return [
+        `change in ${what} by ${query.bucket}`,
+        "operation: period change",
+        `column: ${query.column}`,
+        `date column: ${query.dateColumn}`,
+        `time bucket: ${query.bucket}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
+      ];
+    }
     case "aboveBelow":
       return [
         `rows with ${query.column} ${query.direction} the ${query.baseline}`,
