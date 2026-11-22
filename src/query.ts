@@ -196,6 +196,19 @@ export type Query =
       orGroups?: Filter[][];
     }
   | {
+      kind: "headtohead";
+      /** The column the aggregate is read from, or null for a row-count comparison. */
+      column: string | null;
+      op: AggregateOp;
+      /** The categorical column both sides belong to ("region" in "North vs South"). */
+      groupColumn: string;
+      /** Each side's value, spelled as it appears in the sheet. */
+      sideA: string;
+      sideB: string;
+      filters: Filter[];
+      orGroups?: Filter[][];
+    }
+  | {
       kind: "share";
       /**
        * The column being shared out, or null for a row-count share
@@ -1469,9 +1482,9 @@ function resolveInValueList(
   if (findColumns(value, columns).length > 0) return null;
   // "for each department" is the group-by phrase.
   if (/^each\b/i.test(value)) return null;
-  // "compare rows in Jan vs Feb": the "in" belongs to the
-  // comparison's period phrasing, not to a filter.
-  if (/\bvs\b/i.test(value)) return null;
+  // "compare rows in Jan vs Feb" (or "versus Feb"): the "in" belongs
+  // to the comparison's phrasing, not to a filter.
+  if (/\b(?:vs|versus)\b/i.test(value)) return null;
   // "how many outliers in profit", "how many duplicates in profit":
   // the "in" names the subject column those questions read — a word
   // that is not a column is their "no column named" abstention, not
@@ -1686,6 +1699,198 @@ function tryParseCorrelation(
       kind: "correlation",
       columnA: distinct[0].name,
       columnB: distinct[1].name,
+      filters,
+      orGroups,
+    },
+  };
+}
+
+/**
+ * Try to read a head-to-head group comparison ("compare total
+ * revenue in North vs South", "total revenue North vs South",
+ * "compare average salary in Engineering vs Data", "compare rows
+ * in North vs South"). Returns null when the question shows no
+ * head-to-head intent; otherwise a headtohead query, or an
+ * abstention when the two sides or the target cannot be pinned
+ * down.
+ *
+ * Both sides must be values of the same text column — "North vs
+ * Widget A" spans two columns and has no single grouping to
+ * compare. A bare aggregate reads as the total ("compare revenue
+ * North vs South" compares total revenue); a "rows" question
+ * compares row counts. The two sides must differ, and the group
+ * column may be restated ("compare total revenue by region in
+ * North vs South").
+ *
+ * Questions naming any period ("compare revenue Jan 2026 vs Feb
+ * 2026") belong to the period comparison and are left alone, as
+ * are correlation, share, percent, distribution and trend
+ * questions that happen to use "vs".
+ */
+function tryParseHeadToHead(
+  text: string,
+  columns: ColumnInfo[],
+  parsed: ParsedCsv,
+  filters: Filter[],
+  orGroups?: Filter[][],
+): ParseResult | null {
+  const norm = normalize(text);
+  const vs = /\b(?:vs|versus)\b/.exec(norm);
+  if (!vs) return null;
+  // Any period mention belongs to the period comparison —
+  // "compare revenue Jan vs Feb" must keep reaching it, and a
+  // half-named period comparison must get its wording, not this
+  // parser's.
+  if (findPeriodMentions(norm).length > 0) return null;
+  // A "vs" inside a question of another kind is that kind's
+  // business, not a head-to-head — "correlation between revenue
+  // vs units", "what share of revenue is North vs South".
+  if (/\b(correlat\w*|share|percent|distribution|histogram|trend)\b/.test(norm)) {
+    return null;
+  }
+
+  const left = norm.slice(0, vs.index).trim();
+  const right = norm.slice(vs.index + vs[0].length).trim();
+  if (left === "" || right === "") {
+    return {
+      ok: false,
+      reason:
+        "a head-to-head needs two groups named — e.g. 'compare total revenue in North vs South'",
+    };
+  }
+
+  // The right side is one value, spelled as it appears in the
+  // sheet ("South", "Widget B"); a leading "the" is just noise.
+  const rightValue = right.replace(/^the\s+/, "");
+  const sideB = resolveShareValue(rightValue, columns, parsed);
+  if ("error" in sideB) {
+    return {
+      ok: false,
+      reason: `could not tell which two groups to compare — ${sideB.error}`,
+    };
+  }
+
+  // The left side ends with the other value ("... in North",
+  // "... for Widget A", or bare "... North"): the longest known
+  // categorical value the left side ends with wins, so "Widget A"
+  // beats a shorter value and a multi-word value is never split.
+  const escapeRegExp = (s: string): string =>
+    s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches: { column: ColumnInfo; value: string; prefix: string }[] = [];
+  for (const col of columns) {
+    if (col.type !== "text" && col.type !== "boolean") continue;
+    const idx = columns.indexOf(col);
+    for (const value of distinctValues(parsed, idx)) {
+      const m = new RegExp(
+        `(?:^|\\s)(?:in\\s+|for\\s+)?${escapeRegExp(value)}\\s*$`,
+      ).exec(left);
+      if (m) matches.push({ column: col, value, prefix: left.slice(0, m.index).trim() });
+    }
+  }
+  if (matches.length === 0) {
+    return {
+      ok: false,
+      reason:
+        "could not tell which two groups to compare — say which rows, e.g. 'compare total revenue in North vs South'",
+    };
+  }
+  const longest = Math.max(...matches.map((m) => m.value.length));
+  const best = matches.filter((m) => m.value.length === longest);
+  const owners = [
+    ...new Map(best.map((m) => [m.column.name, m.column])).values(),
+  ];
+  if (owners.length > 1) {
+    return {
+      ok: false,
+      reason: `"${best[0]!.value}" appears in several columns (${owners.map((c) => c.name).join(", ")}) — say which one, e.g. "where ${owners[0]!.name} is ${best[0]!.value}"`,
+    };
+  }
+  const sideAMatch = best[0]!;
+  const groupColumn = sideAMatch.column;
+  if (sideB.filter.column !== groupColumn.name) {
+    return {
+      ok: false,
+      reason: `"${sideB.filter.value}" is in ${sideB.filter.column} but the other side is in ${groupColumn.name} — a head-to-head needs one column; say which one, e.g. "where ${groupColumn.name} is ${sideB.filter.value}"`,
+    };
+  }
+  const sideAValue = sheetSpelling(
+    sideAMatch.value,
+    groupColumn,
+    columns,
+    parsed,
+  );
+  const sideBValue = sideB.filter.value;
+  if (sideAValue.toLowerCase() === sideBValue.toLowerCase()) {
+    return {
+      ok: false,
+      reason: `both sides are ${sideAValue} — compare two different groups`,
+    };
+  }
+
+  // The rest of the left side names the aggregate and the column
+  // ("compare total revenue", "compare average salary", "compare
+  // rows"); a restated group-by ("by region") is just the grouping
+  // again, so it is dropped before the column is read.
+  let rest = sideAMatch.prefix
+    .replace(/\bcompare\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  rest = rest
+    .replace(
+      new RegExp(
+        `\\b(?:by|per)\\s+${escapeRegExp(normalize(groupColumn.name))}\\b`,
+      ),
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/\brows?\b/.test(rest) && findColumns(rest, columns).length === 0) {
+    return {
+      ok: true,
+      query: {
+        kind: "headtohead",
+        column: null,
+        op: "count",
+        groupColumn: groupColumn.name,
+        sideA: sideAValue,
+        sideB: sideBValue,
+        filters,
+        orGroups,
+      },
+    };
+  }
+  const op = detectAggregateOp(rest) ?? "sum";
+  const candidates = findColumns(rest, columns).filter(
+    (c) => c.name !== groupColumn.name,
+  );
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to compare — matches ${candidates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = candidates[0]!;
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `comparing needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: {
+      kind: "headtohead",
+      column: column.name,
+      op,
+      groupColumn: groupColumn.name,
+      sideA: sideAValue,
+      sideB: sideBValue,
       filters,
       orGroups,
     },
@@ -3328,6 +3533,15 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // Only set when a where clause actually used "or": an empty
   // array would change every parsed query's shape for no reason.
   const orGroups = extracted.orGroups.length > 0 ? extracted.orGroups : undefined;
+
+  // Head-to-head group comparison: two groups of one column
+  // ("compare total revenue in North vs South"). Once the question
+  // shows head-to-head intent it is parsed here or abstained —
+  // falling through would answer the plain total instead of the
+  // comparison asked for, and the period comparison below would
+  // read the "vs" as two periods.
+  const headToHead = tryParseHeadToHead(extracted.rest, columns, parsed, filters, orGroups);
+  if (headToHead) return headToHead;
 
   // Period comparison: two named periods ("compare revenue Jan 2026
   // vs Feb 2026"). Once the question shows comparison intent it is
