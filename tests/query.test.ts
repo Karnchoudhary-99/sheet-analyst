@@ -1556,6 +1556,125 @@ describe("parseQuestion period comparison", () => {
   });
 });
 
+describe("parseQuestion head-to-head", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,10,200.00\n" +
+      "2026-01-12,South,Widget B,5,124.95\n" +
+      "2026-02-03,North,Widget B,12,299.88\n" +
+      "2026-02-10,South,Widget A,6,120.00\n",
+  );
+
+  it("parses 'compare total revenue in North vs South'", () => {
+    const r = parseQuestion("compare total revenue in North vs South", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "headtohead",
+        column: "revenue",
+        op: "sum",
+        groupColumn: "region",
+        sideA: "North",
+        sideB: "South",
+        filters: [],
+      },
+    });
+  });
+
+  it("parses a bare 'vs' without the word compare", () => {
+    const r = parseQuestion("total revenue North vs South", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "headtohead") {
+      expect(r.query.sideA).toBe("North");
+      expect(r.query.sideB).toBe("South");
+      expect(r.query.op).toBe("sum");
+    }
+  });
+
+  it("parses 'versus' and an average over another column", () => {
+    const r = parseQuestion("compare average salary in Engineering versus Data", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "headtohead") {
+      expect(r.query.column).toBe("salary");
+      expect(r.query.op).toBe("mean");
+      expect(r.query.groupColumn).toBe("department");
+      expect(r.query.sideA).toBe("Engineering");
+      expect(r.query.sideB).toBe("Data");
+    }
+  });
+
+  it("parses multi-word values and a where clause on both sides", () => {
+    const r = parseQuestion(
+      "compare total revenue for Widget A vs Widget B where region is North",
+      SALES,
+    );
+    // The where clause applies to both sides; the sides are the
+    // products, not the region.
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "headtohead") {
+      expect(r.query.groupColumn).toBe("product");
+      expect(r.query.sideA).toBe("Widget A");
+      expect(r.query.sideB).toBe("Widget B");
+      expect(r.query.filters).toEqual([
+        { column: "region", op: "=", value: "North" },
+      ]);
+    }
+  });
+
+  it("parses a row-count head-to-head and a restated group-by", () => {
+    const rows = parseQuestion("compare rows in North vs South", SALES);
+    expect(rows.ok).toBe(true);
+    if (rows.ok && rows.query.kind === "headtohead") {
+      expect(rows.query.column).toBe(null);
+      expect(rows.query.op).toBe("count");
+    }
+    const by = parseQuestion("compare total revenue by region in North vs South", SALES);
+    expect(by.ok).toBe(true);
+    if (by.ok && by.query.kind === "headtohead") {
+      expect(by.query.column).toBe("revenue");
+      expect(by.query.groupColumn).toBe("region");
+    }
+  });
+
+  it("abstains when both sides are the same group", () => {
+    const r = parseQuestion("compare total revenue in North vs North", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/both sides are North/);
+  });
+
+  it("abstains on an unknown side value", () => {
+    const r = parseQuestion("compare total revenue in North vs Atlantis", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell which two groups/);
+  });
+
+  it("abstains when the sides span two columns", () => {
+    const r = parseQuestion("compare total revenue in North vs Widget A", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs one column/);
+  });
+
+  it("abstains when the compared column is not numeric", () => {
+    const r = parseQuestion("compare product in North vs South", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("leaves period comparisons and correlations alone", () => {
+    const p = parseQuestion("compare revenue Jan 2026 vs Feb 2026", MONTHLY);
+    expect(p.ok).toBe(true);
+    if (p.ok) expect(p.query.kind).toBe("comparison");
+    const c = parseQuestion("correlation between revenue vs units", SALES);
+    expect(c.ok).toBe(true);
+    if (c.ok) expect(c.query.kind).toBe("correlation");
+  });
+
+  it("does not turn a share question into a head-to-head", () => {
+    const r = parseQuestion("what share of revenue is North vs South", SALES);
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe("parseQuestion share", () => {
   it("parses 'what share of revenue is North'", () => {
     const r = parseQuestion("what share of revenue is North", SALES);

@@ -274,6 +274,50 @@ describe("describeQuery comparison", () => {
   });
 });
 
+describe("describeQuery head-to-head", () => {
+  it("describes both sides, the group column and the operation", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,12,240.00\n" +
+        "2026-01-06,South,Widget B,8,199.92\n",
+    );
+    const explained = explainQuestion(
+      "compare total revenue in North vs South where product is Widget A",
+      sales,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "compare total of revenue: North vs South",
+      "operation: sum",
+      "column: revenue",
+      "group column: region",
+      "side A: North",
+      "side B: South",
+      "filters: product = Widget A",
+    ]);
+  });
+
+  it("describes a row-count head-to-head without a column line", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n" +
+        "2026-01-05,North,Widget A,12,240.00\n" +
+        "2026-01-06,South,Widget B,8,199.92\n",
+    );
+    const explained = explainQuestion("compare rows in North vs South", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "compare row count: North vs South",
+      "operation: count",
+      "group column: region",
+      "side A: North",
+      "side B: South",
+      "filters: none",
+    ]);
+  });
+});
+
 describe("describeQuery share", () => {
   it("describes a value share with its column and filter", () => {
     const sales = parseCsv(

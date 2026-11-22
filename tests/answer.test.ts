@@ -659,6 +659,63 @@ describe("composeAnswer comparison", () => {
   });
 });
 
+describe("composeAnswer head-to-head", () => {
+  it("names the higher side with the difference and percent", () => {
+    expect(answerQuestion("compare total revenue in North vs South", SALES)).toBe(
+      "Total revenue was higher in North (389.97) than in South (199.92) by 190.05 (95.06% higher).",
+    );
+  });
+
+  it("names the higher side whichever order the question asks", () => {
+    expect(answerQuestion("compare total revenue in South vs North", SALES)).toBe(
+      "Total revenue was higher in North (389.97) than in South (199.92) by 190.05 (95.06% higher).",
+    );
+  });
+
+  it("compares averages and row counts", () => {
+    expect(answerQuestion("compare average revenue in North vs South", SALES)).toBe(
+      "Average revenue was higher in South (199.92) than in North (129.99) by 69.93 (53.8% higher).",
+    );
+    expect(answerQuestion("compare rows in North vs East", SALES)).toBe(
+      "Row count was higher in North (3) than in East (1) by 2 (200% higher).",
+    );
+  });
+
+  it("says so plainly when the sides tie", () => {
+    const tied = parseCsv(
+      "region,product,revenue\n" + "North,Widget A,100\n" + "South,Widget B,100\n",
+    );
+    expect(answerQuestion("compare total revenue in North vs South", tied)).toBe(
+      "Total revenue was the same in North and South at 100.",
+    );
+  });
+
+  it("flags a side where some rows had no usable value", () => {
+    // North units are 12, 3 and one blank — the average is over 2 values, not 3 rows.
+    expect(answerQuestion("compare average units in North vs South", SALES)).toBe(
+      "Average units was higher in South (8) than in North (7.5) by 0.5 (6.67% higher). (2 of 3 had a value in North)",
+    );
+  });
+
+  it("explains when a side has no usable values instead of inventing a comparison", () => {
+    const blank = parseCsv(
+      "region,product,revenue\n" + "North,Widget A,\n" + "South,Widget B,100\n",
+    );
+    expect(answerQuestion("compare total revenue in North vs South", blank)).toBe(
+      "I could not compare the total revenue — North has 1 row but none with a usable value, so there is nothing to compare against.",
+    );
+  });
+
+  it("reports the difference without a percent when the lower side is zero", () => {
+    const zero = parseCsv(
+      "region,product,revenue\n" + "North,Widget A,0\n" + "South,Widget B,100\n",
+    );
+    expect(answerQuestion("compare total revenue in North vs South", zero)).toBe(
+      "Total revenue was higher in South (100) than in North (0) by 100. No percent is possible — the North total revenue was 0.",
+    );
+  });
+});
+
 describe("composeAnswer share", () => {
   it("states a value share with the subset and the whole-sheet total", () => {
     const answer = answerQuestion("what share of revenue is North", SALES);

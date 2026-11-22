@@ -76,6 +76,17 @@ export const EVAL_GATE = 0.8;
  * Katherine 91,000, average 93,000) is −5,000 (−5.10%). A
  * comparison naming one period, or the same period twice, abstains.
  *
+ * head-to-head — sales total revenue: South 649.77 vs North
+ * 389.97 is +259.80 (66.62% higher than North); East 624.91 vs
+ * West 124.95 is +499.96 (400.13%); average revenue South 324.89
+ * vs North 129.99 is +194.89 (149.93%); rows North 3 vs South 2
+ * is +1 (50%); employees average salary Engineering 96,500 vs
+ * Data 89,500 is +7,000 (7.82%), and the answer notes only 2 of
+ * the 3 Engineering rows had a salary; scores total: Science
+ * 1,039 vs Math 39 is +1,000 (2,564.1% — Tim's 1000 dominates).
+ * A head-to-head with an unknown value, the same group twice, or
+ * sides from two columns abstains.
+ *
  * share — sales revenue by region: North 389.97 / 1,789.60 = 21.79%,
  * South 649.77 / 1,789.60 = 36.31%; North is 3 of 8 rows (37.5%);
  * employees salary: Engineering 193,000 / 372,000 = 51.88%. A share
@@ -570,6 +581,66 @@ export const GOLD_SET: EvalCase[] = [
     question: "compare revenue Jan 2026 vs Jan 2026",
     expect: "abstain",
     note: "both periods are the same month",
+  },
+  {
+    sheet: "sales",
+    question: "compare total revenue in North vs South",
+    expect: ["higher in South", "649.77", "389.97", "259.8", "66.62%"],
+    note: "South 649.77 vs North 389.97: +259.80, 259.80/389.97 = 66.62%",
+  },
+  {
+    sheet: "sales",
+    question: "compare average revenue in North vs South",
+    expect: ["higher in South", "324.89", "129.99", "194.89", "149.93%"],
+    note: "South avg 649.77/2 = 324.89 (the double prints .89), North avg 389.97/3 = 129.99: +194.89, 194.89/129.99 = 149.93%",
+  },
+  {
+    sheet: "sales",
+    question: "compare rows in North vs South",
+    expect: ["higher in North (3)", "South (2)", "by 1", "50% higher"],
+    note: "North has 3 rows, South 2: +1, 1/2 = 50%",
+  },
+  {
+    sheet: "sales",
+    question: "total revenue North vs South",
+    expect: ["higher in South", "649.77", "66.62%"],
+    note: "a bare 'vs' without 'compare' is the same head-to-head",
+  },
+  {
+    sheet: "employees",
+    question: "compare average salary in Engineering vs Data",
+    expect: ["higher in Engineering", "96,500", "89,500", "7,000", "7.82%"],
+    note: "Engineering avg (95,000 + 98,000)/2 = 96,500, Data avg (88,000 + 91,000)/2 = 89,500: +7,000, 7000/89500 = 7.82%",
+  },
+  {
+    sheet: "sales",
+    question: "compare total revenue in East vs West",
+    expect: ["higher in East", "624.91", "124.95", "499.96", "400.13%"],
+    note: "East 624.91 vs West 124.95: +499.96, 499.96/124.95 = 400.13%",
+  },
+  {
+    sheet: "scores",
+    question: "compare total score in Math vs Science",
+    expect: ["higher in Science", "1,039", "39", "1,000", "2,564.1%"],
+    note: "Math 12 + 8 + 9 + 10 = 39, Science 15 + 11 + 13 + 1000 = 1,039: +1,000, 1000/39 = 2,564.10%",
+  },
+  {
+    sheet: "sales",
+    question: "compare total revenue in North vs Atlantis",
+    expect: "abstain",
+    note: "Atlantis is in no column — a head-to-head needs two real groups",
+  },
+  {
+    sheet: "sales",
+    question: "compare total revenue in North vs North",
+    expect: "abstain",
+    note: "both sides are the same group",
+  },
+  {
+    sheet: "sales",
+    question: "compare total revenue in North vs Widget A",
+    expect: "abstain",
+    note: "the sides span two columns (region and product)",
   },
   {
     sheet: "sales",

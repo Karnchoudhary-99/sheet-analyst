@@ -12,7 +12,11 @@
  *   one row of `column_a,column_b,correlation,paired_rows,rows_matched`
  *   (empty correlation when it could not be computed); a comparison
  *   becomes one row per period plus `change` and `percent_change`
- *   rows (empty when the comparison could not be computed); a share
+ *   rows (empty when the comparison could not be computed); a
+ *   head-to-head becomes one row per side plus `difference` and
+ *   `percent_higher` rows (empty when a side has no usable value,
+ *   and `percent_higher` also empty when the lower side is zero);
+ *   a share
  *   becomes one row of
  *   `label,share,subset_value,total_value,subset_rows,total_rows`
  *   where `share` is the fraction (0.35 for 35%, empty when the
@@ -176,6 +180,32 @@ export function resultToCsv(
         csvRow([
           "percent_change",
           result.pctChange === null ? "" : String(result.pctChange),
+          "",
+          "",
+        ]),
+      ].join("\n");
+    }
+    case "headtohead": {
+      const sideRow = (s: { label: string; value: number | null; rows: number; valuesUsed: number }) =>
+        csvRow([
+          s.label,
+          s.value === null ? "" : String(s.value),
+          String(s.rows),
+          String(s.valuesUsed),
+        ]);
+      return [
+        csvRow(["side", "value", "rows", "values_used"]),
+        sideRow(result.sideA),
+        sideRow(result.sideB),
+        csvRow([
+          "difference",
+          result.difference === null ? "" : String(result.difference),
+          "",
+          "",
+        ]),
+        csvRow([
+          "percent_higher",
+          result.pctHigher === null ? "" : String(result.pctHigher),
           "",
           "",
         ]),

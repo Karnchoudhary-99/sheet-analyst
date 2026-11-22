@@ -1084,6 +1084,87 @@ describe("executeQuery comparison", () => {
   });
 });
 
+describe("executeQuery head-to-head", () => {
+  it("compares totals, difference and percent from the lower side", () => {
+    const r = ask("compare total revenue in North vs South");
+    expect(r.kind).toBe("headtohead");
+    if (r.kind !== "headtohead") return;
+    expect(r.sideA).toEqual({ label: "North", value: 389.97, rows: 3, valuesUsed: 3 });
+    expect(r.sideB).toEqual({ label: "South", value: 199.92, rows: 1, valuesUsed: 1 });
+    expect(r.difference).toBeCloseTo(190.05, 2);
+    expect(r.pctHigher).toBeCloseTo(95.06, 2);
+    expect(r.rowsMatched).toBe(4);
+  });
+
+  it("reads the percent from the lower side whichever order is asked", () => {
+    const r = ask("compare total revenue in South vs North");
+    if (r.kind !== "headtohead") throw new Error("wrong kind");
+    expect(r.sideA.value).toBeCloseTo(199.92, 2);
+    expect(r.sideB.value).toBeCloseTo(389.97, 2);
+    expect(r.difference).toBeCloseTo(190.05, 2);
+    expect(r.pctHigher).toBeCloseTo(95.06, 2);
+  });
+
+  it("compares averages over the values each side actually has", () => {
+    const r = ask("compare average revenue in North vs South");
+    if (r.kind !== "headtohead") throw new Error("wrong kind");
+    expect(r.sideA.value).toBeCloseTo(129.99, 2);
+    expect(r.sideB.value).toBeCloseTo(199.92, 2);
+    expect(r.difference).toBeCloseTo(69.93, 2);
+    expect(r.pctHigher).toBeCloseTo(53.8, 2);
+  });
+
+  it("compares row counts when no column is named", () => {
+    const r = ask("compare rows in North vs East");
+    if (r.kind !== "headtohead") throw new Error("wrong kind");
+    expect(r.column).toBeNull();
+    expect(r.sideA.value).toBe(3);
+    expect(r.sideB.value).toBe(1);
+    expect(r.difference).toBe(2);
+    expect(r.pctHigher).toBe(200);
+  });
+
+  it("applies a where clause to both sides", () => {
+    const r = ask("compare total revenue in North vs East where product is Widget A");
+    if (r.kind !== "headtohead") throw new Error("wrong kind");
+    expect(r.sideA).toEqual({ label: "North", value: 240, rows: 2, valuesUsed: 2 });
+    expect(r.sideB).toEqual({ label: "East", value: 400, rows: 1, valuesUsed: 1 });
+    expect(r.difference).toBe(160);
+    expect(r.pctHigher).toBeCloseTo(66.67, 2);
+  });
+
+  it("leaves difference and percent null when a side has no usable values", () => {
+    const blank = parseCsv(
+      "region,product,revenue\n" + "North,Widget A,\n" + "South,Widget B,100\n",
+    );
+    const r = ask("compare total revenue in North vs South", blank);
+    if (r.kind !== "headtohead") throw new Error("wrong kind");
+    expect(r.sideA.value).toBeNull();
+    expect(r.sideA.rows).toBe(1);
+    expect(r.sideA.valuesUsed).toBe(0);
+    expect(r.sideB.value).toBe(100);
+    expect(r.difference).toBeNull();
+    expect(r.pctHigher).toBeNull();
+  });
+
+  it("leaves percent null when the lower side totals zero, and zero when the sides tie", () => {
+    const zero = parseCsv(
+      "region,product,revenue\n" + "North,Widget A,0\n" + "South,Widget B,100\n",
+    );
+    const z = ask("compare total revenue in North vs South", zero);
+    if (z.kind !== "headtohead") throw new Error("wrong kind");
+    expect(z.difference).toBe(100);
+    expect(z.pctHigher).toBeNull();
+    const tied = parseCsv(
+      "region,product,revenue\n" + "North,Widget A,100\n" + "South,Widget B,100\n",
+    );
+    const t = ask("compare total revenue in North vs South", tied);
+    if (t.kind !== "headtohead") throw new Error("wrong kind");
+    expect(t.difference).toBe(0);
+    expect(t.pctHigher).toBe(0);
+  });
+});
+
 describe("executeQuery share", () => {
   it("shares out a filtered subset's total against the whole sheet", () => {
     const r = ask("what share of revenue is North");
