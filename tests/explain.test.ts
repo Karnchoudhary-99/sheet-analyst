@@ -619,6 +619,37 @@ describe("describeQuery period change", () => {
   });
 });
 
+describe("describeQuery group share", () => {
+  it("describes the column, group column and filters", () => {
+    const explained = explainQuestion(
+      "revenue share by region where product is Widget A",
+      sales,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "share of total revenue by region",
+      "operation: group share",
+      "column: revenue",
+      "group by: region",
+      "filters: product = Widget A",
+    ]);
+  });
+
+  it("describes an unfiltered group share with no filters", () => {
+    const explained = explainQuestion("revenue share by region", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "share of total revenue by region",
+      "operation: group share",
+      "column: revenue",
+      "group by: region",
+      "filters: none",
+    ]);
+  });
+});
+
 describe("describeQuery missing values", () => {
   it("describes a single-column count", () => {
     const lines = describeQuery({

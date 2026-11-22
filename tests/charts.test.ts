@@ -476,3 +476,65 @@ describe("renderResultChart period change", () => {
     expect(renderResultChartSvg(empty)).toBeNull();
   });
 });
+
+describe("renderResultChart group share", () => {
+  const shared: QueryResult = {
+    kind: "groupshare",
+    groupBy: "region",
+    column: "revenue",
+    groups: [
+      { key: "East", value: 400, share: 0.35879588102328586, count: 1, valuesUsed: 1 },
+      { key: "North", value: 389.97, share: 0.349799074306627, count: 3, valuesUsed: 3 },
+      { key: "South", value: 199.92, share: 0.17932618133543826, count: 1, valuesUsed: 1 },
+      { key: "West", value: 124.95, share: 0.11207886333464893, count: 1, valuesUsed: 1 },
+    ],
+    total: 1114.84,
+    rowsMatched: 6,
+    valuesUsed: 6,
+  };
+
+  it("draws a group share as a bar chart labelled in percents", () => {
+    const chart = renderResultChart(shared);
+    expect(chart).toContain("East");
+    expect(chart).toContain("North");
+    // The bars are labelled with the share as a percent, not the raw total.
+    expect(chart).toContain("35.88%");
+    expect(chart).toContain("34.98%");
+    expect(chart).not.toContain("1,114.84");
+  });
+
+  it("draws the SVG bar chart too", () => {
+    const svg = renderResultChartSvg(shared, { title: "Revenue share" });
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("Revenue share");
+    expect(svg).toContain("35.88%");
+  });
+
+  it("leaves a group with no share out of the chart, never as zero", () => {
+    const partial: QueryResult = {
+      ...shared,
+      groups: [
+        { key: "North", value: 100, share: 1, count: 1, valuesUsed: 1 },
+        { key: "South", value: null, share: null, count: 1, valuesUsed: 0 },
+      ],
+      total: 100,
+      rowsMatched: 2,
+      valuesUsed: 1,
+    };
+    const chart = renderResultChart(partial);
+    expect(chart).toContain("North");
+    expect(chart).not.toContain("South");
+  });
+
+  it("returns null when no group has a share", () => {
+    const empty: QueryResult = {
+      ...shared,
+      groups: [{ key: "North", value: null, share: null, count: 1, valuesUsed: 0 }],
+      total: null,
+      rowsMatched: 1,
+      valuesUsed: 0,
+    };
+    expect(renderResultChart(empty)).toBeNull();
+    expect(renderResultChartSvg(empty)).toBeNull();
+  });
+});
