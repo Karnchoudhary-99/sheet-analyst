@@ -368,3 +368,60 @@ describe("renderResultChart trend", () => {
     expect(renderResultChartSvg(empty)).toBeNull();
   });
 });
+
+describe("renderResultChart cumulative", () => {
+  const running: QueryResult = {
+    kind: "cumulative",
+    column: "revenue",
+    dateColumn: "date",
+    bucket: "month",
+    periods: [
+      { label: "Jan 2026", value: 664.91, cumulative: 664.91, rows: 4, valuesUsed: 4 },
+      { label: "Feb 2026", value: 914.81, cumulative: 1579.72, rows: 4, valuesUsed: 4 },
+      { label: "Mar 2026", value: 834.81, cumulative: 2414.53, rows: 4, valuesUsed: 4 },
+    ],
+    total: 2414.53,
+    rowsMatched: 12,
+  };
+
+  it("draws a running total as a line chart over its cumulative values", () => {
+    const chart = renderResultChart(running);
+    expect(chart).toContain("Jan 2026");
+    expect(chart).toContain("Mar 2026");
+    // The line runs over the running totals, not the period values.
+    expect(chart).toContain("2,414.53");
+    expect(chart).toContain("664.91");
+  });
+
+  it("draws the SVG line chart too", () => {
+    const svg = renderResultChartSvg(running, { title: "Running total" });
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("Running total");
+  });
+
+  it("leaves a period with no running total out of the line, never as zero", () => {
+    const gapped: QueryResult = {
+      ...running,
+      periods: [
+        { label: "Jan 2026", value: null, cumulative: null, rows: 1, valuesUsed: 0 },
+        { label: "Feb 2026", value: 914.81, cumulative: 914.81, rows: 4, valuesUsed: 4 },
+        { label: "Mar 2026", value: 834.81, cumulative: 1749.62, rows: 4, valuesUsed: 4 },
+      ],
+      total: 1749.62,
+    };
+    const chart = renderResultChart(gapped);
+    expect(chart).not.toContain("Jan 2026");
+    expect(chart).toContain("Feb 2026");
+  });
+
+  it("returns null when no period has a running total", () => {
+    const empty: QueryResult = {
+      ...running,
+      periods: [{ label: "Jan 2026", value: null, cumulative: null, rows: 1, valuesUsed: 0 }],
+      total: null,
+      rowsMatched: 1,
+    };
+    expect(renderResultChart(empty)).toBeNull();
+    expect(renderResultChartSvg(empty)).toBeNull();
+  });
+});
