@@ -1758,7 +1758,19 @@ describe("executeQuery cumulative", () => {
     const empty = parseCsv(
       "date,revenue\n" + "2026-01-05,NA\n" + "2026-02-03,\n",
     );
-    const r = ask("cumulative revenue by month", empty);
+    // The parser abstains on an all-blank column (it infers "empty",
+    // not numeric), so run the parsed shape directly: the engine
+    // must still answer with a null total, not a zero.
+    const r = executeQuery(
+      {
+        kind: "cumulative",
+        column: "revenue",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+      empty,
+    );
     expect(r.kind).toBe("cumulative");
     if (r.kind === "cumulative") {
       expect(r.periods.map((p) => p.value)).toEqual([null, null]);
@@ -1769,7 +1781,18 @@ describe("executeQuery cumulative", () => {
 
   it("returns no periods when no row has a usable date", () => {
     const dateless = parseCsv("date,revenue\n,100\n,200\n");
-    const r = ask("cumulative revenue by month", dateless);
+    // Same bypass as above: the parser abstains when the date
+    // column has no usable dates to infer from.
+    const r = executeQuery(
+      {
+        kind: "cumulative",
+        column: "revenue",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+      dateless,
+    );
     expect(r.kind).toBe("cumulative");
     if (r.kind === "cumulative") {
       expect(r.periods).toHaveLength(0);
