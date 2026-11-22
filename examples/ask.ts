@@ -48,6 +48,8 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["revenue trend by month", monthly],
   ["cumulative revenue by month", monthly],
   ["running total of units by month", monthly],
+  ["revenue change by month", monthly],
+  ["month over month change in revenue", monthly],
   ["show rows sorted by revenue descending", sales],
   ["rows with revenue above average", sales],
   ["how many rows are missing units", sales],

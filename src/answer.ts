@@ -531,6 +531,79 @@ function composeTrend(result: Extract<QueryResult, { kind: "trend" }>): string {
   );
 }
 
+function composePeriodChange(
+  result: Extract<QueryResult, { kind: "periodchange" }>,
+): string {
+  const opLabel: Record<string, string> = {
+    sum: "total",
+    mean: "average",
+    median: "median",
+    min: "minimum",
+    max: "maximum",
+    count: "count",
+  };
+  const what = `${opLabel[result.op] ?? result.op} ${result.column}`;
+  const label = what.charAt(0).toUpperCase() + what.slice(1);
+  const signed = (n: number): string =>
+    `${n >= 0 ? "+" : ""}${formatNumber(n)}`;
+  if (result.periods.length === 0) {
+    return (
+      `I could not compute the change in ${what} by ${result.bucket} — ` +
+      `none of the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")} ` +
+      `has a usable date.`
+    );
+  }
+  const changed = result.periods.filter((p) => p.change !== null);
+  if (changed.length === 0) {
+    const valued = result.periods.filter((p) => p.value !== null);
+    const cause =
+      valued.length === 0
+        ? "no period has a usable value"
+        : valued.length === 1
+          ? `only ${valued[0]!.label} has a usable value`
+          : "no two neighbouring periods both have a usable value";
+    return (
+      `I could not compute the change in ${what} by ${result.bucket} — ${cause}, ` +
+      `so there is no previous period to compare against.`
+    );
+  }
+  // Periods with no usable value are named, so a missing change is
+  // visible instead of looking like no change at all.
+  const gaps = result.periods.filter((p) => p.value === null);
+  const gapNote =
+    gaps.length === 0
+      ? ""
+      : ` ${gaps.map((p) => p.label).join(", ")} ${gaps.length === 1 ? "has" : "have"} no usable values and ${gaps.length === 1 ? "is" : "are"} skipped in the changes.`;
+  const parts = changed.map((p) => {
+    const prev = result.periods[result.periods.indexOf(p) - 1]!;
+    const verb = p.change! > 0 ? "rose" : p.change! < 0 ? "fell" : "was unchanged";
+    const pct =
+      p.pctChange === null ? "" : ` (${signed(p.pctChange)}%)`;
+    const amount =
+      p.change === 0
+        ? `at ${formatNumber(p.value!)}`
+        : `by ${formatNumber(Math.abs(p.change!))}${pct}`;
+    return `${p.label} ${verb} ${amount} vs ${prev.label}`;
+  });
+  // A zero previous value has no percent — say so once, on the
+  // change it belongs to, instead of leaving a bare number.
+  const zeroBase = changed.find(
+    (p) => p.change !== null && p.change !== 0 && p.pctChange === null,
+  );
+  const zeroNote = zeroBase
+    ? ` No percent change is possible for ${zeroBase.label} — the previous period's value was 0.`
+    : "";
+  const rise = result.biggestRise
+    ? ` Biggest rise: ${result.biggestRise.label} (${signed(result.biggestRise.change)}${result.biggestRise.pctChange === null ? "" : `, ${signed(result.biggestRise.pctChange)}%`}).`
+    : "";
+  const fall = result.biggestFall
+    ? ` Biggest fall: ${result.biggestFall.label} (${signed(result.biggestFall.change)}${result.biggestFall.pctChange === null ? "" : `, ${signed(result.biggestFall.pctChange)}%`}).`
+    : "";
+  return (
+    `${label} by ${result.bucket} changed: ${parts.join("; ")}.${gapNote}${zeroNote}${rise}${fall}`
+  );
+}
+
 function composeCumulative(result: Extract<QueryResult, { kind: "cumulative" }>): string {
   const what = `total ${result.column}`;
   const label = what.charAt(0).toUpperCase() + what.slice(1);
@@ -872,6 +945,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeTrend(result);
     case "cumulative":
       return composeCumulative(result);
+    case "periodchange":
+      return composePeriodChange(result);
     case "missing":
       return composeMissing(result, parsed);
     case "outliers":

@@ -425,3 +425,54 @@ describe("renderResultChart cumulative", () => {
     expect(renderResultChartSvg(empty)).toBeNull();
   });
 });
+
+describe("renderResultChart period change", () => {
+  const changing: QueryResult = {
+    kind: "periodchange",
+    column: "revenue",
+    op: "sum",
+    dateColumn: "date",
+    bucket: "month",
+    periods: [
+      { label: "Jan 2026", value: 664.91, change: null, pctChange: null, rows: 4, valuesUsed: 4 },
+      { label: "Feb 2026", value: 914.81, change: 249.9, pctChange: 37.5849, rows: 4, valuesUsed: 4 },
+      { label: "Mar 2026", value: 834.81, change: -80, pctChange: -8.7444, rows: 4, valuesUsed: 4 },
+    ],
+    biggestRise: { label: "Feb 2026", change: 249.9, pctChange: 37.5849 },
+    biggestFall: { label: "Mar 2026", change: -80, pctChange: -8.7444 },
+    rowsMatched: 12,
+  };
+
+  it("draws a period change as a line chart over its changes", () => {
+    const chart = renderResultChart(changing);
+    expect(chart).toContain("Feb 2026");
+    expect(chart).toContain("Mar 2026");
+    // The line runs over the changes (+249.9, -80), not the levels.
+    expect(chart).toContain("249.9");
+    expect(chart).toContain("-80");
+  });
+
+  it("draws the SVG line chart too", () => {
+    const svg = renderResultChartSvg(changing, { title: "Revenue change" });
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("Revenue change");
+  });
+
+  it("leaves a period with no change out of the line, never as zero", () => {
+    const chart = renderResultChart(changing);
+    expect(chart).not.toContain("Jan 2026");
+    expect(chart).toContain("Feb 2026");
+  });
+
+  it("returns null when no period has a change", () => {
+    const empty: QueryResult = {
+      ...changing,
+      periods: [{ label: "Jan 2026", value: 664.91, change: null, pctChange: null, rows: 4, valuesUsed: 4 }],
+      biggestRise: null,
+      biggestFall: null,
+      rowsMatched: 4,
+    };
+    expect(renderResultChart(empty)).toBeNull();
+    expect(renderResultChartSvg(empty)).toBeNull();
+  });
+});

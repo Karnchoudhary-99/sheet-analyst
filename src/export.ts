@@ -32,7 +32,12 @@
  *   A cumulative result becomes one row per period of
  *   `period,value,cumulative,rows,values_used` plus a `total` row
  *   (empty value for a period with no usable values, empty cumulative
- *   until the first period with a usable value).
+ *   until the first period with a usable value). A period change
+ *   becomes one row per period of
+ *   `period,value,change,percent_change,rows,values_used` plus
+ *   `biggest rise` and `biggest fall` rows (empty change for the
+ *   first period and for a period with no usable value, empty percent
+ *   when the previous value is zero).
  *   An above/below-average result exports as its row table, like a
  *   row listing — the threshold is in the answer text, not the CSV.
  *   Missing values become one row per column of
@@ -296,6 +301,50 @@ export function resultToCsv(
           "",
         ]),
       );
+      return lines.join("\n");
+    }
+    case "periodchange": {
+      const lines = [csvRow(["period", "value", "change", "percent_change", "rows", "values_used"])];
+      for (const p of result.periods) {
+        lines.push(
+          csvRow([
+            p.label,
+            p.value === null ? "" : String(p.value),
+            p.change === null ? "" : String(p.change),
+            p.pctChange === null ? "" : String(p.pctChange),
+            String(p.rows),
+            String(p.valuesUsed),
+          ]),
+        );
+      }
+      if (result.biggestRise) {
+        lines.push(
+          csvRow([
+            "biggest rise",
+            result.biggestRise.label,
+            String(result.biggestRise.change),
+            result.biggestRise.pctChange === null
+              ? ""
+              : String(result.biggestRise.pctChange),
+            "",
+            "",
+          ]),
+        );
+      }
+      if (result.biggestFall) {
+        lines.push(
+          csvRow([
+            "biggest fall",
+            result.biggestFall.label,
+            String(result.biggestFall.change),
+            result.biggestFall.pctChange === null
+              ? ""
+              : String(result.biggestFall.pctChange),
+            "",
+            "",
+          ]),
+        );
+      }
       return lines.join("\n");
     }
     case "missing": {

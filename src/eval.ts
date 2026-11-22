@@ -177,6 +177,14 @@ export const EVAL_GATE = 0.8;
  * value) / 98,000 / 284,000 / 372,000. A running total with no
  * period, of an average, or over a text column abstains.
  *
+ * period change — monthly revenue: Feb +249.90 (+37.58%), Mar
+ * −80.00 (−8.74%); monthly units: Feb +7 (+25.93%), Mar unchanged;
+ * North-filtered revenue: Feb +99.88 (+49.94%), Mar −164.91
+ * (−54.99%); salary by year: 2024 +88,000 (+89.80%), 2025 −98,000
+ * (−52.69%), and 2022 has no usable value. A change with no period
+ * or over a text column abstains; a named pair of periods is a
+ * comparison, not a period change.
+ *
  * missing values — sales units is blank on the 2026-01-10 row
  * only (1 of 8, 12.5%); every other sales column is complete.
  * Employees salary is NA for Edsger Dijkstra only (1 of 5, 20%);
@@ -1175,6 +1183,48 @@ export const GOLD_SET: EvalCase[] = [
     question: "cumulative region by month",
     expect: "abstain",
     note: "region is text — a running total needs a numeric column",
+  },
+  {
+    sheet: "monthly",
+    question: "revenue change by month",
+    expect: ["Feb 2026 rose by 249.9 (+37.58%)", "Mar 2026 fell by 80 (-8.74%)", "Biggest rise: Feb 2026", "Biggest fall: Mar 2026"],
+    note: "monthly totals 664.91 / 914.81 / 834.81: Feb +249.90 (+37.58%), Mar −80.00 (−8.74%)",
+  },
+  {
+    sheet: "monthly",
+    question: "month over month change in revenue",
+    expect: ["Feb 2026 rose by 249.9 (+37.58%)", "Mar 2026 fell by 80 (-8.74%)"],
+    note: "the repeated-period phrasing is the same period-change question",
+  },
+  {
+    sheet: "monthly",
+    question: "monthly change in units",
+    expect: ["Feb 2026 rose by 7 (+25.93%)", "Mar 2026 was unchanged at 34", "Biggest rise: Feb 2026"],
+    note: "monthly units 27 / 34 / 34: Feb +7 (+25.93%), Mar 0 — unchanged, so there is no biggest fall",
+  },
+  {
+    sheet: "monthly",
+    question: "revenue change by month where region is North",
+    expect: ["Feb 2026 rose by 99.88 (+49.94%)", "Mar 2026 fell by 164.91 (-54.99%)"],
+    note: "North only: Jan 200, Feb 299.88, Mar 134.97 — Feb +99.88 (+49.94%), Mar −164.91 (−54.99%)",
+  },
+  {
+    sheet: "employees",
+    question: "salary change by year",
+    expect: ["2024 rose by 88,000 (+89.8%)", "2025 fell by 98,000 (-52.69%)", "2022 has no usable values and is skipped"],
+    note: "yearly totals 2022 NA, 2023 98,000, 2024 186,000, 2025 88,000: 2024 +88,000 (+89.80%), 2025 −98,000 (−52.69%); 2023 has no previous valued period",
+  },
+  {
+    sheet: "monthly",
+    question: "how did revenue change",
+    expect: "abstain",
+    note: "no period named — a period change needs one, e.g. 'by month'",
+  },
+  {
+    sheet: "monthly",
+    question: "region change by month",
+    expect: "abstain",
+    note: "region is text — a change needs a numeric column",
   },
   {
     sheet: "monthly",

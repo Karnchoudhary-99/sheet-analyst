@@ -73,10 +73,11 @@ export function sparkline(values: number[]): string {
  * a bar chart, a trend becomes a line chart over its fitted periods
  * (periods with no usable value are left out of the line, never
  * plotted as zero), a cumulative result becomes a line chart over
- * its running totals (same gap rule), and everything else has no
- * chart (null) — a single number or a table of rows is already the
- * answer, and inventing a chart for it would add noise, not
- * information.
+ * its running totals (same gap rule), a period change becomes a line
+ * chart over its per-period changes (the change is the point, not
+ * the level), and everything else has no chart (null) — a single
+ * number or a table of rows is already the answer, and inventing a
+ * chart for it would add noise, not information.
  */
 export function renderResultChart(
   result: QueryResult,
@@ -112,6 +113,24 @@ export function renderResultChart(
         } => p.cumulative !== null,
       )
       .map((p) => ({ key: p.label, value: p.cumulative }));
+    if (points.length === 0) return null;
+    return renderLineChart(points, options);
+  }
+  if (result.kind === "periodchange") {
+    const points = result.periods
+      .filter(
+        (
+          p,
+        ): p is {
+          label: string;
+          value: number | null;
+          change: number;
+          pctChange: number | null;
+          rows: number;
+          valuesUsed: number;
+        } => p.change !== null,
+      )
+      .map((p) => ({ key: p.label, value: p.change }));
     if (points.length === 0) return null;
     return renderLineChart(points, options);
   }
@@ -165,6 +184,24 @@ export function renderResultChartSvg(
         } => p.cumulative !== null,
       )
       .map((p) => ({ key: p.label, value: p.cumulative }));
+    if (points.length === 0) return null;
+    return renderLineChartSvg(points, options);
+  }
+  if (result.kind === "periodchange") {
+    const points = result.periods
+      .filter(
+        (
+          p,
+        ): p is {
+          label: string;
+          value: number | null;
+          change: number;
+          pctChange: number | null;
+          rows: number;
+          valuesUsed: number;
+        } => p.change !== null,
+      )
+      .map((p) => ({ key: p.label, value: p.change }));
     if (points.length === 0) return null;
     return renderLineChartSvg(points, options);
   }
