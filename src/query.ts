@@ -254,6 +254,24 @@ export type Query =
       orGroups?: Filter[][];
     }
   | {
+      kind: "groupextreme";
+      /** The column whose values are compared ("which region ..."). */
+      groupBy: string;
+      /** The column the aggregate is read from. */
+      column: string;
+      /**
+       * How each group's value is computed. A bare "highest revenue"
+       * means the highest total — a group is a set of rows, so its
+       * total is the natural reading; an explicit "average"/"median"/
+       * "minimum"/"maximum" overrides it.
+       */
+      op: Exclude<AggregateOp, "count">;
+      /** Which end of the per-group ranking wins. */
+      direction: "highest" | "lowest";
+      filters: Filter[];
+      orGroups?: Filter[][];
+    }
+  | {
       kind: "trend";
       /** The column being trended. */
       column: string;
@@ -2902,6 +2920,109 @@ function tryParseRank(
 }
 
 /**
+ * Try to read a group-extreme question ("which region has the
+ * highest total revenue", "which product has the lowest average
+ * units", "which department has the most salary"). Returns null
+ * when the question shows no such intent, or when the "which ...
+ * has" subject is not a column at all — "which employee has the
+ * highest salary" is a row question, and it falls through to the
+ * row-ranking fallback instead of abstaining here. Otherwise a
+ * groupextreme query, or an abstention when the group or the value
+ * column cannot be pinned down. A bare "highest revenue" reads as
+ * the highest total — a group is a set of rows, so its total is
+ * the natural reading; an explicit aggregate word (average/median/
+ * minimum/maximum) overrides it.
+ */
+function tryParseGroupExtreme(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+  orGroups?: Filter[][],
+): ParseResult | null {
+  const norm = normalize(text);
+  const m =
+    /\b(?:which|what)\s+(.+?)\s+(?:has|have)\s+the\s+(highest|lowest|most|least|biggest|smallest)\b\s*(.*)$/.exec(
+      norm,
+    );
+  if (!m) return null;
+  const groupPhrase = m[1]!;
+  const extreme = m[2]!;
+  const tail = m[3]!;
+  const direction =
+    extreme === "lowest" || extreme === "least" || extreme === "smallest" ? "lowest" : "highest";
+  const groupHits = findColumns(groupPhrase, columns);
+  const groupDistinct = [...new Map(groupHits.map((c) => [c.name, c])).values()];
+  if (groupDistinct.length === 0) return null;
+  if (groupDistinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which group to compare — matches ${groupDistinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const groupBy = groupDistinct[0]!;
+  // An optional aggregate word before the value column.
+  const aggMatch = /^(total|sum|average|mean|median|minimum|maximum)\b\s*(.*)$/.exec(tail);
+  const aggWord = aggMatch?.[1];
+  const op: Exclude<AggregateOp, "count"> =
+    aggWord === "average" || aggWord === "mean"
+      ? "mean"
+      : aggWord === "median"
+        ? "median"
+        : aggWord === "minimum"
+          ? "min"
+          : aggWord === "maximum"
+            ? "max"
+            : "sum";
+  const valuePhrase = (aggMatch ? aggMatch[2]! : tail).trim();
+  if (valuePhrase === "") {
+    return {
+      ok: false,
+      reason: `a group extreme needs a value column — try e.g. 'which ${groupBy.name} has the highest total revenue'`,
+    };
+  }
+  const valueHits = findColumns(valuePhrase, columns);
+  const valueDistinct = [...new Map(valueHits.map((c) => [c.name, c])).values()];
+  if (valueDistinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(valuePhrase, columns)}`,
+    };
+  }
+  if (valueDistinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to compare — matches ${valueDistinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = valueDistinct[0]!;
+  if (column.name === groupBy.name) {
+    return {
+      ok: false,
+      reason: `a group extreme compares one column across another — "${column.name}" can't group by itself`,
+    };
+  }
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a group extreme needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  // Anything left after removing the column name is a word the
+  // sheet does not explain — refuse rather than dropping it.
+  const rest = stripColumnName(valuePhrase, column);
+  if (rest !== "") {
+    return {
+      ok: false,
+      reason: `could not understand "${rest}" in the question — try e.g. 'which ${groupBy.name} has the ${direction === "highest" ? "highest" : "lowest"} ${column.name}'`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "groupextreme", groupBy: groupBy.name, column: column.name, op, direction, filters, orGroups },
+  };
+}
+
+/**
  * Try to read a trend question ("revenue trend by month", "average
  * salary trend by year", "is revenue trending up"). Returns null
  * when the question shows no trend intent; otherwise a trend query,
@@ -3257,6 +3378,24 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return correlation;
+  }
+
+  // Group extreme: one group's aggregate beats every other
+  // ("which region has the highest total revenue"). Checked before
+  // the top-N fallback, which would otherwise read "highest" as a
+  // ranking word and fail to tell the group column from the value
+  // column. A "which ... has" subject that is not a column falls
+  // through to the row ranking below ("which employee has the
+  // highest salary" lists the top row).
+  const groupExtreme = tryParseGroupExtreme(timeBucket.rest, columns, filters, orGroups);
+  if (groupExtreme) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a group extreme can't be grouped by a time period — ask about the whole sheet, e.g. 'which region has the highest total revenue'",
+      };
+    }
+    return groupExtreme;
   }
 
   // Top-N: "top 3 products by revenue" ranks groups by the column

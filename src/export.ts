@@ -105,6 +105,17 @@ export function resultToCsv(
       }
       return lines.join("\n");
     }
+    case "groupextreme": {
+      // One row per group, best first; a group with no usable value
+      // exports an empty value cell instead of a zero.
+      const lines = [csvRow([result.groupBy, result.column, "rows", "values_used"])];
+      for (const g of result.groups) {
+        lines.push(
+          csvRow([g.key, g.value === null ? "" : String(g.value), String(g.count), String(g.valuesUsed)]),
+        );
+      }
+      return lines.join("\n");
+    }
     case "rows":
     case "aboveBelow": {
       const lines = [csvRow(result.headers)];

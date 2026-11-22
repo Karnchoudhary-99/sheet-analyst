@@ -111,6 +111,46 @@ function composeGroups(result: Extract<QueryResult, { kind: "groups" }>): string
   return `${scope}:\n${lines.join("\n")}`;
 }
 
+function composeGroupExtreme(result: Extract<QueryResult, { kind: "groupextreme" }>): string {
+  if (result.groups.length === 0) return "No rows match.";
+  const opLabel: Record<string, string> = {
+    sum: "total",
+    mean: "average",
+    median: "median",
+    min: "minimum",
+    max: "maximum",
+    count: "count",
+  };
+  const what = `${opLabel[result.op] ?? result.op} ${result.column}`;
+  if (result.winners.length === 0) {
+    return (
+      `No group had a usable value for ${result.column} — every matching row was missing it.`
+    );
+  }
+  const value = formatNumber(result.winners[0]!.value);
+  const scope = `of ${result.totalGroups} ${plural(result.totalGroups, result.groupBy)}`;
+  // A winner whose group had blank cells: say how many of its rows
+  // actually contributed, so a mean over 1 value is never presented
+  // as a mean over the whole group.
+  let coverage = ` (${scope})`;
+  if (result.winners.length === 1) {
+    const g = result.groups.find((x) => x.key === result.winners[0]!.key)!;
+    if (g.valuesUsed < g.count) {
+      coverage = ` (${g.valuesUsed} of ${g.count} rows in ${g.key} had a value; ${scope})`;
+    }
+  }
+  const head =
+    result.winners.length === 1
+      ? `${result.winners[0]!.key} has the ${result.direction} ${what}: ${value}`
+      : `${result.winners.map((w) => w.key).join(" and ")} tie for the ${result.direction} ${what}: ${value} each`;
+  const noValue = result.groups.filter((g) => g.value === null);
+  const noValueNote =
+    noValue.length > 0
+      ? ` ${noValue.length} ${plural(noValue.length, result.groupBy)} had no usable ${result.column}.`
+      : "";
+  return `${head}${coverage}.${noValueNote}`;
+}
+
 function composeCorrelation(
   result: Extract<QueryResult, { kind: "correlation" }>,
 ): string {
@@ -665,6 +705,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeRank(result);
     case "groups":
       return composeGroups(result);
+    case "groupextreme":
+      return composeGroupExtreme(result);
     case "rows":
       return composeRows(result, parsed);
     case "aboveBelow":

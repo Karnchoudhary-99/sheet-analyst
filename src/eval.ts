@@ -200,6 +200,22 @@ export const EVAL_GATE = 0.8;
  * a text column, an unknown column, or grouped by another column,
  * abstains.
  *
+ * group extreme — sales revenue by region: South 649.77, East
+ * 624.91, North 389.97, West 124.95, so the highest total is South
+ * and the lowest is West; by product Widget A totals 640 (240 +
+ * 400 + 0), so it has the highest total revenue. Average units by
+ * product: Widget A 16, Widget B 7.33, Widget C 15, "Widget,
+ * Deluxe" 3 — the lowest average is the Deluxe at 3. Employees
+ * total salary by department: Engineering 193,000, Data 179,000;
+ * median salary by department: Engineering 96,500 (2 of 3 rows had
+ * a value — Edsger's is NA), Data 89,500; average salary by
+ * department: Engineering 96,500, Data 89,500. Scores total by
+ * subject: Science 1,039 (15 + 11 + 13 + 1,000), Math 39; average
+ * score by subject: Science 259.75, Math 9.75. A group extreme over
+ * a text column, an unknown column, or grouped by a time period
+ * abstains; "which employee has the highest salary" is a row
+ * question and answers with Grace Hopper's row, not a group.
+ *
  * or filters — sales revenue by region: North 389.97, South
  * 649.77, East 624.91, West 124.95, so North or South totals
  * 1,039.74 over 5 rows and North or South or East totals 1,664.65
@@ -1322,6 +1338,99 @@ export const GOLD_SET: EvalCase[] = [
     question: "second highest profit",
     expect: "abstain",
     note: "no profit column",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the highest total revenue",
+    expect: ["South has the highest total revenue: 649.77", "of 4 regions"],
+    note: "revenue by region: South 649.77, East 624.91, North 389.97, West 124.95",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the lowest total revenue",
+    expect: ["West has the lowest total revenue: 124.95", "of 4 regions"],
+    note: "West is the smallest region total at 124.95",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the most revenue",
+    expect: ["South has the highest total revenue: 649.77"],
+    note: "a bare 'most' reads as the highest total, same as 'highest total'",
+  },
+  {
+    sheet: "sales",
+    question: "which product has the highest total revenue",
+    expect: ["Widget A has the highest total revenue: 640", "of 4 products"],
+    note: "Widget A 240 + 400 + 0 = 640; Widget B 549.78, Widget C 449.85, Deluxe 149.97",
+  },
+  {
+    sheet: "sales",
+    question: "which product has the lowest average units",
+    expect: ["Widget, Deluxe has the lowest average units: 3", "of 4 products"],
+    note: "average units: Widget A 16, Widget B 7.33, Widget C 15, Deluxe 3 (the blank-units row is skipped, not zero)",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the highest total revenue where product is Widget A",
+    expect: ["East has the highest total revenue: 400", "of 2 regions"],
+    note: "Widget A rows are North 240, East 400, North 0 — East wins over the 2 regions that sell it",
+  },
+  {
+    sheet: "employees",
+    question: "which department has the highest total salary",
+    expect: ["Engineering has the highest total salary: 193,000", "of 2 departments"],
+    note: "Engineering 95,000 + 98,000 = 193,000; Data 88,000 + 91,000 = 179,000",
+  },
+  {
+    sheet: "employees",
+    question: "which department has the highest median salary",
+    expect: [
+      "Engineering has the highest median salary: 96,500",
+      "2 of 3 rows in Engineering had a value",
+    ],
+    note: "Engineering median of 95,000 and 98,000 is 96,500; Edsger's NA salary never counts, and the answer says so",
+  },
+  {
+    sheet: "employees",
+    question: "which department has the lowest average salary",
+    expect: ["Data has the lowest average salary: 89,500", "of 2 departments"],
+    note: "Data average (88,000 + 91,000) / 2 = 89,500; Engineering averages 96,500",
+  },
+  {
+    sheet: "scores",
+    question: "which subject has the highest total score",
+    expect: ["Science has the highest total score: 1,039", "of 2 subjects"],
+    note: "Science 15 + 11 + 13 + 1,000 = 1,039 (the 1,000 outlier counts — it is a real value); Math 39",
+  },
+  {
+    sheet: "scores",
+    question: "which subject has the lowest average score",
+    expect: ["Math has the lowest average score: 9.75", "of 2 subjects"],
+    note: "Math average 39 / 4 = 9.75; Science averages 259.75",
+  },
+  {
+    sheet: "employees",
+    question: "which employee has the highest salary",
+    expect: ["Showing 1 of 5 matching rows", "Grace Hopper"],
+    note: "not a group question — the subject is not a column, so the top-N row ranking answers with Grace Hopper's 98,000 row",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the highest product",
+    expect: "abstain",
+    note: "a group extreme needs a numeric column — product is text",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the highest total profit",
+    expect: "abstain",
+    note: "no profit column",
+  },
+  {
+    sheet: "sales",
+    question: "which region has the highest total revenue by month",
+    expect: "abstain",
+    note: "a group extreme can't be grouped by a time period",
   },
 ];
 

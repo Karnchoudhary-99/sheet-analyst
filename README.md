@@ -45,6 +45,7 @@ top-N) directly from the spreadsheet.
 - [x] Did-you-mean hints ("total revnue" suggests "revenue", "total revenue by regoin" suggests "region" — edit distance ≤ 2 or a prefix; a group-by naming no column is now an error instead of silently answering the plain total)
 - [x] Distribution questions ("distribution of salary", "histogram of revenue" — values binned into an equal-width histogram, at most 10 bins and never more than the distinct-value count; a text column abstains; `sheet chart` draws it, `ask --out` exports one CSV row per bin)
 - [x] Cross-column comparisons ("how many rows where revenue is greater than units", "total score where score is greater than hours" — a where clause may compare two columns in the same row with `>`, `>=`, `<` or `<=`; both must be numbers or both dates, a blank cell on either side never matches, `=` and quoted right-hand sides stay literal)
+- [x] Group-extreme questions ("which region has the highest total revenue", "which product has the lowest average units" — one group's aggregate beats every other; a bare "highest" reads as the highest total, an explicit average/median/minimum/maximum overrides it; ties share the win, groups with no usable value never win, and a winner with blank cells says how many of its rows had a value)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -98,6 +99,11 @@ answerQuestion("total revenue by region", sales);
 // "Total revenue by region:\n- South: 649.77 (2 rows)\n- East: 624.91 (2 rows)…"
 answerQuestion("top 3 products by revenue", sales);
 // "Top 3 of 4 groups:\n- Widget A: 640 (3 rows)…"
+answerQuestion("which region has the highest total revenue", sales);
+// "South has the highest total revenue: 649.77 (of 4 regions)."
+// (one group's aggregate beats every other; a bare "highest" reads
+// as the highest total, "lowest average units" takes the mean;
+// ties share the win — "North and East tie for the highest…")
 answerQuestion("bottom 3 products by revenue", sales);
 // "Bottom 3 of 4 groups:\n- Widget, Deluxe: 149.97 (1 row)…"
 answerQuestion("show rows sorted by revenue descending", sales);
@@ -210,6 +216,12 @@ and range filters ("total revenue where revenue between 100 and
 range abstains instead of answering "no rows"), rank ("second
 highest salary", "3rd lowest revenue" — the nth distinct value from
 the top or the bottom of one numeric column; ties share the rank),
+group extreme ("which region has the highest total revenue",
+"which product has the lowest average units", "which department has
+the most salary" — one group's aggregate beats every other; a bare
+"highest" reads as the highest total, an explicit average/median/
+minimum/maximum overrides it; groups with no usable value never win,
+and a winner with blank cells says how many of its rows had a value),
 and trend
 ("revenue trend by month", "average salary trend by year" — the
 least-squares slope of the per-period aggregate, so "trended up by

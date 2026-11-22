@@ -445,6 +445,27 @@ describe("describeQuery rank", () => {
   });
 });
 
+describe("describeQuery group extreme", () => {
+  it("describes the group column, value column, operation and direction", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n2026-01-05,North,Widget A,12,240.00\n",
+    );
+    const explained = explainQuestion(
+      "which region has the highest total revenue where product is Widget A",
+      sales,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "which region has the highest total of revenue",
+      "operation: group extreme (highest)",
+      "column: revenue",
+      "group by: region",
+      "filters: product = Widget A",
+    ]);
+  });
+});
+
 describe("describeQuery trend", () => {
   it("describes the column, date column, bucket and filters", () => {
     const monthly = parseCsv(

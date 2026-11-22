@@ -643,6 +643,104 @@ describe("executeQuery groups", () => {
   });
 });
 
+describe("executeQuery group extreme", () => {
+  it("names the group with the highest total", () => {
+    const r = ask("which region has the highest total revenue");
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.winners).toEqual([{ key: "East", value: 400, count: 1 }]);
+      expect(r.groups.map((g) => [g.key, g.value])).toEqual([
+        ["East", 400],
+        ["North", 389.97],
+        ["South", 199.92],
+        ["West", 124.95],
+      ]);
+      expect(r.totalGroups).toBe(4);
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("names the group with the lowest average, skipping blanks", () => {
+    const r = ask("which product has the lowest average units");
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.winners).toEqual([{ key: "Widget C", value: 3, count: 1 }]);
+      // Widget A averages over 2 valued rows (12 and 20) — the blank
+      // row is not a zero, so its mean is 16, not 10.67.
+      const widgetA = r.groups.find((g) => g.key === "Widget A")!;
+      expect(widgetA.value).toBeCloseTo(16, 5);
+      expect(widgetA.valuesUsed).toBe(2);
+      expect(widgetA.count).toBe(3);
+    }
+  });
+
+  it("names the group with the highest median", () => {
+    const r = ask("which department has the highest median salary", STAFF);
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.winners).toEqual([{ key: "Engineering", value: 96500, count: 2 }]);
+    }
+  });
+
+  it("shares the win on a tie, alphabetically", () => {
+    const tied = parseCsv("region,revenue\nNorth,100\nSouth,100\nEast,50\n");
+    const r = ask("which region has the highest total revenue", tied);
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.winners).toEqual([
+        { key: "North", value: 100, count: 1 },
+        { key: "South", value: 100, count: 1 },
+      ]);
+    }
+  });
+
+  it("never lets a group with no usable value win the lowest extreme", () => {
+    const messy = parseCsv("region,revenue\nNorth,100\nSouth,\nEast,50\n");
+    const r = ask("which region has the lowest total revenue", messy);
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.winners).toEqual([{ key: "East", value: 50, count: 1 }]);
+      const south = r.groups.find((g) => g.key === "South")!;
+      expect(south.value).toBeNull();
+      expect(south.valuesUsed).toBe(0);
+    }
+  });
+
+  it("reports no winner when no group has a usable value", () => {
+    // The parser abstains on an all-blank column (it infers "empty",
+    // not numeric), so run the query directly: the engine must still
+    // report no winner instead of a zero.
+    const empty = parseCsv("region,revenue\nNorth,\nSouth,\n");
+    const r = executeQuery(
+      { kind: "groupextreme", groupBy: "region", column: "revenue", op: "sum", direction: "highest", filters: [] },
+      empty,
+    );
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.winners).toEqual([]);
+      expect(r.groups.every((g) => g.value === null)).toBe(true);
+    }
+  });
+
+  it("returns no groups when no rows match", () => {
+    const r = ask("which region has the highest total revenue where region is Nowhere");
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.groups).toEqual([]);
+      expect(r.winners).toEqual([]);
+    }
+  });
+
+  it("respects a where filter", () => {
+    const r = ask("which region has the highest total revenue where product is Widget A");
+    expect(r.kind).toBe("groupextreme");
+    if (r.kind === "groupextreme") {
+      expect(r.winners).toEqual([{ key: "East", value: 400, count: 1 }]);
+      expect(r.totalGroups).toBe(2);
+    }
+  });
+});
+
 describe("executeQuery multi-column groups", () => {
   it("groups a total by two columns, largest first", () => {
     const r = ask("total revenue by region and product");

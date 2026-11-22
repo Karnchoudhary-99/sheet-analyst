@@ -62,6 +62,9 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["3rd lowest revenue", sales],
   ["3rd highest hours", scores],
   ["5th highest salary", staff],
+  ["which region has the highest total revenue", sales],
+  ["which product has the lowest average units", sales],
+  ["which department has the highest median salary", staff],
   // And one the engine must refuse to guess at:
   ["total profit", sales],
 ];

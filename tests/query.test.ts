@@ -1947,6 +1947,155 @@ describe("parseQuestion rank", () => {
   });
 });
 
+describe("parseQuestion group extreme", () => {
+  it("parses 'which region has the highest total revenue'", () => {
+    expect(parseQuestion("which region has the highest total revenue", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "groupextreme",
+        groupBy: "region",
+        column: "revenue",
+        op: "sum",
+        direction: "highest",
+        filters: [],
+      },
+    });
+  });
+
+  it("reads a bare 'highest' as the highest total", () => {
+    expect(parseQuestion("which region has the highest revenue", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "groupextreme",
+        groupBy: "region",
+        column: "revenue",
+        op: "sum",
+        direction: "highest",
+        filters: [],
+      },
+    });
+  });
+
+  it("reads 'most' as the highest total and 'lowest' with an explicit aggregate", () => {
+    expect(parseQuestion("which product has the most units", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "groupextreme",
+        groupBy: "product",
+        column: "units",
+        op: "sum",
+        direction: "highest",
+        filters: [],
+      },
+    });
+    expect(parseQuestion("which product has the lowest average units", SALES)).toEqual({
+      ok: true,
+      query: {
+        kind: "groupextreme",
+        groupBy: "product",
+        column: "units",
+        op: "mean",
+        direction: "lowest",
+        filters: [],
+      },
+    });
+    expect(parseQuestion("which department has the highest median salary", STAFF)).toEqual({
+      ok: true,
+      query: {
+        kind: "groupextreme",
+        groupBy: "department",
+        column: "salary",
+        op: "median",
+        direction: "highest",
+        filters: [],
+      },
+    });
+  });
+
+  it("keeps a where filter on a group-extreme question", () => {
+    expect(
+      parseQuestion("which region has the highest total revenue where product is Widget A", SALES),
+    ).toEqual({
+      ok: true,
+      query: {
+        kind: "groupextreme",
+        groupBy: "region",
+        column: "revenue",
+        op: "sum",
+        direction: "highest",
+        filters: [{ column: "product", op: "=", value: "Widget A" }],
+      },
+    });
+  });
+
+  it("does not swallow a row question whose subject is not a column", () => {
+    // "which employee has the highest salary" names no group column,
+    // so it falls through to the top-N row ranking instead of
+    // abstaining — and still answers with the top row.
+    const r = parseQuestion("which employee has the highest salary", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.query.kind).toBe("top");
+  });
+
+  it("abstains on a text value column", () => {
+    const r = parseQuestion("which region has the highest product", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a numeric column/);
+  });
+
+  it("abstains when the group phrase matches two columns", () => {
+    // "sales region" contains both "region" and "sales region", so
+    // the group column cannot be pinned down.
+    const nested = parseCsv(
+      "region,sales region,revenue\n" + "North,North,240\n" + "South,South,199\n",
+    );
+    const r = parseQuestion("which sales region has the highest revenue", nested);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell which group to compare/);
+  });
+
+  it("abstains when the value phrase matches two columns", () => {
+    // "revenue per unit" contains both "revenue" and "revenue per unit",
+    // so the value column cannot be pinned down.
+    const nested = parseCsv(
+      "region,revenue,revenue per unit\n" + "North,240,20\n" + "South,199,25\n",
+    );
+    const r = parseQuestion("which region has the highest revenue per unit", nested);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not tell which column to compare/);
+  });
+
+  it("abstains when the group and the value column are the same", () => {
+    const r = parseQuestion("which revenue has the highest total revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't group by itself/);
+  });
+
+  it("abstains when no value column is named, suggesting the closest one", () => {
+    const r = parseQuestion("which region has the highest total revnue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/no column named.*did you mean "revenue"/);
+  });
+
+  it("abstains when the extreme has no value column at all", () => {
+    const r = parseQuestion("which region has the highest", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a value column/);
+  });
+
+  it("abstains on an unknown word instead of dropping it", () => {
+    const r = parseQuestion("which region has the highest total revenue frobnicate", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not understand "frobnicate"/);
+  });
+
+  it("abstains on a time-grouped group extreme", () => {
+    const r = parseQuestion("which region has the highest total revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't be grouped by a time period/);
+  });
+});
+
 describe("parseQuestion trend", () => {
   const NODATES = parseCsv(
     "region,product,revenue\n" +

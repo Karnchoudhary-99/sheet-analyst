@@ -73,6 +73,27 @@ export type QueryResult =
       bucket?: TimeBucket;
     }
   | {
+      kind: "groupextreme";
+      /** The column whose values are compared. */
+      groupBy: string;
+      column: string;
+      op: string;
+      direction: "highest" | "lowest";
+      /**
+       * Groups tied at the extreme value, best first. Empty when no
+       * group had a usable value for the column.
+       */
+      winners: { key: string; value: number; count: number }[];
+      /**
+       * Every group, best first. `value` is null when the group had
+       * no usable value — such groups sort last either way and can
+       * never win, so a lowest extreme is never a group of blanks.
+       */
+      groups: { key: string; value: number | null; count: number; valuesUsed: number }[];
+      totalGroups: number;
+      rowsMatched: number;
+    }
+  | {
       kind: "rows";
       headers: string[];
       rows: Record<string, string>[];
@@ -694,6 +715,59 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         rowsMatched: rows.length,
         totalGroups: groups.length,
         bucket: query.bucket,
+      };
+    }
+
+    case "groupextreme": {
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
+      const gIdx = colIndex.get(query.groupBy)!;
+      const cIdx = colIndex.get(query.column)!;
+      const buckets = new Map<string, { label: string; values: number[]; count: number }>();
+      for (const row of rows) {
+        const label = groupKey(row[gIdx] ?? "", undefined).label;
+        const bucket = buckets.get(label) ?? { label, values: [], count: 0 };
+        bucket.count += 1;
+        const raw = row[cIdx] ?? "";
+        if (!isNullValue(raw)) {
+          const n = toNumber(raw);
+          if (n !== null) bucket.values.push(n);
+        }
+        buckets.set(label, bucket);
+      }
+      const groups = [...buckets.values()]
+        .map((b) => ({
+          key: b.label,
+          value: aggregateValues(query.op, b.values),
+          count: b.count,
+          valuesUsed: b.values.length,
+        }))
+        // Best first: highest wins on the largest value, lowest on
+        // the smallest; groups with no usable value sort last
+        // either way and never win.
+        .sort((a, b) => {
+          if (a.value === null && b.value === null) return a.key.localeCompare(b.key);
+          if (a.value === null) return 1;
+          if (b.value === null) return -1;
+          const cmp = query.direction === "highest" ? b.value - a.value : a.value - b.value;
+          return cmp || a.key.localeCompare(b.key);
+        });
+      const best = groups.find((g) => g.value !== null)?.value ?? null;
+      const winners =
+        best === null
+          ? []
+          : groups
+              .filter((g) => g.value === best)
+              .map(({ key, value, count }) => ({ key, value: value!, count }));
+      return {
+        kind: "groupextreme",
+        groupBy: query.groupBy,
+        column: query.column,
+        op: query.op,
+        direction: query.direction,
+        winners,
+        groups,
+        totalGroups: groups.length,
+        rowsMatched: rows.length,
       };
     }
 

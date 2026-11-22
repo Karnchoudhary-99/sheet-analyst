@@ -154,6 +154,11 @@ describe("composeAnswer groups and rows", () => {
     expect(firstRow).toBeLessThan(secondRow);
   });
 
+  it("names the winning group end to end", () => {
+    const out = answerQuestion("which region has the highest total revenue", SALES);
+    expect(out).toBe("East has the highest total revenue: 400 (of 4 regions).");
+  });
+
   it("states the baseline in an above-average answer", () => {
     const r: QueryResult = {
       kind: "aboveBelow",
@@ -209,6 +214,126 @@ describe("composeAnswer groups and rows", () => {
     const out = answerQuestion("rows with revenue above average", SALES);
     expect(out).toContain("3 rows have revenue above the average of 185.81:");
     expect(out).toContain("| 2026-01-08 | East | Widget A | 20 | 400 |");
+  });
+});
+
+describe("composeAnswer group extreme", () => {
+  it("names one winner with its value and the group count", () => {
+    const r: QueryResult = {
+      kind: "groupextreme",
+      groupBy: "region",
+      column: "revenue",
+      op: "sum",
+      direction: "highest",
+      winners: [{ key: "East", value: 400, count: 1 }],
+      groups: [
+        { key: "East", value: 400, count: 1, valuesUsed: 1 },
+        { key: "North", value: 389.97, count: 3, valuesUsed: 3 },
+      ],
+      totalGroups: 4,
+      rowsMatched: 6,
+    };
+    expect(composeAnswer(r)).toBe("East has the highest total revenue: 400 (of 4 regions).");
+  });
+
+  it("names every tied winner with 'each'", () => {
+    const r: QueryResult = {
+      kind: "groupextreme",
+      groupBy: "region",
+      column: "revenue",
+      op: "sum",
+      direction: "highest",
+      winners: [
+        { key: "North", value: 100, count: 1 },
+        { key: "South", value: 100, count: 1 },
+      ],
+      groups: [
+        { key: "North", value: 100, count: 1, valuesUsed: 1 },
+        { key: "South", value: 100, count: 1, valuesUsed: 1 },
+        { key: "East", value: 50, count: 1, valuesUsed: 1 },
+      ],
+      totalGroups: 3,
+      rowsMatched: 3,
+    };
+    expect(composeAnswer(r)).toBe(
+      "North and South tie for the highest total revenue: 100 each (of 3 regions).",
+    );
+  });
+
+  it("says how many of the winner's rows had a value when some were blank", () => {
+    const r: QueryResult = {
+      kind: "groupextreme",
+      groupBy: "department",
+      column: "salary",
+      op: "median",
+      direction: "highest",
+      winners: [{ key: "Engineering", value: 96500, count: 3 }],
+      groups: [
+        { key: "Engineering", value: 96500, count: 3, valuesUsed: 2 },
+        { key: "Data", value: 88000, count: 1, valuesUsed: 1 },
+      ],
+      totalGroups: 2,
+      rowsMatched: 4,
+    };
+    expect(composeAnswer(r)).toBe(
+      "Engineering has the highest median salary: 96,500 (2 of 3 rows in Engineering had a value; of 2 departments).",
+    );
+  });
+
+  it("says plainly when no group had a usable value", () => {
+    const r: QueryResult = {
+      kind: "groupextreme",
+      groupBy: "region",
+      column: "revenue",
+      op: "sum",
+      direction: "highest",
+      winners: [],
+      groups: [
+        { key: "North", value: null, count: 1, valuesUsed: 0 },
+        { key: "South", value: null, count: 1, valuesUsed: 0 },
+      ],
+      totalGroups: 2,
+      rowsMatched: 2,
+    };
+    const out = composeAnswer(r);
+    expect(out).toMatch(/No group had a usable value for revenue/);
+    expect(out).not.toMatch(/is 0/);
+  });
+
+  it("says plainly when no rows match", () => {
+    const r: QueryResult = {
+      kind: "groupextreme",
+      groupBy: "region",
+      column: "revenue",
+      op: "sum",
+      direction: "highest",
+      winners: [],
+      groups: [],
+      totalGroups: 0,
+      rowsMatched: 0,
+    };
+    expect(composeAnswer(r)).toBe("No rows match.");
+  });
+
+  it("names groups that had no usable value alongside the winner", () => {
+    const r: QueryResult = {
+      kind: "groupextreme",
+      groupBy: "region",
+      column: "revenue",
+      op: "sum",
+      direction: "lowest",
+      winners: [{ key: "East", value: 50, count: 1 }],
+      groups: [
+        { key: "East", value: 50, count: 1, valuesUsed: 1 },
+        { key: "North", value: 100, count: 1, valuesUsed: 1 },
+        { key: "South", value: null, count: 1, valuesUsed: 0 },
+      ],
+      totalGroups: 3,
+      rowsMatched: 3,
+    };
+    expect(composeAnswer(r)).toBe(
+      "East has the lowest total revenue: 50 (of 3 regions). 1 region had no usable revenue.",
+    );
   });
 });
 
