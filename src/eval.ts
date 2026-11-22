@@ -92,6 +92,15 @@ export const EVAL_GATE = 0.8;
  * employees salary: Engineering 193,000 / 372,000 = 51.88%. A share
  * with no group, of an average, or of a missing column abstains.
  *
+ * group share — sales revenue by region: South 36.31%, East 34.92%,
+ * North 21.79%, West 6.98% of the 1,789.60 total; units by region:
+ * East 40.28%, South 31.94%, North 20.83%, West 6.94% of 72 (one
+ * blank units cell, so the answer notes 7 of 8 rows had a value);
+ * employees salary by department: Engineering 51.88%, Data 48.12%
+ * of 372,000 (the NA salary is skipped). A group share of an
+ * average, over two dimensions, of a text column, or with a time
+ * period abstains.
+ *
  * distinct values — sales regions: North 3, East 2, South 2, West 1
  * (most frequent first, alphabetical tie-break); sales products in
  * North: Widget A 2, "Widget, Deluxe" 1; employees departments:
@@ -1207,6 +1216,66 @@ export const GOLD_SET: EvalCase[] = [
     question: "revenue change by month where region is North",
     expect: ["Feb 2026 rose by 99.88 (+49.94%)", "Mar 2026 fell by 164.91 (-54.99%)"],
     note: "North only: Jan 200, Feb 299.88, Mar 134.97 — Feb +99.88 (+49.94%), Mar −164.91 (−54.99%)",
+  },
+  {
+    sheet: "sales",
+    question: "revenue share by region",
+    expect: ["South: 36.31%", "East: 34.92%", "North: 21.79%", "West: 6.98%"],
+    note: "revenue by region South 649.77 / East 624.91 / North 389.97 / West 124.95 over a 1,789.60 total",
+  },
+  {
+    sheet: "sales",
+    question: "what share of total revenue does each region contribute",
+    expect: ["South: 36.31%", "East: 34.92%", "North: 21.79%", "West: 6.98%"],
+    note: "the 'each' phrasing is the same group-share question",
+  },
+  {
+    sheet: "sales",
+    question: "units share by region",
+    expect: ["East: 40.28%", "South: 31.94%", "North: 20.83%", "West: 6.94%", "(7 of 8 rows had a value)"],
+    note: "units by region East 29 / South 23 / North 15 / West 5 over 72, one blank units cell in North",
+  },
+  {
+    sheet: "employees",
+    question: "salary share by department",
+    expect: ["Engineering: 51.88%", "Data: 48.12%"],
+    note: "salary by department Engineering 193,000 / Data 179,000 over 372,000 — the NA salary is skipped",
+  },
+  {
+    sheet: "sales",
+    question: "revenue share by product",
+    expect: ["Widget A: 35.76%", "Widget B: 30.72%", "Widget C: 25.14%", "Widget, Deluxe: 8.38%"],
+    note: "revenue by product Widget A 640 / Widget B 549.78 / Widget C 449.85 / Widget, Deluxe 149.97 over 1,789.60",
+  },
+  {
+    sheet: "sales",
+    question: "revenue share by region where product is Widget A",
+    expect: ["East: 62.5%", "North: 37.5%"],
+    note: "Widget A only: East 400 / North 240 over 640",
+  },
+  {
+    sheet: "sales",
+    question: "average revenue share by region",
+    expect: "abstain",
+    note: "a share is computed from totals — an average share is not a fraction of anything",
+  },
+  {
+    sheet: "sales",
+    question: "revenue share by region and product",
+    expect: "abstain",
+    note: "a group share shares out one dimension at a time",
+  },
+  {
+    sheet: "sales",
+    question: "region share by product",
+    expect: "abstain",
+    note: "region is text — a group share needs a numeric column",
+  },
+  {
+    sheet: "sales",
+    question: "revenue share by region by month",
+    expect: "abstain",
+    note: "a group share can't be grouped by a time period",
   },
   {
     sheet: "employees",
