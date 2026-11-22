@@ -284,6 +284,35 @@ export type QueryResult =
       rowsMatched: number;
     }
   | {
+      kind: "periodchange";
+      column: string;
+      op: string;
+      dateColumn: string;
+      bucket: TimeBucket;
+      /**
+       * Per-period aggregate in chronological order. `change` is
+       * the difference against the immediately previous period, or
+       * null for the first period or when either period has no
+       * usable value; `pctChange` is the same change as a percent
+       * of the previous period, or null when the previous value is
+       * zero or either period has no usable value.
+       */
+      periods: {
+        label: string;
+        value: number | null;
+        change: number | null;
+        pctChange: number | null;
+        rows: number;
+        valuesUsed: number;
+      }[];
+      /** The largest rise, or null when no period rose. */
+      biggestRise: { label: string; change: number; pctChange: number | null } | null;
+      /** The largest fall, or null when no period fell. */
+      biggestFall: { label: string; change: number; pctChange: number | null } | null;
+      /** Rows the filters matched, including rows with no usable date. */
+      rowsMatched: number;
+    }
+  | {
       kind: "aboveBelow";
       column: string;
       direction: "above" | "below";
@@ -1391,6 +1420,91 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         bucket: query.bucket,
         periods,
         total: running,
+        rowsMatched: rows.length,
+      };
+    }
+
+    case "periodchange": {
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
+      const dIdx = colIndex.get(query.dateColumn)!;
+      const cIdx = colIndex.get(query.column)!;
+      // Bucket the filtered rows by period, exactly like a trend —
+      // rows with no usable date are not on the timeline, so they
+      // take no part in any change, though they still count in
+      // rowsMatched.
+      const buckets = new Map<
+        string,
+        { label: string; values: number[]; count: number }
+      >();
+      for (const row of rows) {
+        const b = bucketDate(row[dIdx] ?? "", query.bucket);
+        if (!b) continue;
+        const bucket = buckets.get(b.key) ?? { label: b.label, values: [], count: 0 };
+        bucket.count += 1;
+        const raw = row[cIdx] ?? "";
+        if (!isNullValue(raw)) {
+          const n = toNumber(raw);
+          if (n !== null) bucket.values.push(n);
+        }
+        buckets.set(b.key, bucket);
+      }
+      const sorted = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      const values = sorted.map(([, b]) => aggregateValues(query.op, b.values));
+      const periods = sorted.map(([, b], i) => {
+        const value = values[i]!;
+        const prev = i === 0 ? null : values[i - 1]!;
+        // A change needs both this period and the previous one to
+        // have a usable value — a gap breaks the chain instead of
+        // being compared against a stale period.
+        const change =
+          value === null || prev === null ? null : value - prev;
+        const pctChange =
+          change === null || prev === null || prev === 0
+            ? null
+            : (change / prev) * 100;
+        return {
+          label: b.label,
+          value,
+          change,
+          pctChange,
+          rows: b.count,
+          valuesUsed: b.values.length,
+        };
+      });
+      // The biggest rise and fall are read off the signed changes,
+      // so a series that only rises has no fall to name, and one
+      // that only falls has no rise.
+      const rises = periods.filter(
+        (p): p is typeof p & { change: number } =>
+          p.change !== null && p.change > 0,
+      );
+      const falls = periods.filter(
+        (p): p is typeof p & { change: number } =>
+          p.change !== null && p.change < 0,
+      );
+      const best = (list: typeof rises, pick: (a: number, b: number) => number) =>
+        list.length === 0
+          ? null
+          : list.reduce((best, p) =>
+              pick(p.change, best.change) > 0 ? p : best,
+            );
+      const biggestRise = best(rises, (a, b) => a - b);
+      const biggestFall = best(falls, (a, b) => b - a);
+      return {
+        kind: "periodchange",
+        column: query.column,
+        op: query.op,
+        dateColumn: query.dateColumn,
+        bucket: query.bucket,
+        periods,
+        biggestRise:
+          biggestRise === null
+            ? null
+            : { label: biggestRise.label, change: biggestRise.change, pctChange: biggestRise.pctChange },
+        biggestFall:
+          biggestFall === null
+            ? null
+            : { label: biggestFall.label, change: biggestFall.change, pctChange: biggestFall.pctChange },
         rowsMatched: rows.length,
       };
     }
