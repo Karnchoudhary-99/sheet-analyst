@@ -555,3 +555,26 @@ describe("resultToCsv duplicates", () => {
     );
   });
 });
+
+describe("resultToCsv group extreme", () => {
+  it("writes one row per group, best first, with values used", () => {
+    const result: QueryResult = {
+      kind: "groupextreme",
+      groupBy: "region",
+      column: "revenue",
+      op: "sum",
+      direction: "highest",
+      winners: [{ key: "East", value: 400, count: 1 }],
+      groups: [
+        { key: "East", value: 400, count: 1, valuesUsed: 1 },
+        { key: "North", value: 389.97, count: 3, valuesUsed: 3 },
+        { key: "South", value: null, count: 1, valuesUsed: 0 },
+      ],
+      totalGroups: 3,
+      rowsMatched: 5,
+    };
+    expect(resultToCsv(result, "which region has the highest total revenue", "…")).toBe(
+      "region,revenue,rows,values_used\nEast,400,1,1\nNorth,389.97,3,3\nSouth,,1,0",
+    );
+  });
+});
