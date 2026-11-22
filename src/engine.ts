@@ -259,6 +259,31 @@ export type QueryResult =
       rowsMatched: number;
     }
   | {
+      kind: "cumulative";
+      column: string;
+      dateColumn: string;
+      bucket: TimeBucket;
+      /**
+       * Per-period total in chronological order, with the running
+       * total after that period. `value` is null when the period
+       * has rows but none with a usable value; `cumulative`
+       * carries the previous running total forward (a valueless
+       * period adds nothing), and is null until the first period
+       * with a usable value.
+       */
+      periods: {
+        label: string;
+        value: number | null;
+        cumulative: number | null;
+        rows: number;
+        valuesUsed: number;
+      }[];
+      /** The final running total, or null when no period has a usable value. */
+      total: number | null;
+      /** Rows the filters matched, including rows with no usable date. */
+      rowsMatched: number;
+    }
+  | {
       kind: "aboveBelow";
       column: string;
       direction: "above" | "below";
@@ -1316,6 +1341,56 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         periods,
         slope,
         direction,
+        rowsMatched: rows.length,
+      };
+    }
+
+    case "cumulative": {
+      const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
+      const dIdx = colIndex.get(query.dateColumn)!;
+      const cIdx = colIndex.get(query.column)!;
+      // Bucket the filtered rows by period, exactly like a trend —
+      // rows with no usable date are not on the timeline, so they
+      // take no part in the total, though they still count in
+      // rowsMatched.
+      const buckets = new Map<
+        string,
+        { label: string; values: number[]; count: number }
+      >();
+      for (const row of rows) {
+        const b = bucketDate(row[dIdx] ?? "", query.bucket);
+        if (!b) continue;
+        const bucket = buckets.get(b.key) ?? { label: b.label, values: [], count: 0 };
+        bucket.count += 1;
+        const raw = row[cIdx] ?? "";
+        if (!isNullValue(raw)) {
+          const n = toNumber(raw);
+          if (n !== null) bucket.values.push(n);
+        }
+        buckets.set(b.key, bucket);
+      }
+      const sorted = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      let running: number | null = null;
+      const periods = sorted.map(([, b]) => {
+        const value = aggregateValues("sum", b.values);
+        // A period with no usable values adds nothing: the running
+        // total carries forward, so a gap never resets the sum.
+        if (value !== null) running = (running ?? 0) + value;
+        return {
+          label: b.label,
+          value,
+          cumulative: running,
+          rows: b.count,
+          valuesUsed: b.values.length,
+        };
+      });
+      return {
+        kind: "cumulative",
+        column: query.column,
+        dateColumn: query.dateColumn,
+        bucket: query.bucket,
+        periods,
+        total: running,
         rowsMatched: rows.length,
       };
     }
