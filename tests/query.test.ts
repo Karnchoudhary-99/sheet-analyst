@@ -2581,6 +2581,111 @@ describe("parseQuestion period change", () => {
   });
 });
 
+describe("parseQuestion group share", () => {
+  it("parses 'revenue share by region'", () => {
+    const r = parseQuestion("revenue share by region", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: { kind: "groupshare", groupBy: "region", column: "revenue", filters: [] },
+    });
+  });
+
+  it("parses 'share of total revenue by product' and 'percentage of revenue by region'", () => {
+    const a = parseQuestion("share of total revenue by product", SALES);
+    expect(a.ok).toBe(true);
+    if (a.ok && a.query.kind === "groupshare") {
+      expect(a.query.groupBy).toBe("product");
+      expect(a.query.column).toBe("revenue");
+    }
+    const b = parseQuestion("percentage of revenue by region", SALES);
+    expect(b.ok).toBe(true);
+    if (b.ok) expect(b.query.kind).toBe("groupshare");
+  });
+
+  it("parses 'what share of total revenue does each region contribute'", () => {
+    const r = parseQuestion("what share of total revenue does each region contribute", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "groupshare") {
+      expect(r.query.groupBy).toBe("region");
+      expect(r.query.column).toBe("revenue");
+    }
+  });
+
+  it("parses 'revenue share per region' and 'share of revenue for each region'", () => {
+    const a = parseQuestion("revenue share per region", SALES);
+    expect(a.ok).toBe(true);
+    if (a.ok) expect(a.query.kind).toBe("groupshare");
+    const b = parseQuestion("share of revenue for each region", SALES);
+    expect(b.ok).toBe(true);
+    if (b.ok && b.query.kind === "groupshare") {
+      expect(b.query.groupBy).toBe("region");
+    }
+  });
+
+  it("parses 'what percentage of revenue comes from each product'", () => {
+    const r = parseQuestion("what percentage of revenue comes from each product", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "groupshare") {
+      expect(r.query.groupBy).toBe("product");
+      expect(r.query.column).toBe("revenue");
+    }
+  });
+
+  it("carries a where filter into the group share", () => {
+    const r = parseQuestion("revenue share by region where product is Widget A", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.query.kind).toBe("groupshare");
+      expect(r.query.filters).toEqual([{ column: "product", op: "=", value: "Widget A" }]);
+    }
+  });
+
+  it("abstains on an average share", () => {
+    const r = parseQuestion("average revenue share by region", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/computed from totals/);
+  });
+
+  it("abstains on two group dimensions", () => {
+    const r = parseQuestion("revenue share by region and product", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/one dimension at a time/);
+  });
+
+  it("abstains on a text value column", () => {
+    const r = parseQuestion("region share by product", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains when the group and value columns are the same", () => {
+    const r = parseQuestion("revenue share by revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/can't group by itself/);
+  });
+
+  it("abstains on an unknown group column, with a did-you-mean hint", () => {
+    const r = parseQuestion("revenue share by regoin", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/could not find a column to group by/);
+  });
+
+  it("abstains when a time period is also named", () => {
+    const r = parseQuestion("revenue share by region by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/time period/);
+  });
+
+  it("does not steal subset shares from the share parser", () => {
+    const a = parseQuestion("what share of revenue is North", SALES);
+    expect(a.ok).toBe(true);
+    if (a.ok) expect(a.query.kind).toBe("share");
+    const b = parseQuestion("what share of rows are in North", SALES);
+    expect(b.ok).toBe(true);
+    if (b.ok) expect(b.query.kind).toBe("share");
+  });
+});
+
 describe("parseQuestion missing values", () => {
   it("parses 'how many rows are missing units' as a count", () => {
     expect(parseQuestion("how many rows are missing units", SALES)).toEqual({
