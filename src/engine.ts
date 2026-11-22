@@ -138,6 +138,21 @@ export type QueryResult =
       rowsMatched: number;
     }
   | {
+      kind: "headtohead";
+      column: string | null;
+      op: string;
+      groupColumn: string;
+      /** Per-side aggregate: `value` is null when the side has no usable values. */
+      sideA: { label: string; value: number | null; rows: number; valuesUsed: number };
+      sideB: { label: string; value: number | null; rows: number; valuesUsed: number };
+      /** Higher minus lower, or null when either side has no usable value. */
+      difference: number | null;
+      /** Percent the higher side exceeds the lower by, or null when the lower side is zero or either side has no usable value. */
+      pctHigher: number | null;
+      /** Rows in either side (rows in neither side are not part of the comparison). */
+      rowsMatched: number;
+    }
+  | {
       kind: "share";
       /** The column being shared out, or null for a row-count share. */
       column: string | null;
@@ -1180,6 +1195,61 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
         periodB: b,
         delta,
         pctChange,
+        rowsMatched: a.rows + b.rows,
+      };
+    }
+
+    case "headtohead": {
+      const cIdx = query.column ? colIndex.get(query.column)! : -1;
+      // Each side is the outer filters plus its own equality on
+      // the group column, so a where clause ("where product is
+      // Widget A") applies to both sides the same way, and the
+      // equality reuses the filter semantics (case-insensitive).
+      const side = (label: string) => {
+        const rows = applyFilters(
+          parsed,
+          schema,
+          [...query.filters, { column: query.groupColumn, op: "=", value: label }],
+          query.orGroups,
+        );
+        if (cIdx < 0) {
+          return { label, value: rows.length, rows: rows.length, valuesUsed: rows.length };
+        }
+        const values = rows
+          .map((r) => r[cIdx] ?? "")
+          .filter((v) => !isNullValue(v))
+          .map(toNumber)
+          .filter((n): n is number => n !== null);
+        return {
+          label,
+          value: aggregateValues(query.op, values),
+          rows: rows.length,
+          valuesUsed: values.length,
+        };
+      };
+      const a = side(query.sideA);
+      const b = side(query.sideB);
+      // The difference and the percent are always read from the
+      // higher side down to the lower one, so "higher by 260
+      // (66.62%)" never needs a sign — the answer names the
+      // higher side. A zero lower side has no percent.
+      const difference =
+        a.value === null || b.value === null ? null : Math.abs(b.value - a.value);
+      const lower =
+        a.value === null || b.value === null ? null : Math.min(a.value, b.value);
+      const pctHigher =
+        difference === null || lower === null || lower === 0
+          ? null
+          : (difference / lower) * 100;
+      return {
+        kind: "headtohead",
+        column: query.column,
+        op: query.op,
+        groupColumn: query.groupColumn,
+        sideA: a,
+        sideB: b,
+        difference,
+        pctHigher,
         rowsMatched: a.rows + b.rows,
       };
     }
