@@ -275,6 +275,50 @@ describe("resultToCsv comparison", () => {
   });
 });
 
+describe("resultToCsv head-to-head", () => {
+  it("writes one row per side plus difference and percent-higher rows", () => {
+    const result: QueryResult = {
+      kind: "headtohead",
+      column: "revenue",
+      op: "sum",
+      groupColumn: "region",
+      sideA: { label: "North", value: 389.97, rows: 3, valuesUsed: 3 },
+      sideB: { label: "South", value: 199.92, rows: 1, valuesUsed: 1 },
+      difference: 190.05,
+      pctHigher: 95.06,
+      rowsMatched: 4,
+    };
+    expect(resultToCsv(result, "compare total revenue in North vs South", "…")).toBe(
+      "side,value,rows,values_used\n" +
+        "North,389.97,3,3\n" +
+        "South,199.92,1,1\n" +
+        "difference,190.05,,\n" +
+        "percent_higher,95.06,,",
+    );
+  });
+
+  it("leaves value, difference and percent blank when a side has no usable values", () => {
+    const result: QueryResult = {
+      kind: "headtohead",
+      column: "revenue",
+      op: "sum",
+      groupColumn: "region",
+      sideA: { label: "North", value: null, rows: 1, valuesUsed: 0 },
+      sideB: { label: "South", value: 100, rows: 1, valuesUsed: 1 },
+      difference: null,
+      pctHigher: null,
+      rowsMatched: 2,
+    };
+    expect(resultToCsv(result, "compare total revenue in North vs South", "…")).toBe(
+      "side,value,rows,values_used\n" +
+        "North,,1,0\n" +
+        "South,100,1,1\n" +
+        "difference,,,\n" +
+        "percent_higher,,,",
+    );
+  });
+});
+
 describe("resultToCsv share", () => {
   it("writes the share as a fraction with subset and whole-sheet totals", () => {
     const result: QueryResult = {
