@@ -72,9 +72,11 @@ export function sparkline(values: number[]): string {
  * line chart (the shape over time is the point), other groups become
  * a bar chart, a trend becomes a line chart over its fitted periods
  * (periods with no usable value are left out of the line, never
- * plotted as zero), and everything else has no chart (null) — a
- * single number or a table of rows is already the answer, and
- * inventing a chart for it would add noise, not information.
+ * plotted as zero), a cumulative result becomes a line chart over
+ * its running totals (same gap rule), and everything else has no
+ * chart (null) — a single number or a table of rows is already the
+ * answer, and inventing a chart for it would add noise, not
+ * information.
  */
 export function renderResultChart(
   result: QueryResult,
@@ -93,6 +95,23 @@ export function renderResultChart(
           p.value !== null,
       )
       .map((p) => ({ key: p.label, value: p.value }));
+    if (points.length === 0) return null;
+    return renderLineChart(points, options);
+  }
+  if (result.kind === "cumulative") {
+    const points = result.periods
+      .filter(
+        (
+          p,
+        ): p is {
+          label: string;
+          value: number | null;
+          cumulative: number;
+          rows: number;
+          valuesUsed: number;
+        } => p.cumulative !== null,
+      )
+      .map((p) => ({ key: p.label, value: p.cumulative }));
     if (points.length === 0) return null;
     return renderLineChart(points, options);
   }
@@ -129,6 +148,23 @@ export function renderResultChartSvg(
           p.value !== null,
       )
       .map((p) => ({ key: p.label, value: p.value }));
+    if (points.length === 0) return null;
+    return renderLineChartSvg(points, options);
+  }
+  if (result.kind === "cumulative") {
+    const points = result.periods
+      .filter(
+        (
+          p,
+        ): p is {
+          label: string;
+          value: number | null;
+          cumulative: number;
+          rows: number;
+          valuesUsed: number;
+        } => p.cumulative !== null,
+      )
+      .map((p) => ({ key: p.label, value: p.cumulative }));
     if (points.length === 0) return null;
     return renderLineChartSvg(points, options);
   }

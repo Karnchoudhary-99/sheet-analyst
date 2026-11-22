@@ -311,6 +311,17 @@ export type Query =
       orGroups?: Filter[][];
     }
   | {
+      kind: "cumulative";
+      /** The column the running total is read from. */
+      column: string;
+      /** The date column the periods are read from. */
+      dateColumn: string;
+      /** The period the running total is bucketed into. */
+      bucket: TimeBucket;
+      filters: Filter[];
+      orGroups?: Filter[][];
+    }
+  | {
       kind: "aboveBelow";
       /** The numeric column compared against its own baseline. */
       column: string;
@@ -3399,6 +3410,120 @@ function tryParseGroupExtreme(
 }
 
 /**
+ * Try to read a cumulative question ("cumulative revenue by month",
+ * "running total of revenue by quarter"). Returns null when the
+ * question shows no cumulative intent; otherwise a cumulative query,
+ * or an abstention when the period, the date column or the target
+ * column cannot be pinned down. A running total is always a sum —
+ * a cumulative average, minimum or maximum is not a total of
+ * anything, so those words abstain instead of answering with the
+ * plain total. Unlike a trend, which fits a line over the periods,
+ * this keeps the running sum after each period.
+ */
+function tryParseCumulative(
+  text: string,
+  columns: ColumnInfo[],
+  bucket: TimeBucket | null,
+  filters: Filter[],
+  orGroups?: Filter[][],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\bcumulative\b|\brunning total\b/.test(norm)) return null;
+  if (!bucket) {
+    return {
+      ok: false,
+      reason: "a running total needs a period — try e.g. 'cumulative revenue by month'",
+    };
+  }
+  const dates = columns.filter((c) => c.type === "date");
+  if (dates.length === 0) {
+    return {
+      ok: false,
+      reason: `a running total over time needs a date column — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (dates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which date column to total by — matches ${dates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const dateColumn = dates[0];
+  const op = detectAggregateOp(norm);
+  if (op && op !== "sum") {
+    return {
+      ok: false,
+      reason: `a running total needs a total — a cumulative ${op} has no running sum; try a trend for the ${op} instead`,
+    };
+  }
+
+  // Strip the cumulative wording, the period word and filler,
+  // leaving the column name ("running total of revenue by month"
+  // -> "revenue"). Bucket aliases ("monthly") are stripped too.
+  const filler = new Set([
+    "cumulative",
+    "running",
+    "total",
+    "sum",
+    "of",
+    "by",
+    "per",
+    "over",
+    "time",
+    "the",
+    "what",
+    "how",
+    "much",
+    "is",
+    "a",
+    "an",
+  ]);
+  const periodWords = new Set(Object.keys(BUCKET_WORDS));
+  const cleaned = norm
+    .split(" ")
+    .filter(
+      (w) =>
+        !filler.has(w) &&
+        !periodWords.has(w) &&
+        !periodWords.has(w.endsWith("s") ? w.slice(0, -1) : w),
+    )
+    .join(" ");
+  const candidates = findColumns(cleaned, columns).filter(
+    (c) => c.name !== dateColumn.name,
+  );
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}`,
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to total — matches ${candidates.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = candidates[0];
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a running total needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  return {
+    ok: true,
+    query: {
+      kind: "cumulative",
+      column: column.name,
+      dateColumn: dateColumn.name,
+      bucket,
+      filters,
+      orGroups,
+    },
+  };
+}
+
+/**
  * Try to read a trend question ("revenue trend by month", "average
  * salary trend by year", "is revenue trending up"). Returns null
  * when the question shows no trend intent; otherwise a trend query,
@@ -3581,6 +3706,14 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // the plain monthly grouping instead of the trend asked for.
   const trend = tryParseTrend(timeBucket.rest, columns, bucket, filters, orGroups);
   if (trend) return trend;
+
+  // Cumulative: a column's running total over a time period
+  // ("cumulative revenue by month"). Once the question shows
+  // cumulative intent it is parsed here or abstained — falling
+  // through would answer the plain monthly grouping instead of
+  // the running total asked for.
+  const cumulative = tryParseCumulative(timeBucket.rest, columns, bucket, filters, orGroups);
+  if (cumulative) return cumulative;
 
   // Share: a filtered subset's total as a share of the whole sheet.
   // Once the question shows share intent it is parsed here or

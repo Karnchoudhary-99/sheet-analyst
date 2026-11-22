@@ -957,6 +957,63 @@ describe("composeAnswer trend", () => {
   });
 });
 
+describe("composeAnswer cumulative", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,10,200.00\n" +
+      "2026-01-12,South,Widget B,5,124.95\n" +
+      "2026-01-20,East,Widget A,8,160.00\n" +
+      "2026-01-28,West,Widget C,4,179.96\n" +
+      "2026-02-03,North,Widget B,12,299.88\n" +
+      "2026-02-10,South,Widget A,6,120.00\n" +
+      "2026-02-15,East,Widget C,7,314.93\n" +
+      "2026-02-22,West,Widget A,9,180.00\n" +
+      "2026-03-02,North,Widget C,3,134.97\n" +
+      "2026-03-09,South,Widget A,15,300.00\n" +
+      "2026-03-16,East,Widget B,10,249.90\n" +
+      "2026-03-25,West,Widget B,6,149.94\n",
+  );
+
+  it("states the final total and the running total after each period", () => {
+    expect(answerQuestion("cumulative revenue by month", MONTHLY)).toBe(
+      "Total revenue by month reached 2,414.53 by Mar 2026 " +
+        "(Jan 2026: 664.91; Feb 2026: 1,579.72; Mar 2026: 2,414.53).",
+    );
+  });
+
+  it("names a period with no usable values instead of showing zero", () => {
+    const staff = parseCsv(
+      "id,name,department,salary,start_date,remote\n" +
+        "1,Ada,Engineering,95000,2024-03-01,true\n" +
+        "2,Grace,Engineering,98000,2023-07-15,true\n" +
+        "3,Alan,Data,88000,2025-01-20,false\n" +
+        "4,Katherine,Data,91000,2024-11-04,true\n" +
+        "5,Edsger,Engineering,NA,2022-05-30,false\n",
+    );
+    expect(answerQuestion("cumulative salary by year", staff)).toBe(
+      "Total salary by year reached 372,000 by 2025 " +
+        "(2022: no usable values; 2023: 98,000; 2024: 284,000; 2025: 372,000). " +
+        "2022 has no usable values and adds nothing to the total.",
+    );
+  });
+
+  it("says so plainly when no matching row has a usable date", () => {
+    const mixed = parseCsv(
+      "date,region,revenue\n" +
+        ",North,100\n" +
+        ",North,200\n" +
+        "2026-01-05,South,300\n" +
+        "2026-02-03,South,500\n",
+    );
+    expect(
+      answerQuestion("cumulative revenue by month where region is North", mixed),
+    ).toBe(
+      "I could not compute the running total of revenue by month — " +
+        "none of the 2 matching rows has a usable date.",
+    );
+  });
+});
+
 describe("composeAnswer missing values", () => {
   it("counts one column's missing rows with a percentage", () => {
     expect(answerQuestion("how many rows are missing units", SALES)).toBe(

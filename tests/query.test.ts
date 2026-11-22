@@ -2384,6 +2384,95 @@ describe("parseQuestion trend", () => {
   });
 });
 
+describe("parseQuestion cumulative", () => {
+  const NODATES = parseCsv(
+    "region,product,revenue\n" +
+      "North,Widget A,240.00\n" +
+      "South,Widget B,199.92\n",
+  );
+
+  it("parses 'cumulative revenue by month'", () => {
+    const r = parseQuestion("cumulative revenue by month", SALES);
+    expect(r).toEqual({
+      ok: true,
+      query: {
+        kind: "cumulative",
+        column: "revenue",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+    });
+  });
+
+  it("parses 'running total of revenue by quarter'", () => {
+    const r = parseQuestion("running total of revenue by quarter", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "cumulative") {
+      expect(r.query.column).toBe("revenue");
+      expect(r.query.bucket).toBe("quarter");
+    }
+  });
+
+  it("parses a cumulative total over years on the staff sheet", () => {
+    const r = parseQuestion("cumulative salary by year", STAFF);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.query.kind === "cumulative") {
+      expect(r.query.column).toBe("salary");
+      expect(r.query.dateColumn).toBe("start_date");
+      expect(r.query.bucket).toBe("year");
+    }
+  });
+
+  it("carries a where filter into the running total", () => {
+    const r = parseQuestion("cumulative revenue by month where region is North", SALES);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.query.kind).toBe("cumulative");
+      expect(r.query.filters).toEqual([{ column: "region", op: "=", value: "North" }]);
+    }
+  });
+
+  it("abstains when no period is named", () => {
+    const r = parseQuestion("cumulative revenue", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/needs a period/);
+  });
+
+  it("abstains on a cumulative average", () => {
+    const r = parseQuestion("cumulative average revenue by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/running total needs a total/);
+  });
+
+  it("abstains on a non-numeric column", () => {
+    const r = parseQuestion("cumulative region by month", SALES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/numeric column/);
+  });
+
+  it("abstains when the sheet has no date column", () => {
+    const r = parseQuestion("cumulative revenue by month", NODATES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/date column/);
+  });
+
+  it("abstains when the sheet has two date columns", () => {
+    const r = parseQuestion("cumulative revenue by month", DATES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/which date column/);
+  });
+
+  it("does not turn a trend or a plain grouping into a cumulative", () => {
+    const t = parseQuestion("revenue trend by month", SALES);
+    expect(t.ok).toBe(true);
+    if (t.ok) expect(t.query.kind).toBe("trend");
+    const g = parseQuestion("total revenue by month", SALES);
+    expect(g.ok).toBe(true);
+    if (g.ok) expect(g.query.kind).toBe("group");
+  });
+});
+
 describe("parseQuestion missing values", () => {
   it("parses 'how many rows are missing units' as a count", () => {
     expect(parseQuestion("how many rows are missing units", SALES)).toEqual({

@@ -1707,6 +1707,113 @@ describe("executeQuery trend", () => {
   });
 });
 
+describe("executeQuery cumulative", () => {
+  const RUNNING = parseCsv(
+    "date,region,revenue\n" +
+      "2026-01-05,North,100\n" +
+      "2026-01-20,South,200\n" +
+      "2026-02-03,East,400\n" +
+      "2026-02-10,West,100\n" +
+      "2026-03-02,North,300\n" +
+      "2026-03-15,East,300\n",
+  );
+
+  it("keeps the running total after each monthly period", () => {
+    const r = ask("cumulative revenue by month", RUNNING);
+    expect(r.kind).toBe("cumulative");
+    if (r.kind === "cumulative") {
+      // Monthly totals 300, 500, 600: running 300, 800, 1400.
+      expect(r.periods.map((p) => p.label)).toEqual([
+        "Jan 2026",
+        "Feb 2026",
+        "Mar 2026",
+      ]);
+      expect(r.periods.map((p) => p.value)).toEqual([300, 500, 600]);
+      expect(r.periods.map((p) => p.cumulative)).toEqual([300, 800, 1400]);
+      expect(r.total).toBe(1400);
+      expect(r.rowsMatched).toBe(6);
+    }
+  });
+
+  it("carries the running total through a period with no usable values", () => {
+    const sparse = parseCsv(
+      "date,revenue\n" +
+        "2026-01-05,NA\n" +
+        "2026-02-03,500\n" +
+        "2026-03-02,600\n",
+    );
+    const r = ask("cumulative revenue by month", sparse);
+    expect(r.kind).toBe("cumulative");
+    if (r.kind === "cumulative") {
+      // Jan has no usable value, so its running total is null; Feb
+      // starts the sum at 500 and Mar reaches 1100.
+      expect(r.periods[0].value).toBeNull();
+      expect(r.periods[0].cumulative).toBeNull();
+      expect(r.periods.map((p) => p.cumulative)).toEqual([null, 500, 1100]);
+      expect(r.total).toBe(1100);
+    }
+  });
+
+  it("returns a null total when no period has a usable value", () => {
+    const empty = parseCsv(
+      "date,revenue\n" + "2026-01-05,NA\n" + "2026-02-03,\n",
+    );
+    // The parser abstains on an all-blank column (it infers "empty",
+    // not numeric), so run the parsed shape directly: the engine
+    // must still answer with a null total, not a zero.
+    const r = executeQuery(
+      {
+        kind: "cumulative",
+        column: "revenue",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+      empty,
+    );
+    expect(r.kind).toBe("cumulative");
+    if (r.kind === "cumulative") {
+      expect(r.periods.map((p) => p.value)).toEqual([null, null]);
+      expect(r.periods.map((p) => p.cumulative)).toEqual([null, null]);
+      expect(r.total).toBeNull();
+    }
+  });
+
+  it("returns no periods when no row has a usable date", () => {
+    const dateless = parseCsv("date,revenue\n,100\n,200\n");
+    // Same bypass as above: the parser abstains when the date
+    // column has no usable dates to infer from.
+    const r = executeQuery(
+      {
+        kind: "cumulative",
+        column: "revenue",
+        dateColumn: "date",
+        bucket: "month",
+        filters: [],
+      },
+      dateless,
+    );
+    expect(r.kind).toBe("cumulative");
+    if (r.kind === "cumulative") {
+      expect(r.periods).toHaveLength(0);
+      expect(r.total).toBeNull();
+      expect(r.rowsMatched).toBe(2);
+    }
+  });
+
+  it("totals only the filtered rows", () => {
+    const r = ask("cumulative revenue by month where region is North", RUNNING);
+    expect(r.kind).toBe("cumulative");
+    if (r.kind === "cumulative") {
+      // North only: Jan 100, Mar 300 — running 100, then 400.
+      expect(r.periods.map((p) => p.label)).toEqual(["Jan 2026", "Mar 2026"]);
+      expect(r.periods.map((p) => p.cumulative)).toEqual([100, 400]);
+      expect(r.total).toBe(400);
+      expect(r.rowsMatched).toBe(2);
+    }
+  });
+});
+
 describe("executeQuery missing values", () => {
   it("counts the missing rows of one column", () => {
     const r = ask("how many rows are missing units");

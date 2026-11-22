@@ -46,6 +46,8 @@ const QUESTIONS: [string, ReturnType<typeof parseCsv>][] = [
   ["distribution of salary", staff],
   ["histogram of score", scores],
   ["revenue trend by month", monthly],
+  ["cumulative revenue by month", monthly],
+  ["running total of units by month", monthly],
   ["show rows sorted by revenue descending", sales],
   ["rows with revenue above average", sales],
   ["how many rows are missing units", sales],

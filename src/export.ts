@@ -29,6 +29,10 @@
  *   A trend becomes one row per period of `period,value,rows,values_used`
  *   plus a `slope per <bucket>` row (empty slope when the trend could
  *   not be computed, empty value for a period with no usable values).
+ *   A cumulative result becomes one row per period of
+ *   `period,value,cumulative,rows,values_used` plus a `total` row
+ *   (empty value for a period with no usable values, empty cumulative
+ *   until the first period with a usable value).
  *   An above/below-average result exports as its row table, like a
  *   row listing — the threshold is in the answer text, not the CSV.
  *   Missing values become one row per column of
@@ -264,6 +268,30 @@ export function resultToCsv(
         csvRow([
           `slope per ${result.bucket}`,
           result.slope === null ? "" : String(result.slope),
+          "",
+          "",
+        ]),
+      );
+      return lines.join("\n");
+    }
+    case "cumulative": {
+      const lines = [csvRow(["period", "value", "cumulative", "rows", "values_used"])];
+      for (const p of result.periods) {
+        lines.push(
+          csvRow([
+            p.label,
+            p.value === null ? "" : String(p.value),
+            p.cumulative === null ? "" : String(p.cumulative),
+            String(p.rows),
+            String(p.valuesUsed),
+          ]),
+        );
+      }
+      lines.push(
+        csvRow([
+          "total",
+          result.total === null ? "" : String(result.total),
+          "",
           "",
           "",
         ]),

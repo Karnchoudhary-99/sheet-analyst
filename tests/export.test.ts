@@ -454,6 +454,46 @@ describe("resultToCsv trend", () => {
   });
 });
 
+describe("resultToCsv cumulative", () => {
+  it("writes one row per period plus a total row", () => {
+    const result: QueryResult = {
+      kind: "cumulative",
+      column: "revenue",
+      dateColumn: "date",
+      bucket: "month",
+      periods: [
+        { label: "Jan 2026", value: 664.91, cumulative: 664.91, rows: 4, valuesUsed: 4 },
+        { label: "Feb 2026", value: 914.81, cumulative: 1579.72, rows: 4, valuesUsed: 4 },
+        { label: "Mar 2026", value: 834.81, cumulative: 2414.53, rows: 4, valuesUsed: 4 },
+      ],
+      total: 2414.53,
+      rowsMatched: 12,
+    };
+    expect(resultToCsv(result, "cumulative revenue by month", "…")).toBe(
+      "period,value,cumulative,rows,values_used\n" +
+        "Jan 2026,664.91,664.91,4,4\n" +
+        "Feb 2026,914.81,1579.72,4,4\n" +
+        "Mar 2026,834.81,2414.53,4,4\n" +
+        "total,2414.53,,,",
+    );
+  });
+
+  it("leaves the value blank for a valueless period and the total blank when uncomputable", () => {
+    const result: QueryResult = {
+      kind: "cumulative",
+      column: "revenue",
+      dateColumn: "date",
+      bucket: "month",
+      periods: [{ label: "Jan 2026", value: null, cumulative: null, rows: 1, valuesUsed: 0 }],
+      total: null,
+      rowsMatched: 1,
+    };
+    expect(resultToCsv(result, "cumulative revenue by month", "…")).toBe(
+      "period,value,cumulative,rows,values_used\nJan 2026,,,1,0\ntotal,,,,",
+    );
+  });
+});
+
 describe("resultToCsv above/below average", () => {
   it("writes the matching rows as a table", () => {
     const result: QueryResult = {

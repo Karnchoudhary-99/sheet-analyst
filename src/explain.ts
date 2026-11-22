@@ -244,6 +244,17 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
+    case "cumulative": {
+      const what = `total ${query.column}`;
+      return [
+        `running total of ${what} by ${query.bucket}`,
+        "operation: cumulative sum",
+        `column: ${query.column}`,
+        `date column: ${query.dateColumn}`,
+        `time bucket: ${query.bucket}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
+      ];
+    }
     case "aboveBelow":
       return [
         `rows with ${query.column} ${query.direction} the ${query.baseline}`,

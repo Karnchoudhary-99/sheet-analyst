@@ -563,6 +563,28 @@ describe("describeQuery trend", () => {
   });
 });
 
+describe("describeQuery cumulative", () => {
+  it("describes the column, date column, bucket and filters", () => {
+    const monthly = parseCsv(
+      "date,region,revenue\n2026-01-05,North,240.00\n2026-02-03,South,400.00\n",
+    );
+    const explained = explainQuestion(
+      "cumulative revenue by month where region is North",
+      monthly,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "running total of total revenue by month",
+      "operation: cumulative sum",
+      "column: revenue",
+      "date column: date",
+      "time bucket: month",
+      "filters: region = North",
+    ]);
+  });
+});
+
 describe("describeQuery missing values", () => {
   it("describes a single-column count", () => {
     const lines = describeQuery({

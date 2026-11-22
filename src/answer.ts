@@ -531,6 +531,42 @@ function composeTrend(result: Extract<QueryResult, { kind: "trend" }>): string {
   );
 }
 
+function composeCumulative(result: Extract<QueryResult, { kind: "cumulative" }>): string {
+  const what = `total ${result.column}`;
+  const label = what.charAt(0).toUpperCase() + what.slice(1);
+  if (result.periods.length === 0) {
+    return (
+      `I could not compute the running total of ${result.column} by ${result.bucket} — ` +
+      `none of the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")} ` +
+      `has a usable date.`
+    );
+  }
+  if (result.total === null) {
+    return (
+      `I could not compute the running total of ${result.column} by ${result.bucket} — ` +
+      `no period has a usable value.`
+    );
+  }
+  const last = result.periods[result.periods.length - 1]!;
+  // Periods with no usable value are named, so a flat stretch in
+  // the running total is visible instead of looking like zero sales.
+  const gaps = result.periods.filter((p) => p.value === null);
+  const gapNote =
+    gaps.length === 0
+      ? ""
+      : ` ${gaps.map((p) => p.label).join(", ")} ${gaps.length === 1 ? "has" : "have"} no usable values and ${gaps.length === 1 ? "adds" : "add"} nothing to the total.`;
+  const trail = result.periods
+    .map(
+      (p) =>
+        `${p.label}: ${p.cumulative === null ? "no usable values" : formatNumber(p.cumulative)}`,
+    )
+    .join("; ");
+  return (
+    `${label} by ${result.bucket} reached ${formatNumber(result.total)} by ${last.label} ` +
+    `(${trail}).${gapNote}`
+  );
+}
+
 /**
  * Render a row table (header + divider + one line per row). Shared by
  * the row listing and the above/below-average answer, which both
@@ -834,6 +870,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeDistribution(result);
     case "trend":
       return composeTrend(result);
+    case "cumulative":
+      return composeCumulative(result);
     case "missing":
       return composeMissing(result, parsed);
     case "outliers":
