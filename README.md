@@ -44,6 +44,7 @@ top-N) directly from the spreadsheet.
 - [x] Trailing value lists ("total revenue for North and South", "total revenue in North or South" — a list after "in"/"for" is an "or"; a single unknown trailing value abstains instead of answering the whole sheet)
 - [x] Did-you-mean hints ("total revnue" suggests "revenue", "total revenue by regoin" suggests "region" — edit distance ≤ 2 or a prefix; a group-by naming no column is now an error instead of silently answering the plain total)
 - [x] Distribution questions ("distribution of salary", "histogram of revenue" — values binned into an equal-width histogram, at most 10 bins and never more than the distinct-value count; a text column abstains; `sheet chart` draws it, `ask --out` exports one CSV row per bin)
+- [x] Cross-column comparisons ("how many rows where revenue is greater than units", "total score where score is greater than hours" — a where clause may compare two columns in the same row with `>`, `>=`, `<` or `<=`; both must be numbers or both dates, a blank cell on either side never matches, `=` and quoted right-hand sides stay literal)
 - [ ] Self-review checklist, then public
 
 ## Quick start
@@ -119,6 +120,18 @@ answerQuestion("show rows missing units", sales);
 // "1 row missing units:\n| date | region | product | units | revenue |…"
 answerQuestion("total profit", sales);
 // "I can't answer that from this data: no column named in the question…"
+answerQuestion("how many rows where revenue is greater than units", sales);
+// "There are 7 matching rows." (the blank-units row drops out —
+// a missing value is never greater than, or less than, anything)
+answerQuestion("total revenue where revenue is greater than units", sales);
+// "Total revenue is 1,789.6 (across 7 rows)."
+// A where clause may compare two columns in the same row instead
+// of a column against a literal, with `>`, `>=`, `<` or `<=`
+// ("where score is greater than hours"). Both columns must be
+// numbers, or both dates — a number against a date, or text
+// against text, abstains instead of answering. `=` never takes
+// this path ("where region is revenue" means a region literally
+// called revenue), and neither does a quoted right-hand side.
 answerQuestion("total revenue by month", monthlySales);
 // "Total revenue by month:\n- Jan 2026: 664.91 (4 rows)\n- Feb 2026: 914.81 (4 rows)…"
 answerQuestion("correlation between revenue and units", sales);
