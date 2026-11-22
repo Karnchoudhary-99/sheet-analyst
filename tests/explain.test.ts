@@ -585,6 +585,40 @@ describe("describeQuery cumulative", () => {
   });
 });
 
+describe("describeQuery period change", () => {
+  it("describes the column, date column, bucket and filters", () => {
+    const monthly = parseCsv(
+      "date,region,revenue\n2026-01-05,North,240.00\n2026-02-03,South,400.00\n",
+    );
+    const explained = explainQuestion(
+      "revenue change by month where region is North",
+      monthly,
+    );
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "change in total revenue by month",
+      "operation: period change",
+      "column: revenue",
+      "date column: date",
+      "time bucket: month",
+      "filters: region = North",
+    ]);
+  });
+
+  it("names the average for an average change", () => {
+    const monthly = parseCsv(
+      "date,revenue\n2026-01-05,240.00\n2026-02-03,400.00\n",
+    );
+    const explained = explainQuestion("average revenue change by month", monthly);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)[0]).toBe(
+      "change in average revenue by month",
+    );
+  });
+});
+
 describe("describeQuery missing values", () => {
   it("describes a single-column count", () => {
     const lines = describeQuery({

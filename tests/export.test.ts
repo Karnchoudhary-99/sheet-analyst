@@ -494,6 +494,57 @@ describe("resultToCsv cumulative", () => {
   });
 });
 
+describe("resultToCsv period change", () => {
+  it("writes one row per period plus biggest-rise and biggest-fall rows", () => {
+    const result: QueryResult = {
+      kind: "periodchange",
+      column: "revenue",
+      op: "sum",
+      dateColumn: "date",
+      bucket: "month",
+      periods: [
+        { label: "Jan 2026", value: 664.91, change: null, pctChange: null, rows: 4, valuesUsed: 4 },
+        { label: "Feb 2026", value: 914.81, change: 249.9, pctChange: 37.5849, rows: 4, valuesUsed: 4 },
+        { label: "Mar 2026", value: 834.81, change: -80, pctChange: -8.7444, rows: 4, valuesUsed: 4 },
+      ],
+      biggestRise: { label: "Feb 2026", change: 249.9, pctChange: 37.5849 },
+      biggestFall: { label: "Mar 2026", change: -80, pctChange: -8.7444 },
+      rowsMatched: 12,
+    };
+    expect(resultToCsv(result, "revenue change by month", "…")).toBe(
+      "period,value,change,percent_change,rows,values_used\n" +
+        "Jan 2026,664.91,,,4,4\n" +
+        "Feb 2026,914.81,249.9,37.5849,4,4\n" +
+        "Mar 2026,834.81,-80,-8.7444,4,4\n" +
+        "biggest rise,Feb 2026,249.9,37.5849,,\n" +
+        "biggest fall,Mar 2026,-80,-8.7444,,",
+    );
+  });
+
+  it("leaves the percent blank off a zero baseline and omits a missing rise or fall", () => {
+    const result: QueryResult = {
+      kind: "periodchange",
+      column: "revenue",
+      op: "sum",
+      dateColumn: "date",
+      bucket: "month",
+      periods: [
+        { label: "Jan 2026", value: 0, change: null, pctChange: null, rows: 1, valuesUsed: 1 },
+        { label: "Feb 2026", value: 500, change: 500, pctChange: null, rows: 1, valuesUsed: 1 },
+      ],
+      biggestRise: { label: "Feb 2026", change: 500, pctChange: null },
+      biggestFall: null,
+      rowsMatched: 2,
+    };
+    expect(resultToCsv(result, "revenue change by month", "…")).toBe(
+      "period,value,change,percent_change,rows,values_used\n" +
+        "Jan 2026,0,,,1,1\n" +
+        "Feb 2026,500,500,,1,1\n" +
+        "biggest rise,Feb 2026,500,,",
+    );
+  });
+});
+
 describe("resultToCsv above/below average", () => {
   it("writes the matching rows as a table", () => {
     const result: QueryResult = {
