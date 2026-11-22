@@ -203,15 +203,22 @@ export function describeQuery(query: Query): string[] {
         `percentile: ${query.p}`,
         `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
-    case "rank":
+    case "rank": {
+      const grouped = query.groupBy
+        ? ` of ${OP_LABEL[query.op ?? "sum"] ?? query.op} ${query.column} by ${query.groupBy}`
+        : ` of ${query.column}`;
       return [
-        `${ordinal(query.n)} ${query.direction} value of ${query.column}`,
+        `${ordinal(query.n)} ${query.direction} value${grouped}`,
         "operation: rank",
         `column: ${query.column}`,
         `rank: ${query.n}`,
         `direction: ${query.direction}`,
+        ...(query.groupBy
+          ? [`group by: ${query.groupBy}`, `aggregate: ${OP_LABEL[query.op ?? "sum"] ?? query.op}`]
+          : []),
         `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
+    }
     case "trend": {
       const what = `${OP_LABEL[query.op] ?? query.op} ${query.column}`;
       return [

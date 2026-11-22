@@ -46,7 +46,50 @@ function composeScalar(result: Extract<QueryResult, { kind: "scalar" }>): string
   return `${label} is ${formatNumber(result.value)} (across ${result.rowsMatched} ${plural(result.rowsMatched, "row")}${coverage}).`;
 }
 
+function composeGroupRank(result: Extract<QueryResult, { kind: "rank" }>): string {
+  const opLabel: Record<string, string> = {
+    sum: "total",
+    mean: "average",
+    median: "median",
+    min: "minimum",
+    max: "maximum",
+    count: "count",
+  };
+  const what = `${opLabel[result.op ?? "sum"] ?? result.op} ${result.column}`;
+  const label = `The ${ordinal(result.n)} ${result.direction} ${what} by ${result.groupBy}`;
+  const groups = result.totalGroups ?? 0;
+  if (result.value === null) {
+    if (result.totalDistinct === 0) {
+      return (
+        `I could not find the ${ordinal(result.n)} ${result.direction} ${what} by ${result.groupBy} — ` +
+        `no group had a usable value for ${result.column} in the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")}.`
+      );
+    }
+    return (
+      `${label} does not exist — there ${result.totalDistinct === 1 ? "is" : "are"} only ` +
+      `${result.totalDistinct} distinct ${what} ${plural(result.totalDistinct, "value")} across ` +
+      `${groups} ${plural(groups, result.groupBy!)} in the ${result.rowsMatched} matching ${plural(result.rowsMatched, "row")}.`
+    );
+  }
+  // Say so when some matching rows had no usable value, so a rank
+  // over group totals is never presented as if every row counted.
+  const coverage =
+    result.valuesUsed < result.rowsMatched
+      ? `; ${result.valuesUsed} of ${result.rowsMatched} had a value`
+      : "";
+  const holders = result.groupsAtValue ?? [];
+  const held =
+    holders.length === 1
+      ? `${holders[0]} holds it (${result.rowsAtValue} ${plural(result.rowsAtValue, "row")})`
+      : `${holders.join(" and ")} tie for it (${result.rowsAtValue} ${plural(result.rowsAtValue, "row")} between them)`;
+  return (
+    `${label} is ${formatNumber(result.value)} ` +
+    `(${held}, out of ${result.totalDistinct} distinct ${what} ${plural(result.totalDistinct, "value")}${coverage}).`
+  );
+}
+
 function composeRank(result: Extract<QueryResult, { kind: "rank" }>): string {
+  if (result.groupBy) return composeGroupRank(result);
   const label = `The ${ordinal(result.n)} ${result.direction} ${result.column}`;
   if (result.value === null) {
     if (result.totalDistinct === 0) {

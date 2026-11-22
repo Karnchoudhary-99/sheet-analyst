@@ -716,6 +716,29 @@ describe("runCli ask --out", () => {
     }
   });
 
+  it("writes a group-rank answer as CSV with the holding group", async () => {
+    const tmp = join(root, "examples", ".cli-out-group-rank.csv");
+    try {
+      const c = capture();
+      expect(
+        await runCli(
+          ["ask", salesPath, "second highest total revenue by region", "--out", tmp],
+          c.out,
+        ),
+      ).toBe(0);
+      expect(c.stdout.join("")).toContain(
+        "The 2nd highest total revenue by region is 624.91",
+      );
+      expect(c.stdout.join("")).toContain(`Wrote ${tmp}`);
+      const written = readFileSync(tmp, "utf8");
+      expect(written).toBe(
+        "label,value,groups_at_value,distinct_values,rows_matched,values_used\n2nd highest total revenue by region,624.91,East,4,8,8\n",
+      );
+    } finally {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+  });
+
   it("writes a distribution answer as CSV", async () => {
     const tmp = join(root, "examples", ".cli-out-dist.csv");
     try {

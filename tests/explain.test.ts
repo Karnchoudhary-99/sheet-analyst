@@ -443,6 +443,25 @@ describe("describeQuery rank", () => {
       "filters: region = North",
     ]);
   });
+
+  it("describes the group column and aggregate of a group rank", () => {
+    const sales = parseCsv(
+      "date,region,product,units,revenue\n2026-01-05,North,Widget A,12,240.00\n",
+    );
+    const explained = explainQuestion("second highest total revenue by region", sales);
+    expect(explained.ok).toBe(true);
+    if (!explained.ok) return;
+    expect(describeQuery(explained.query)).toEqual([
+      "2nd highest value of total revenue by region",
+      "operation: rank",
+      "column: revenue",
+      "rank: 2",
+      "direction: highest",
+      "group by: region",
+      "aggregate: total",
+      "filters: none",
+    ]);
+  });
 });
 
 describe("describeQuery group extreme", () => {

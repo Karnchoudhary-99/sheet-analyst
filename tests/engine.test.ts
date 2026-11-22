@@ -1438,6 +1438,90 @@ describe("executeQuery rank", () => {
       expect(units.rowsMatched).toBe(6);
     }
   });
+
+  it("ranks per-group totals instead of rows", () => {
+    const r = ask("second highest total revenue by region");
+    expect(r).toEqual({
+      kind: "rank",
+      column: "revenue",
+      n: 2,
+      direction: "highest",
+      groupBy: "region",
+      op: "sum",
+      groupsAtValue: ["North"],
+      totalGroups: 4,
+      // Region totals: North 389.97, South 199.92, East 400,
+      // West 124.95 — the 2nd highest is North's 389.97.
+      value: 389.97,
+      rowsAtValue: 3,
+      totalDistinct: 4,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    });
+  });
+
+  it("ranks per-group averages, skipping blanks in the mean", () => {
+    const r = ask("second highest average salary by department", STAFF);
+    expect(r.kind).toBe("rank");
+    if (r.kind === "rank") {
+      // Engineering averages 96,500 over 2 valued rows; Data 88,000.
+      expect(r.value).toBe(88000);
+      expect(r.groupsAtValue).toEqual(["Data"]);
+      expect(r.totalDistinct).toBe(2);
+      expect(r.rowsAtValue).toBe(1);
+    }
+  });
+
+  it("shares a group rank on a tie", () => {
+    const tied = parseCsv("region,revenue\nNorth,100\nSouth,100\nEast,50\n");
+    const r = ask("second highest total revenue by region", tied);
+    expect(r.kind).toBe("rank");
+    if (r.kind === "rank") {
+      // Distinct totals: 100, 50 — the 2nd highest is 50, held by East.
+      expect(r.value).toBe(50);
+      expect(r.groupsAtValue).toEqual(["East"]);
+      const first = ask("first highest total revenue by region", tied);
+      if (first.kind === "rank") {
+        expect(first.value).toBe(100);
+        expect(first.groupsAtValue).toEqual(["North", "South"]);
+        expect(first.rowsAtValue).toBe(2);
+      }
+    }
+  });
+
+  it("reports null past the end of the group ranking", () => {
+    const r = ask("5th highest total revenue by region");
+    expect(r.kind).toBe("rank");
+    if (r.kind === "rank") {
+      expect(r.value).toBeNull();
+      expect(r.groupsAtValue).toEqual([]);
+      expect(r.totalDistinct).toBe(4);
+      expect(r.totalGroups).toBe(4);
+    }
+  });
+
+  it("never lets a group with no usable value win the lowest group rank", () => {
+    const messy = parseCsv("region,revenue\nNorth,100\nSouth,\nEast,50\n");
+    const r = ask("first lowest total revenue by region", messy);
+    expect(r.kind).toBe("rank");
+    if (r.kind === "rank") {
+      expect(r.value).toBe(50);
+      expect(r.groupsAtValue).toEqual(["East"]);
+      expect(r.totalDistinct).toBe(2);
+    }
+  });
+
+  it("respects filters when ranking groups", () => {
+    const r = ask("second highest total revenue by region where product is Widget A");
+    expect(r.kind).toBe("rank");
+    if (r.kind === "rank") {
+      // Widget A only: North 240 + 0, East 400 — the 2nd highest
+      // total is North's 240.
+      expect(r.value).toBe(240);
+      expect(r.groupsAtValue).toEqual(["North"]);
+      expect(r.rowsMatched).toBe(3);
+    }
+  });
 });
 
 describe("executeQuery trend", () => {

@@ -77,6 +77,11 @@
  *   distinct value from the top or the bottom of one numeric column;
  *   ties share the rank, so the answer also says how many rows hold
  *   that value)
+ * - group rank: "second highest total revenue by region", "which
+ *   region has the second highest total revenue" (the nth distinct
+ *   per-group aggregate from the top or the bottom; a bare aggregate
+ *   reads as the total, an explicit "average"/"median"/"minimum"/
+ *   "maximum" overrides it; one group column at a time)
  * - range filter: "where revenue between 100 and 200" (inclusive on
  *   both ends; the smaller value must come first)
  * - trend: "revenue trend by month", "average salary trend by year"
@@ -250,6 +255,14 @@ export type Query =
       n: number;
       /** Which end of the ranking the rank is counted from. */
       direction: "highest" | "lowest";
+      /**
+       * When set, the rank is over per-group aggregates instead of
+       * rows: "second highest total revenue by region" ranks each
+       * region's total. `op` is how each group's value is computed
+       * (default sum — the groupextreme convention).
+       */
+      groupBy?: string;
+      op?: Exclude<AggregateOp, "count">;
       filters: Filter[];
       orGroups?: Filter[][];
     }
@@ -2805,13 +2818,171 @@ const WORD_ORDINALS: Record<string, number> = {
 };
 
 /**
+ * Try to read a group-rank question ("second highest total revenue
+ * by region", "which region has the second highest total revenue").
+ * Returns null when the question shows no group-rank intent;
+ * otherwise a rank query with `groupBy` set, or an abstention when
+ * the rank, the group or the value column cannot be pinned down.
+ *
+ * A group rank ranks per-group aggregates, not rows: with region
+ * totals North 389.97 / South 649.77 / East 624.91 / West 124.95
+ * the 2nd highest total revenue by region is 624.91, held by East.
+ * Ties share the rank, like a plain rank — two regions on the same
+ * total both hold it. A bare aggregate word reads as the total — a
+ * group is a set of rows, so its total is the natural reading, the
+ * same convention as groupextreme; an explicit "average"/"median"/
+ * "minimum"/"maximum" overrides it. Only one group column at a
+ * time — "by region and product" is two dimensions and is refused
+ * with a pointer to one.
+ *
+ * The question is read positionally — ordinal, direction, optional
+ * aggregate word, value column — so "minimum" in the aggregate slot
+ * is an op and in the direction slot is the low end, never both at
+ * once: "second highest minimum revenue by region" ranks the
+ * per-group minima from the top.
+ *
+ * Checked before the plain rank parser, which would otherwise
+ * abstain on the "by region" tail ("a rank question asks about one
+ * column") instead of answering the question asked.
+ */
+function tryParseGroupRank(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+  orGroups?: Filter[][],
+): ParseResult | null {
+  const norm = normalize(text);
+  const direction = /\b(highest|largest|biggest|greatest|maximum)\b/.test(norm)
+    ? "highest"
+    : /\b(lowest|smallest|least|minimum)\b/.test(norm)
+      ? "lowest"
+      : null;
+  if (direction === null) return null;
+  const numeric = /(\d{1,3})(?:st|nd|rd|th)\b/.exec(norm);
+  const word = Object.keys(WORD_ORDINALS).find((w) => new RegExp(`\\b${w}\\b`).test(norm));
+  const n = numeric ? Number(numeric[1]) : word ? WORD_ORDINALS[word]! : null;
+  if (n === null) return null;
+  if (n < 1) {
+    return {
+      ok: false,
+      reason: `a rank starts at 1 — try e.g. 'second highest total revenue by region'`,
+    };
+  }
+
+  // Form 2: "which region has the second highest total revenue" —
+  // the "which <column> has the" subject is the group column.
+  let groupBy: ColumnInfo | null = null;
+  let rest = norm;
+  const which = /\b(?:which|what)\s+(.+?)\s+(?:has|have)\s+the\s+/.exec(norm);
+  if (which) {
+    const hits = findColumns(which[1]!, columns);
+    const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+    if (distinct.length === 0) return null;
+    if (distinct.length > 1) {
+      return {
+        ok: false,
+        reason: `could not tell which group to rank — matches ${distinct.map((c) => c.name).join(", ")}`,
+      };
+    }
+    groupBy = distinct[0]!;
+    rest = norm.slice(which[0]!.length).trim();
+  } else {
+    const extracted = extractGroupBy(norm, columns);
+    if (extracted.groupBy.length === 0) return null;
+    if (extracted.error) return { ok: false, reason: extracted.error };
+    if (extracted.groupBy.length > 1) {
+      return {
+        ok: false,
+        reason: `a group rank ranks one dimension at a time — try e.g. 'second highest total revenue by ${extracted.groupBy[0]!.name}'`,
+      };
+    }
+    groupBy = extracted.groupBy[0]!;
+    rest = extracted.rest;
+  }
+
+  // Positional read: ordinal, direction, optional aggregate word,
+  // then the value column ("second highest total revenue",
+  // "the 3rd lowest average salary", "what is the 2nd largest
+  // median units").
+  const ordinalWords = Object.keys(WORD_ORDINALS).join("|");
+  const directionWords = "highest|largest|biggest|greatest|maximum|lowest|smallest|least|minimum";
+  const shaped = new RegExp(
+    `^(?:what\\s+is\\s+the\\s+|the\\s+)?(?:\\d{1,3}(?:st|nd|rd|th)|${ordinalWords})\\s+(?:${directionWords})\\s+(?:(total|sum|average|mean|median|minimum|maximum)\\s+)?(.*)$`,
+  ).exec(rest);
+  if (!shaped) {
+    return {
+      ok: false,
+      reason: `could not read the group rank in "${rest}" — try e.g. 'second highest total revenue by ${groupBy.name}'`,
+    };
+  }
+  const aggWord = shaped[1];
+  const op: Exclude<AggregateOp, "count"> =
+    aggWord === "average" || aggWord === "mean"
+      ? "mean"
+      : aggWord === "median"
+        ? "median"
+        : aggWord === "minimum"
+          ? "min"
+          : aggWord === "maximum"
+            ? "max"
+            : "sum";
+  const valuePhrase = shaped[2]!.trim();
+  if (valuePhrase === "") {
+    return {
+      ok: false,
+      reason: `a group rank needs a value column — try e.g. 'second highest total revenue by ${groupBy.name}'`,
+    };
+  }
+  const valueHits = findColumns(valuePhrase, columns);
+  const valueDistinct = [...new Map(valueHits.map((c) => [c.name, c])).values()];
+  if (valueDistinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(valuePhrase, columns)}`,
+    };
+  }
+  if (valueDistinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to rank — matches ${valueDistinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = valueDistinct[0]!;
+  if (column.name === groupBy.name) {
+    return {
+      ok: false,
+      reason: `a group rank ranks one column across another — "${column.name}" can't group by itself`,
+    };
+  }
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a group rank needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  // Anything left after removing the column name is a word the
+  // sheet does not explain — refuse rather than dropping it.
+  const leftover = stripColumnName(valuePhrase, column);
+  if (leftover !== "") {
+    return {
+      ok: false,
+      reason: `could not understand "${leftover}" in the question — try e.g. 'second highest total ${column.name} by ${groupBy.name}'`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "rank", column: column.name, n, direction, groupBy: groupBy.name, op, filters, orGroups },
+  };
+}
+
+/**
  * Try to read an ordinal-rank question ("second highest salary",
  * "3rd lowest revenue", "what is the 2nd largest sale"). Returns
  * null when the question shows no rank intent; otherwise a rank
  * query, or an abstention when the rank or the column cannot be
  * pinned down. A rank is one numeric column, ungrouped — "second
- * highest salary by department" is a per-group question the engine
- * does not answer.
+ * highest salary by department" is a group-rank question, handled
+ * by tryParseGroupRank before this runs.
  *
  * The rank counts distinct values, not rows: with salaries 98,000 /
  * 95,000 / 95,000 / 91,000 the 2nd highest salary is 95,000 and the
@@ -3254,6 +3425,22 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
       };
     }
     return percentile;
+  }
+
+  // Group rank: the nth distinct per-group aggregate from the top
+  // or the bottom ("second highest total revenue by region",
+  // "which region has the second highest total revenue"). Checked
+  // before the plain rank parser, which would otherwise abstain on
+  // the "by region" tail instead of answering the question asked.
+  const groupRank = tryParseGroupRank(timeBucket.rest, columns, filters, orGroups);
+  if (groupRank) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a group rank can't be grouped by a time period — ask about the whole sheet, e.g. 'second highest total revenue by region'",
+      };
+    }
+    return groupRank;
   }
 
   // Rank: one column's nth distinct value from the top or the

@@ -133,6 +133,27 @@ describe("resultToCsv", () => {
     );
   });
 
+  it("writes a group rank with the holding group instead of a row count", () => {
+    const groupRankResult: QueryResult = {
+      kind: "rank",
+      column: "revenue",
+      n: 2,
+      direction: "highest",
+      groupBy: "region",
+      op: "sum",
+      groupsAtValue: ["North"],
+      totalGroups: 4,
+      value: 389.97,
+      rowsAtValue: 3,
+      totalDistinct: 4,
+      rowsMatched: 6,
+      valuesUsed: 6,
+    };
+    expect(resultToCsv(groupRankResult, "second highest total revenue by region", "")).toBe(
+      "label,value,groups_at_value,distinct_values,rows_matched,values_used\n2nd highest total revenue by region,389.97,North,4,6,6",
+    );
+  });
+
   it("writes row results with their headers and escapes cells", () => {
     expect(resultToCsv(rowsResult, "show rows", "")).toBe(
       'product,region\nWidget A,North\n"Widget, B","South ""HQ"""',

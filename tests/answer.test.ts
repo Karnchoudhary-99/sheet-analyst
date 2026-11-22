@@ -445,6 +445,40 @@ describe("answerQuestion end to end", () => {
     );
   });
 
+  it("answers a group-rank question with the holding group", () => {
+    // Region totals: North 389.97, South 199.92, East 400, West
+    // 124.95 — the 2nd highest is North's 389.97.
+    expect(answerQuestion("second highest total revenue by region", SALES)).toBe(
+      "The 2nd highest total revenue by region is 389.97 (North holds it (3 rows), out of 4 distinct total revenue values).",
+    );
+  });
+
+  it("answers the 'which group has the ...' phrasing of a group rank", () => {
+    expect(answerQuestion("which region has the second highest total revenue", SALES)).toBe(
+      "The 2nd highest total revenue by region is 389.97 (North holds it (3 rows), out of 4 distinct total revenue values).",
+    );
+  });
+
+  it("names tied groups in a group-rank answer", () => {
+    const tied = parseCsv("region,revenue\nNorth,100\nSouth,100\nEast,50\n");
+    expect(answerQuestion("first highest total revenue by region", tied)).toBe(
+      "The 1st highest total revenue by region is 100 (North and South tie for it (2 rows between them), out of 2 distinct total revenue values).",
+    );
+  });
+
+  it("says plainly when a group rank runs past the end", () => {
+    expect(answerQuestion("5th highest total revenue by region", SALES)).toBe(
+      "The 5th highest total revenue by region does not exist — there are only 4 distinct total revenue values across 4 regions in the 6 matching rows.",
+    );
+  });
+
+  it("says plainly when no group in a group rank has a usable value", () => {
+    const sparse = parseCsv("a,b\n1,10\n2,NA\n3,30\n");
+    expect(answerQuestion("2nd highest total b by a where a is 2", sparse)).toBe(
+      "I could not find the 2nd highest total b by a — no group had a usable value for b in the 1 matching row.",
+    );
+  });
+
   it("names the coverage when some rows had no usable value", () => {
     const staff = parseCsv(
       "id,name,department,salary,start_date,remote\n" +
