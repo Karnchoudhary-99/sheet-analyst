@@ -37,11 +37,19 @@ export type QueryResult =
       column: string;
       n: number;
       direction: "highest" | "lowest";
+      /**
+       * When set, the rank is over per-group aggregates: `value` is
+       * the nth distinct group aggregate, and `groupsAtValue` names
+       * the groups holding it (empty when value is null).
+       */
+      groupBy?: string;
+      op?: string;
+      groupsAtValue?: string[];
       /** The nth distinct value, or null when fewer than n distinct values exist. */
       value: number | null;
-      /** Rows holding that value (0 when value is null). */
+      /** Rows holding that value (0 when value is null). For a group rank, the rows in the groups holding the value. */
       rowsAtValue: number;
-      /** Distinct values present in the column over the matched rows. */
+      /** Distinct values present in the column over the matched rows — for a group rank, distinct per-group aggregates. */
       totalDistinct: number;
       rowsMatched: number;
       valuesUsed: number;
@@ -1036,6 +1044,58 @@ export function executeQuery(query: Query, parsed: ParsedCsv): QueryResult {
       const info = colInfo(query.column);
       if (!info) throw new Error(`unknown column: ${query.column}`);
       const rows = applyFilters(parsed, schema, query.filters, query.orGroups);
+      if (query.groupBy) {
+        // A group rank ranks per-group aggregates: bucket the
+        // matched rows by the group column, aggregate each group,
+        // then rank the distinct aggregates — the same distinct-
+        // value rule as a plain rank, so a tie shares the rank.
+        // Groups with no usable value never rank (their aggregate
+        // is null), so a lowest group rank is never a group of
+        // blanks.
+        const gIdx = colIndex.get(query.groupBy)!;
+        const cIdx = colIndex.get(query.column)!;
+        const op = query.op ?? "sum";
+        const buckets = new Map<string, { values: number[]; count: number }>();
+        for (const row of rows) {
+          const label = groupKey(row[gIdx] ?? "", undefined).label;
+          const bucket = buckets.get(label) ?? { values: [], count: 0 };
+          bucket.count += 1;
+          const raw = row[cIdx] ?? "";
+          if (!isNullValue(raw)) {
+            const n = toNumber(raw);
+            if (n !== null) bucket.values.push(n);
+          }
+          buckets.set(label, bucket);
+        }
+        const perGroup = [...buckets.entries()].map(([key, b]) => ({
+          key,
+          value: aggregateValues(op, b.values),
+          count: b.count,
+        }));
+        const usable = perGroup.filter((g): g is { key: string; value: number; count: number } => g.value !== null);
+        const distinct = [...new Set(usable.map((g) => g.value))].sort((a, b) =>
+          query.direction === "highest" ? b - a : a - b,
+        );
+        const value = query.n <= distinct.length ? distinct[query.n - 1]! : null;
+        const holders = value === null ? [] : usable.filter((g) => g.value === value);
+        const valuesUsed = rows
+          .map((r) => r[cIdx] ?? "")
+          .filter((v) => !isNullValue(v) && toNumber(v) !== null).length;
+        return {
+          kind: "rank",
+          column: query.column,
+          n: query.n,
+          direction: query.direction,
+          groupBy: query.groupBy,
+          op,
+          groupsAtValue: holders.map((g) => g.key),
+          value,
+          rowsAtValue: holders.reduce((n, g) => n + g.count, 0),
+          totalDistinct: distinct.length,
+          rowsMatched: rows.length,
+          valuesUsed,
+        };
+      }
       const values = rows
         .map((r) => r[colIndex.get(query.column)!] ?? "")
         .filter((v) => !isNullValue(v))
