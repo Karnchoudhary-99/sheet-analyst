@@ -290,6 +290,64 @@ function composeComparison(
   );
 }
 
+function composeHeadToHead(
+  result: Extract<QueryResult, { kind: "headtohead" }>,
+): string {
+  const opLabel: Record<string, string> = {
+    sum: "total",
+    mean: "average",
+    median: "median",
+    min: "minimum",
+    max: "maximum",
+    count: "count",
+  };
+  const what = result.column
+    ? `${opLabel[result.op] ?? result.op} ${result.column}`
+    : "row count";
+  const label = what.charAt(0).toUpperCase() + what.slice(1);
+  const a = result.sideA;
+  const b = result.sideB;
+  // A side with no usable values cannot be compared — say which
+  // one, and whether it had no rows at all or only unusable values.
+  if (a.value === null || b.value === null) {
+    const missing = a.value === null ? a : b;
+    const cause =
+      missing.rows === 0
+        ? "has no rows"
+        : `has ${missing.rows} ${missing.rows === 1 ? "row" : "rows"} but none with a usable value`;
+    return (
+      `I could not compare the ${what} — ${missing.label} ${cause}, ` +
+      `so there is nothing to compare against.`
+    );
+  }
+  // Flag a side where some rows had no usable value, so a mean
+  // over 2 values is never presented as a mean over 3 rows.
+  const coverage = [a, b]
+    .filter((p) => p.valuesUsed < p.rows)
+    .map((p) => `${p.valuesUsed} of ${p.rows} had a value in ${p.label}`)
+    .join("; ");
+  const coverageNote = coverage ? ` (${coverage})` : "";
+  const difference = result.difference!;
+  if (difference === 0) {
+    return `${label} was the same in ${a.label} and ${b.label} at ${formatNumber(a.value)}.${coverageNote}`;
+  }
+  const higher = a.value > b.value ? a : b;
+  const lower = a.value > b.value ? b : a;
+  const pct =
+    result.pctHigher === null
+      ? ""
+      : ` (${formatNumber(result.pctHigher)}% higher)`;
+  const pctNote =
+    result.pctHigher === null
+      ? ` No percent is possible — the ${lower.label} ${what} was 0.`
+      : "";
+  return (
+    `${label} was higher in ${higher.label} (${formatNumber(higher.value)}) ` +
+    `than in ${lower.label} (${formatNumber(lower.value)}) ` +
+    `by ${formatNumber(difference)}${pct}.${pctNote}${coverageNote}`
+  );
+}
+
 /** Render one filter in words: "region is North", "revenue is greater than 100". */
 function describeFilter(filter: Filter): string {
   const opWord: Record<Filter["op"], string> = {
@@ -758,6 +816,8 @@ export function composeAnswer(result: QueryResult, parsed?: ParsedCsv): string {
       return composeCorrelation(result);
     case "comparison":
       return composeComparison(result);
+    case "headtohead":
+      return composeHeadToHead(result);
     case "share":
       return composeShare(result);
     case "values":
