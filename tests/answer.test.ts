@@ -1014,6 +1014,83 @@ describe("composeAnswer cumulative", () => {
   });
 });
 
+describe("composeAnswer period change", () => {
+  const MONTHLY = parseCsv(
+    "date,region,product,units,revenue\n" +
+      "2026-01-05,North,Widget A,10,200.00\n" +
+      "2026-01-12,South,Widget B,5,124.95\n" +
+      "2026-01-20,East,Widget A,8,160.00\n" +
+      "2026-01-28,West,Widget C,4,179.96\n" +
+      "2026-02-03,North,Widget B,12,299.88\n" +
+      "2026-02-10,South,Widget A,6,120.00\n" +
+      "2026-02-15,East,Widget C,7,314.93\n" +
+      "2026-02-22,West,Widget A,9,180.00\n" +
+      "2026-03-02,North,Widget C,3,134.97\n" +
+      "2026-03-09,South,Widget A,15,300.00\n" +
+      "2026-03-16,East,Widget B,10,249.90\n" +
+      "2026-03-25,West,Widget B,6,149.94\n",
+  );
+
+  it("lists each period's change with the biggest rise and fall", () => {
+    expect(answerQuestion("revenue change by month", MONTHLY)).toBe(
+      "Total revenue by month changed: Feb 2026 rose by 249.9 (+37.58%) vs Jan 2026; " +
+        "Mar 2026 fell by 80 (-8.74%) vs Feb 2026. " +
+        "Biggest rise: Feb 2026 (+249.9, +37.58%). " +
+        "Biggest fall: Mar 2026 (-80, -8.74%).",
+    );
+  });
+
+  it("reads an unchanged period as unchanged, not as no change", () => {
+    expect(answerQuestion("units change by month", MONTHLY)).toBe(
+      "Total units by month changed: Feb 2026 rose by 7 (+25.93%) vs Jan 2026; " +
+        "Mar 2026 was unchanged at 34 vs Feb 2026. " +
+        "Biggest rise: Feb 2026 (+7, +25.93%).",
+    );
+  });
+
+  it("names a period with no usable values instead of skipping it silently", () => {
+    const staff = parseCsv(
+      "id,name,department,salary,start_date,remote\n" +
+        "1,Ada,Engineering,95000,2024-03-01,true\n" +
+        "2,Grace,Engineering,98000,2023-07-15,true\n" +
+        "3,Alan,Data,88000,2025-01-20,false\n" +
+        "4,Katherine,Data,91000,2024-11-04,true\n" +
+        "5,Edsger,Engineering,NA,2022-05-30,false\n",
+    );
+    expect(answerQuestion("salary change by year", staff)).toBe(
+      "Total salary by year changed: 2024 rose by 88,000 (+89.8%) vs 2023; " +
+        "2025 fell by 98,000 (-52.69%) vs 2024. " +
+        "2022 has no usable values and is skipped in the changes. " +
+        "Biggest rise: 2024 (+88,000, +89.8%). " +
+        "Biggest fall: 2025 (-98,000, -52.69%).",
+    );
+  });
+
+  it("says so plainly when one period cannot make a change", () => {
+    const one = parseCsv("date,revenue\n2026-01-05,100\n2026-01-20,200\n");
+    expect(answerQuestion("revenue change by month", one)).toBe(
+      "I could not compute the change in total revenue by month — " +
+        "only Jan 2026 has a usable value, so there is no previous period to compare against.",
+    );
+  });
+
+  it("says so plainly when no matching row has a usable date", () => {
+    const mixed = parseCsv(
+      "date,region,revenue\n" +
+        ",North,100\n" +
+        ",North,200\n" +
+        "2026-01-05,South,300\n" +
+        "2026-02-03,South,500\n",
+    );
+    expect(
+      answerQuestion("revenue change by month where region is North", mixed),
+    ).toBe(
+      "I could not compute the change in total revenue by month — " +
+        "none of the 2 matching rows has a usable date.",
+    );
+  });
+});
+
 describe("composeAnswer missing values", () => {
   it("counts one column's missing rows with a percentage", () => {
     expect(answerQuestion("how many rows are missing units", SALES)).toBe(
