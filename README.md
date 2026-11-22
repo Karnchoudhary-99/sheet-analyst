@@ -38,6 +38,7 @@ top-N) directly from the spreadsheet.
 - [x] Outlier questions ("how many outliers in score", "which columns have outliers" — a count per column or a whole-sheet report over numeric columns, worst first; "show outliers in score" lists the rows; Tukey IQR fence, the same fence the data-quality profile reports)
 - [x] Duplicate questions ("how many duplicate rows", "which columns have duplicates" — a count per column or a whole-sheet report over every column, worst first, plus the exact duplicate rows; "show duplicate rows" / "show duplicates in product" lists the rows; a repeated value is counted from its second occurrence, blanks never count as duplicates)
 - [x] Ordinal-rank questions ("second highest salary", "3rd lowest revenue" — the nth distinct value from the top or the bottom of one numeric column; ties share the rank, so the answer also says how many rows hold that value; a rank past the end says so instead of falling back to the last value)
+- [x] Group-rank questions ("second highest total revenue by region", "which region has the second highest total revenue" — the nth distinct per-group aggregate from the top or the bottom; a bare aggregate reads as the total, an explicit average/median/minimum/maximum overrides it; ties share the rank, so the answer names the holding group(s); one group column at a time)
 - [x] Compound filters ("total revenue where region is North and product is Widget A", "how many rows where revenue > 100 and units < 10" — every condition must hold; a between-range keeps its own "and"; an unknown column in any condition abstains naming it; an "and" inside a value is left alone)
 - [x] Or filters ("total revenue where region is North or South", "how many rows where revenue > 400 or revenue < 130" — at least one branch must hold; AND binds tighter, so "a and b or c" is (a and b) or c; a bare value inherits the most recent "=" filter; an "or" inside a quoted value is left alone; an unknown column in any branch abstains naming it; share questions take "or" subsets too)
 - [x] Exclusion filters ("total revenue excluding North", "total revenue except Widget A" — a "!=" filter on the owning column; several values exclude several; composes with "in" and with a where clause placed after it; an unknown or multi-column value abstains)
@@ -253,8 +254,13 @@ ties share the rank, so the answer also says how many rows hold the
 value ("The 2nd highest salary is 95,000 (1 row holds it, out of 4
 distinct values)"), and a rank past the end says so instead of
 falling back to the last value ("The 5th highest salary does not
-exist — there are only 4 distinct salary values"). A rank is one
-column, ungrouped ("second highest salary by department" abstains).
+exist — there are only 4 distinct salary values"). A group-rank
+question ranks per-group aggregates instead of rows ("second highest
+total revenue by region" — East's 624.91; "which region has the second
+highest total revenue" asks the same thing; a bare aggregate reads as
+the total, an explicit average/median/minimum/maximum overrides it;
+ties share the rank, so the answer names the holding group(s); one
+group column at a time — "by region and product" abstains).
 A multi-column group-by answer lists one line per
 combination ("North · Widget A: 240 (2 rows)"), largest first, and a
 blank cell in any group column shows as "(blank)" rather than being
