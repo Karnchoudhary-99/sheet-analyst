@@ -540,7 +540,7 @@ describe("resultToCsv period change", () => {
       "period,value,change,percent_change,rows,values_used\n" +
         "Jan 2026,0,,,1,1\n" +
         "Feb 2026,500,500,,1,1\n" +
-        "biggest rise,Feb 2026,500,,",
+        "biggest rise,Feb 2026,500,,,",
     );
   });
 });
