@@ -331,8 +331,14 @@ function composeHeadToHead(
   if (difference === 0) {
     return `${label} was the same in ${a.label} and ${b.label} at ${formatNumber(a.value)}.${coverageNote}`;
   }
-  const higher = a.value > b.value ? a : b;
-  const lower = a.value > b.value ? b : a;
+  // Past the null guard above, both sides have a value — capture
+  // them so the narrowing survives the higher/lower split below.
+  const aValue = a.value;
+  const bValue = b.value;
+  const higher = aValue > bValue ? a : b;
+  const higherValue = aValue > bValue ? aValue : bValue;
+  const lower = aValue > bValue ? b : a;
+  const lowerValue = aValue > bValue ? bValue : aValue;
   const pct =
     result.pctHigher === null
       ? ""
@@ -342,8 +348,8 @@ function composeHeadToHead(
       ? ` No percent is possible — the ${lower.label} ${what} was 0.`
       : "";
   return (
-    `${label} was higher in ${higher.label} (${formatNumber(higher.value)}) ` +
-    `than in ${lower.label} (${formatNumber(lower.value)}) ` +
+    `${label} was higher in ${higher.label} (${formatNumber(higherValue)}) ` +
+    `than in ${lower.label} (${formatNumber(lowerValue)}) ` +
     `by ${formatNumber(difference)}${pct}.${pctNote}${coverageNote}`
   );
 }
