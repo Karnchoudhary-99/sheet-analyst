@@ -61,6 +61,9 @@
  *   total revenue comes from North" (a filtered subset's total as a
  *   share of the whole sheet's total), "what share of rows are in
  *   North" (a filtered row count as a share of all rows)
+ * - group share: "revenue share by region", "what share of total
+ *   revenue does each region contribute" (every group's total as a
+ *   share of the whole sheet's total, largest share first)
  * - distinct values: "list unique regions", "what are the distinct
  *   products" (every distinct value of a column, with row counts,
  *   most frequent first)
@@ -218,6 +221,19 @@ export type Query =
        */
       column: string | null;
       /** The subset whose share is asked for (at least one filter). */
+      filters: Filter[];
+      orGroups?: Filter[][];
+    }
+  | {
+      kind: "groupshare";
+      /** The column whose values are shared out ("region" in "revenue share by region"). */
+      groupBy: string;
+      /**
+       * The numeric column being shared out. A group share always
+       * compares totals (sum), never averages — a share of an average
+       * is not a meaningful fraction of anything.
+       */
+      column: string;
       filters: Filter[];
       orGroups?: Filter[][];
     }
@@ -2150,6 +2166,145 @@ function resolveShareOrValues(
   return { orGroups: groups };
 }
 
+/**
+ * Try to read a group-share question ("revenue share by region",
+ * "share of total revenue by product", "what share of revenue does
+ * each region contribute"). Returns null when the question shows no
+ * group-share intent — a share word with no "by"/"per"/"each" group
+ * marker is a subset share, handled by tryParseShare below.
+ * Otherwise a groupshare query, or an abstention when the group or
+ * the value column cannot be pinned down. A share is always computed
+ * from totals — an explicit average/median/minimum/maximum word
+ * abstains instead of answering with the total.
+ */
+function tryParseGroupShare(
+  text: string,
+  columns: ColumnInfo[],
+  filters: Filter[],
+  orGroups?: Filter[][],
+): ParseResult | null {
+  const norm = normalize(text);
+  if (!/\bshare\b|\bpercent(age)?\b|%/.test(norm)) return null;
+
+  // A share is computed from totals. An explicit average/median/
+  // min/max word asks for a share of a different statistic, which
+  // is not a fraction of anything — refuse rather than answer the
+  // total. ("total"/"sum" read as sum, so they pass.)
+  const op = detectAggregateOp(norm);
+  if (op !== null && op !== "sum") {
+    return {
+      ok: false,
+      reason:
+        "a share is computed from totals — try e.g. 'revenue share by region'",
+    };
+  }
+
+  // The group column: "by region" / "per region" / "for each region"
+  // via the shared group-by extractor, or "each region" on its own
+  // ("what share of revenue does each region contribute").
+  let groupBy: ColumnInfo | null = null;
+  let valueText = "";
+  const extracted = extractGroupBy(norm, columns);
+  if (extracted.error) return { ok: false, reason: extracted.error };
+  if (extracted.groupBy.length > 1) {
+    return {
+      ok: false,
+      reason: `a group share shares out one dimension at a time — try e.g. 'revenue share by ${extracted.groupBy[0]!.name}'`,
+    };
+  }
+  if (extracted.groupBy.length === 1) {
+    groupBy = extracted.groupBy[0]!;
+    valueText = extracted.rest;
+  } else {
+    const each = /\beach\s+(.+)$/.exec(norm);
+    if (!each) return null;
+    const afterEach = each[1]!.trim();
+    const hits = findColumns(afterEach, columns);
+    const distinct = [...new Map(hits.map((c) => [c.name, c])).values()];
+    if (distinct.length === 0) return null;
+    if (distinct.length > 1) {
+      return {
+        ok: false,
+        reason: `could not tell which group to share out — matches ${distinct.map((c) => c.name).join(", ")}`,
+      };
+    }
+    groupBy = distinct[0]!;
+    valueText = norm.slice(0, each.index).trim();
+  }
+
+  // Strip the share wording and the filler around it, leaving the
+  // value column ("revenue share" -> "revenue", "what share of
+  // total revenue does" -> "revenue").
+  const filler = new Set([
+    "what",
+    "share",
+    "percentage",
+    "percent",
+    "of",
+    "total",
+    "sum",
+    "comes",
+    "come",
+    "from",
+    "is",
+    "are",
+    "the",
+    "account",
+    "accounts",
+    "for",
+    "in",
+    "does",
+    "do",
+    "did",
+    "each",
+  ]);
+  const cleaned = valueText
+    .replace(/%/g, " ")
+    .split(" ")
+    .filter((w) => !filler.has(w))
+    .join(" ");
+  const valueHits = findColumns(cleaned, columns);
+  const valueDistinct = [...new Map(valueHits.map((c) => [c.name, c])).values()];
+  if (valueDistinct.length === 0) {
+    return {
+      ok: false,
+      reason: `no column named in the question — columns are: ${columns.map((c) => c.name).join(", ")}${didYouMean(cleaned, columns)}`,
+    };
+  }
+  if (valueDistinct.length > 1) {
+    return {
+      ok: false,
+      reason: `could not tell which column to share out — matches ${valueDistinct.map((c) => c.name).join(", ")}`,
+    };
+  }
+  const column = valueDistinct[0]!;
+  if (column.name === groupBy.name) {
+    return {
+      ok: false,
+      reason: `a group share shares out one column across another — "${column.name}" can't group by itself`,
+    };
+  }
+  if (column.type !== "integer" && column.type !== "number") {
+    return {
+      ok: false,
+      reason: `a group share needs a numeric column — "${column.name}" is ${column.type}`,
+    };
+  }
+  // Anything left after removing the column name is a word the
+  // sheet does not explain — refuse rather than dropping it.
+  const rest = stripColumnName(cleaned, column);
+  if (rest !== "") {
+    return {
+      ok: false,
+      reason: `could not understand "${rest}" in the question — try e.g. '${column.name} share by ${groupBy.name}'`,
+    };
+  }
+  return {
+    ok: true,
+    query: { kind: "groupshare", groupBy: groupBy.name, column: column.name, filters, orGroups },
+  };
+}
+
 function tryParseShare(
   text: string,
   columns: ColumnInfo[],
@@ -3876,6 +4031,22 @@ export function parseQuestion(question: string, parsed: ParsedCsv): ParseResult 
   // comparison parser above.
   const periodChange = tryParsePeriodChange(timeBucket.rest, columns, bucket, filters, orGroups);
   if (periodChange) return periodChange;
+
+  // Group share: every group's total as a share of the whole
+  // sheet ("revenue share by region"). Once the question shows
+  // group-share intent it is parsed here or abstained — falling
+  // through to the subset share below would read "by region" as a
+  // second column to share out and refuse with a less useful reason.
+  const groupShare = tryParseGroupShare(timeBucket.rest, columns, filters, orGroups);
+  if (groupShare) {
+    if (bucket) {
+      return {
+        ok: false,
+        reason: "a group share can't be grouped by a time period — ask about the whole sheet, e.g. 'revenue share by region'",
+      };
+    }
+    return groupShare;
+  }
 
   // Share: a filtered subset's total as a share of the whole sheet.
   // Once the question shows share intent it is parsed here or
