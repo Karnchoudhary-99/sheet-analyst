@@ -155,6 +155,20 @@ export function describeQuery(query: Query): string[] {
         `filters: ${describeFilters(query.filters, query.orGroups)}`,
       ];
     }
+    case "headtohead": {
+      const what = query.column
+        ? `${OP_LABEL[query.op] ?? query.op} of ${query.column}`
+        : "row count";
+      return [
+        `compare ${what}: ${query.sideA} vs ${query.sideB}`,
+        `operation: ${query.op}`,
+        ...(query.column ? [`column: ${query.column}`] : []),
+        `group column: ${query.groupColumn}`,
+        `side A: ${query.sideA}`,
+        `side B: ${query.sideB}`,
+        `filters: ${describeFilters(query.filters, query.orGroups)}`,
+      ];
+    }
     case "share": {
       const what = query.column
         ? `share of total ${query.column}`
