@@ -6,7 +6,7 @@ needed for the local engine: an offline, deterministic query engine
 answers descriptive questions (counts, sums, averages, filters, groups,
 top-N) directly from the spreadsheet.
 
-> **Status:** in progress (project #39 of the portfolio program).
+> **Status:** complete — project #39 of the portfolio program.
 
 ## Roadmap
 
@@ -51,7 +51,7 @@ top-N) directly from the spreadsheet.
 - [x] Group-extreme questions ("which region has the highest total revenue", "which product has the lowest average units" — one group's aggregate beats every other; a bare "highest" reads as the highest total, an explicit average/median/minimum/maximum overrides it; ties share the win, groups with no usable value never win, and a winner with blank cells says how many of its rows had a value)
 - [x] Head-to-head group comparisons ("compare total revenue in North vs South", "total revenue North vs South", "compare average salary in Engineering vs Data", "compare rows in North vs South" — both sides must be values of one text column; the answer names the higher side with both values, the difference and the percent higher; a where clause applies to both sides; ties, a side with no usable values and a zero lower side each get their own plain wording; `sheet explain` describes both sides and `ask --out` exports one row per side plus difference and percent-higher rows)
 - [x] Group-share questions ("revenue share by region", "share of total revenue by product", "what share of total revenue does each region contribute" — every group's total as a share of the whole sheet's total, largest share first, with each group's total against the whole-sheet total and its row count; a group with no usable value is listed as having none, a zero grand total says so instead of dividing by zero, and a coverage note appears when some rows had no usable value; `sheet chart` draws the shares as a percent bar chart, `sheet explain` describes the grouping and `ask --out` exports one row per group with the raw share fraction)
-- [ ] Self-review checklist, then public
+- [x] Self-review checklist, then public (fresh-clone verification: 928 tests green, eval 100% over 240 cases, demo + CLI verified)
 
 ## Quick start
 
@@ -524,7 +524,7 @@ picks the sheet) and accepts `--json`.
 
 ## Evaluation
 
-`npm run eval` scores the engine against a 109-question gold set over
+`npm run eval` scores the engine against a 240-question gold set over
 the bundled samples (`src/eval.ts`, `GOLD_SET`): totals, averages,
 medians, group-bys, multi-column group-bys (region × product,
 department × remote) and top-N over them, top-N, bottom-N (lowest
@@ -543,7 +543,15 @@ and Feb→Mar, average salary 2023→2024), share, distinct-values,
 mode and distinct-count questions, percentile questions (p90/p50/p25
 salary, p75/p90 revenue) and `between` range filters, trend
 questions (monthly revenue +84.95/month, average revenue
-+21.24/month, units +3.5/month, average salary −5,000/year), plus thirty-three questions the
++21.24/month, units +3.5/month, average salary −5,000/year),
+cumulative questions (running totals by month/quarter) and
+period-change questions (each period against the previous one),
+head-to-head group comparisons ("North vs South"), group-share
+questions ("revenue share by region"), duplicate and outlier
+questions, ordinal and group ranks ("second highest salary",
+"second highest total revenue by region"), compound/or/exclusion
+filters, trailing value lists, cross-column comparisons, distribution
+questions and did-you-mean hints, plus sixty-eight questions the
 honest answer is an abstention for (unknown column, unanswerable
 question, unsupported period, correlation with a text column, a
 comparison naming one period or the same period twice, a time bucket
@@ -561,8 +569,8 @@ rows with no column named). Expected
 values are hand-computed from the CSVs, never derived from the code
 under test.
 
-Baseline (2026-11-20): answer accuracy 76/76 (100%), abstention
-accuracy 33/33 (100%), overall 100%. The run exits non-zero below an
+Baseline (2026-11-23): answer accuracy 172/172 (100%), abstention
+accuracy 68/68 (100%), overall 100%. The run exits non-zero below an
 80% overall-accuracy gate, and CI runs it after the test suite — so a
 parser or engine change that breaks a question that used to work
 fails the build. The eval caught a real bug on its first run: row
